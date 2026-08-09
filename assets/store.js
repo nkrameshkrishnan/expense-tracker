@@ -15,7 +15,7 @@ export const YEAR = 2026;
 export const CATEGORIES = [
   ['Salary', 'Income'], ['Other Income', 'Income'],
   ['Rent / Housing', 'Expense'], ['Groceries', 'Expense'], ['Utilities', 'Expense'],
-  ['Internet & Phone', 'Expense'], ['Transport', 'Expense'], ['Dining Out', 'Expense'],
+  ['Internet & Phone', 'Expense'], ['Transport', 'Expense'], ['Gas', 'Expense'], ['Dining Out', 'Expense'],
   ['Health & Fitness', 'Expense'], ['Insurance', 'Expense'], ['Shopping', 'Expense'],
   ['Entertainment', 'Expense'], ['Subscriptions', 'Expense'], ['Travel', 'Expense'],
   ['Education', 'Expense'], ['Gifts & Donations', 'Expense'], ['Personal Care', 'Expense'],
@@ -140,11 +140,15 @@ class SheetsStore {
     const r = normalise(rec); delete r.id;
     return normalise((await this._post({ action: 'create', record: r })).record);
   }
-  async bulkAdd(list) {
+  async bulkAdd(list, onProgress) {
     const records = list.map(r => { const n = normalise(r); delete n.id; return n; });
+    // Apps Script now writes a chunk with a handful of batched range calls, so
+    // larger chunks mean fewer HTTP round trips without risking the 6-min limit.
+    const CHUNK = 1000;
     let inserted = 0;
-    for (let i = 0; i < records.length; i += 500) {   // stay under Apps Script payload limits
-      inserted += (await this._post({ action: 'bulk', records: records.slice(i, i + 500) })).inserted;
+    for (let i = 0; i < records.length; i += CHUNK) {
+      inserted += (await this._post({ action: 'bulk', records: records.slice(i, i + CHUNK) })).inserted;
+      onProgress?.(Math.min(i + CHUNK, records.length), records.length);
     }
     return inserted;
   }

@@ -960,7 +960,9 @@ function renderData() {
       if (!confirm(`Import ${rows.length} rows from "${sheet}" into ${dest}?${skipped ? `\n\n${skipped} rows will be skipped (no valid date or amount).` : ''}`)) { out.textContent = 'Cancelled.'; return; }
       const done = await withBusy(`Writing ${rows.length} rows`, async () => {
         if ($('#replace').checked) await state.store.clear();
-        await state.store.bulkAdd(rows);
+        await state.store.bulkAdd(rows, (n, total) => {
+          notice(`Writing to the sheet\u2026 ${n} of ${total} rows`);
+        });
         await refresh();
       });
       if (done) {

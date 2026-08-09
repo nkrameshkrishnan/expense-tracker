@@ -190,6 +190,76 @@ function firstFreeRow(tx) {
   return last + 1;
 }
 
+/**
+ * Return `count` writable row numbers in one column read.
+ *
+ * The old firstFreeRow() re-read the whole date column for every inserted row,
+ * making a bulk import O(n^2) - roughly half a million cell reads for 687 rows.
+ */
+function freeRows(tx, count) {
+  var last = tx.getLastRow();
+  var rows = [];
+  if (last >= 2) {
+    var col = tx.getRange(2, C_DATE, last - 1, 1).getValues();
+    for (var i = 0; i < col.length && rows.length < count; i++) {
+      if (col[i][0] === '' || col[i][0] === null) rows.push(i + 2);
+    }
+  }
+  var next = Math.max(last + 1, 2);
+  while (rows.length < count) rows.push(next++);
+  return rows;
+}
+
+/**
+ * Write many rows with one setValues per contiguous block instead of ~7 API
+ * calls per row. Formula rows keep their own Month/Year; plain rows get values.
+ */
+function writeRowsBatched(tx, slots, values, id0) {
+  var maxRow = 0;
+  for (var i = 0; i < slots.length; i++) if (slots[i] > maxRow) maxRow = slots[i];
+
+  var existing = tx.getLastRow();
+  var monthFormulas = existing >= 2
+    ? tx.getRange(2, C_MONTH, existing - 1, 1).getFormulas() : [];
+
+  // Group consecutive target rows so each run becomes a single setValues call.
+  var runs = [], run = null;
+  for (var j = 0; j < slots.length; j++) {
+    if (run && slots[j] === run.start + run.items.length) run.items.push(j);
+    else { if (run) runs.push(run); run = { start: slots[j], items: [j] }; }
+  }
+  if (run) runs.push(run);
+
+  for (var k = 0; k < runs.length; k++) {
+    var r = runs[k];
+    var dates = [], body = [], meta = [], my = [], needMY = false;
+    for (var m = 0; m < r.items.length; m++) {
+      var v = values[r.items[m]];
+      dates.push([v.date]);
+      body.push([v.type, v.category, v.subcategory, v.description, v.amount,
+                 v.payment, v.account, v.recurring, v.notes]);
+      meta.push([id0 + r.items[m], v.person]);
+      var rowNo = r.start + m;
+      var hasFormula = rowNo - 2 < monthFormulas.length &&
+                       String(monthFormulas[rowNo - 2][0] || '') !== '';
+      if (hasFormula) my.push(null);
+      else { my.push([MONTHS[v.date.getMonth()], v.date.getFullYear()]); needMY = true; }
+    }
+    tx.getRange(r.start, C_DATE, dates.length, 1).setValues(dates)
+      .setNumberFormat('yyyy-mm-dd');
+    tx.getRange(r.start, C_TYPE, body.length, 9).setValues(body);
+    tx.getRange(r.start, C_AMOUNT, body.length, 1).setNumberFormat('"$"#,##0.00');
+    tx.getRange(r.start, C_ID, meta.length, 2).setValues(meta);
+
+    // Month/Year only where the sheet has no formula of its own.
+    if (needMY) {
+      for (var q = 0; q < my.length; q++) {
+        if (my[q]) tx.getRange(r.start + q, C_MONTH, 1, 2).setValues([my[q]]);
+      }
+    }
+  }
+}
+
 function validate(rec) {
   var amount = Math.abs(Number(rec.amount) || 0);
   if (!(amount > 0)) throw new Error('Amount must be greater than zero.');
@@ -249,6 +319,35 @@ function clearRow(tx, row) {
   }
 }
 
+/**
+ * Clear every data row in one pass.
+ *
+ * The per-row version cost 5 API calls per row (~3,600 for a full sheet).
+ * Apps Script charges per call, not per cell, so two range-wide clears plus a
+ * single formula read is ~1,800x cheaper and does exactly the same thing.
+ * B and C are cleared only where no formula lives, using one bulk read.
+ */
+function clearAllRows(tx) {
+  var last = tx.getLastRow();
+  if (last < 2) return;
+  var n = last - 1;
+
+  tx.getRange(2, C_DATE, n, 1).clearContent();                       // A
+  tx.getRange(2, C_TYPE, n, C_PERSON - C_TYPE + 1).clearContent();   // D..N
+
+  // Only wipe Month/Year on rows that are plain values, never on formula rows.
+  var formulas = tx.getRange(2, C_MONTH, n, 1).getFormulas();
+  var runStart = -1;
+  for (var i = 0; i <= formulas.length; i++) {
+    var plain = i < formulas.length && String(formulas[i][0] || '') === '';
+    if (plain && runStart === -1) runStart = i;
+    if (!plain && runStart !== -1) {
+      tx.getRange(runStart + 2, C_MONTH, i - runStart, 2).clearContent();
+      runStart = -1;
+    }
+  }
+}
+
 /* -------------------------------------------------------------------- budget */
 
 function budgetRowIndex(bg) {
@@ -278,16 +377,23 @@ function readBudget(bg) {
 
 function writeBudget(bg, budget) {
   var idx = budgetRowIndex(bg);
-  var written = 0, unknown = [];
+  var written = 0, added = [];
+  // A category added in the app won't have a row on the Budget tab yet.
+  // Append it rather than silently dropping the budget the user just typed.
   for (var name in budget) {
-    if (!(name in idx)) { unknown.push(name); continue; }
+    if (!(name in idx)) {
+      var newRow = bg.getLastRow() + 1;
+      bg.getRange(newRow, 1).setValue(name);
+      idx[name] = newRow;
+      added.push(name);
+    }
     var line = [];
     for (var m = 1; m <= 12; m++) line.push(Number((budget[name] || {})[m]) || 0);
     // Columns C–N only: B (Type) and O (annual formula) are the sheet's own.
     bg.getRange(idx[name], BUDGET_FIRST_MONTH_COL, 1, 12).setValues([line]);
     written++;
   }
-  return { written: written, unknown: unknown };
+  return { written: written, added: added };
 }
 
 /* ----------------------------------------------------------------- endpoints */
@@ -331,13 +437,15 @@ function doPost(e) {
     if (body.action === 'bulk') {
       var recs = body.records || [];
       if (!recs.length) return fail('No records supplied.');
-      if (recs.length > 500) return fail('Capped at 500 rows per request.');
+      if (recs.length > 2000) return fail('Capped at 2000 rows per request.');
+
       var validated = [];
       for (var i = 0; i < recs.length; i++) validated.push(validate(recs[i]));  // all-or-nothing
+
       var id0 = nextId(tx);
-      for (var k = 0; k < validated.length; k++) {
-        writeRow(tx, firstFreeRow(tx), validated[k], id0 + k);
-      }
+      // One scan for free slots instead of re-reading the column per row.
+      var slots = freeRows(tx, validated.length);
+      writeRowsBatched(tx, slots, validated, id0);
       return ok({ inserted: validated.length });
     }
 
@@ -357,8 +465,7 @@ function doPost(e) {
     }
 
     if (body.action === 'clear') {
-      var last = tx.getLastRow();
-      for (var r = 2; r <= last; r++) clearRow(tx, r);
+      clearAllRows(tx);
       return ok({ cleared: true });
     }
 
