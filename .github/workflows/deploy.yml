@@ -5,6 +5,8 @@ name: Deploy to GitHub Pages
 #
 # READ THIS: the generated config.js is downloaded by every visitor. GitHub Secrets
 # keep values out of your *repository*; they cannot keep them out of a *static page*.
+# If the sheet holds anything you would not hand to a stranger, leave the secrets
+# unset and enter the endpoint at runtime under Data → Google Sheet instead.
 
 on:
   push:
@@ -23,8 +25,13 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # configure-pages, upload-pages-artifact and deploy-pages haven't released
+    # Node 24 versions yet (issues open as of Aug 2026). This opts in explicitly
+    # and silences the deprecation warnings until they do.
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Inject configuration from secrets
         env:
@@ -32,15 +39,17 @@ jobs:
           SHEETS_TOKEN: ${{ secrets.SHEETS_TOKEN }}
         run: |
           if [ -z "$SHEETS_ENDPOINT" ]; then
-            echo "::warning::SHEETS_ENDPOINT is not set. Users must enter it under Data > Google Sheet."
+            echo "::warning::SHEETS_ENDPOINT is not set. The site will ship without an endpoint and users must enter it under Data → Google Sheet."
           else
             case "$SHEETS_ENDPOINT" in
               https://script.google.com/macros/s/*/exec) : ;;
-              *) echo "::error::SHEETS_ENDPOINT must be an Apps Script URL ending in /exec."; exit 1 ;;
+              *) echo "::error::SHEETS_ENDPOINT must be an Apps Script web app URL ending in /exec."; exit 1 ;;
             esac
-            echo "::warning::Endpoint baked into assets/config.js - publicly readable on the deployed site."
+            echo "::warning::Endpoint baked into assets/config.js — it is publicly readable on the deployed site."
           fi
 
+          # Generated with node (always present on ubuntu-latest) so JSON.stringify
+          # handles escaping — a quote or backslash in a secret cannot break the module.
           node -e '
             const fs = require("fs");
             const q = v => JSON.stringify(v ?? "");
@@ -52,7 +61,10 @@ jobs:
               "export const BUILD_STAMP = " + q(stamp) + ";\n");
           '
 
+          # Validate as a real ES module. `node --check` on a .js file parses it as
+          # CommonJS and will happily accept broken `export` syntax, so copy to .mjs.
           cp assets/config.js /tmp/config.mjs && node --check /tmp/config.mjs
+          echo "--- generated (endpoint id masked) ---"
           sed -E 's#(macros/s/)[^/]+#\1***#' assets/config.js
 
       - name: Sanity-check the bundle
@@ -73,6 +85,8 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
