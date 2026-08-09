@@ -27,7 +27,7 @@ export const CAT_TYPE = Object.fromEntries(CATEGORIES);
 
 export const TYPES = ['Expense', 'Income', 'Transfer'];
 export const PAYMENTS = ['Credit Card', 'Debit Card', 'Cash', 'e-Transfer', 'Pre-authorized Debit', 'Other'];
-export const ACCOUNTS = ['Chequing', 'Savings', 'Visa', 'Mastercard', 'Cash Wallet'];
+export const ACCOUNTS = ['Chequing', 'Savings', 'Visa', 'Mastercard', 'Amex', 'Cash Wallet'];
 export const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /* Who the money belongs to. 'Joint' is a real third bucket, not a sum of the other
