@@ -6,3 +6,4 @@ backend/exports/
 __pycache__/
 *.pyc
 .DS_Store
+google-apps-script/Code.gs
