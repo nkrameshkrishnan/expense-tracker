@@ -8,3 +8,8 @@
 export const SHEETS_ENDPOINT = "";
 export const SHEETS_TOKEN = "";
 export const BUILD_STAMP = "dev";
+
+/* Google OAuth client ID. Public by design - it identifies the app, it does not
+   authorise anything. Access is decided in Apps Script by verifying the signed
+   ID token and checking the email against ALLOWED_EMAILS there. */
+export const GOOGLE_CLIENT_ID = "";

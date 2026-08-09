@@ -2,6 +2,7 @@ import {
   openStore, CAT_NAMES, EXPENSE_CATS, CAT_TYPE, TYPES, PAYMENTS, ACCOUNTS,
   MONTHS, YEAR, ENDPOINT_KEY, TOKEN_KEY, endpointSource, getEndpoint, emptyBudget,
   PEOPLE, UNASSIGNED, PERSON_KEY, CUSTOM_KEY,
+  getClientId, getIdToken, setIdToken,
 } from './store.js';
 import { aggregate, money, pct, monthOf, exportWorkbook, importFile,
          byPersonFilter, personBreakdown, personSeries } from './xlsxio.js';
@@ -16,6 +17,56 @@ const state = {
   person: localStorage.getItem(PERSON_KEY) || '',        // '' = whole family
   filter: { q: '', cat: '', month: '', type: '' },
 };
+
+/* ------------------------------------------------------------ Google sign-in
+   The ID token lives in sessionStorage, so closing the tab signs you out.
+   It is only ever a claim - Apps Script decides whether it is honoured. */
+function showGate(message) {
+  const gate = $('#gate');
+  const main = $('#view');
+  gate.hidden = false;
+  main.style.display = 'none';
+  gate.innerHTML = `
+    <div class="gate-card">
+      <div class="gate-mark">&#8214;</div>
+      <h1 class="gate-title">Ledger</h1>
+      <p class="gate-sub">${esc(message || 'Sign in with the Google account linked to this tracker.')}</p>
+      <div id="gsi-button"></div>
+      <p class="gate-note">Access is verified by Apps Script against an allow-list.
+        Signing in here does not grant access on its own.</p>
+    </div>`;
+
+  const cid = getClientId();
+  if (!cid) {
+    $('#gsi-button').innerHTML =
+      `<p class="gate-error">No Google client ID configured. Set GOOGLE_CLIENT_ID in
+       assets/config.js (and OAUTH_CLIENT_ID in Code.gs), then reload.</p>`;
+    return;
+  }
+  const start = () => {
+    google.accounts.id.initialize({
+      client_id: cid,
+      callback: async res => {
+        setIdToken(res.credential);
+        gate.hidden = true;
+        main.style.display = '';
+        await boot();
+      },
+      auto_select: true,
+    });
+    google.accounts.id.renderButton($('#gsi-button'),
+      { theme: 'filled_black', size: 'large', text: 'signin_with', shape: 'rectangular' });
+    google.accounts.id.prompt();
+  };
+  if (window.google?.accounts?.id) start();
+  else window.addEventListener('load', () => window.google?.accounts?.id && start(), { once: true });
+}
+
+function signOut() {
+  setIdToken('');
+  try { google.accounts.id.disableAutoSelect(); } catch {}
+  location.reload();
+}
 
 /* ------------------------------------------------------- user-defined lists
    Dropdown options come from three places merged together:
@@ -168,7 +219,10 @@ async function refresh() {
   renderPeopleSwitch();
   const c = $('#conn');
   const label = { sheets: '\u25cf google sheet', local: '\u25cf browser only', memory: '\u25cf session only' };
-  c.textContent = label[state.store.kind] || '\u25cf ?';
+  const who = state.store.user?.email ? ` \u00b7 ${state.store.user.email.split('@')[0]}` : '';
+  c.innerHTML = (label[state.store.kind] || '\u25cf ?') + esc(who)
+    + (getIdToken() ? ' <button class="signout-btn" id="signout">sign out</button>' : '');
+  $('#signout')?.addEventListener('click', signOut);
   c.title = state.store.kind === 'sheets'
     ? `Reading and writing "${state.store.sheetName || 'your sheet'}" live`
     : 'Not connected to a Google Sheet — changes stay in this browser';
@@ -1205,11 +1259,30 @@ async function seedIfEmpty() {
   }
 }
 
-(async function main() {
-  const ready = () => (typeof Chart !== 'undefined' && typeof XLSX !== 'undefined');
-  if (!ready()) await new Promise(r => window.addEventListener('load', r, { once: true }));
+async function boot() {
   state.store = await openStore(notice);
   await seedIfEmpty();
   await refresh();
   go((location.hash || '#dashboard').slice(1) in VIEWS ? location.hash.slice(1) : 'dashboard');
+}
+
+(async function main() {
+  const ready = () => (typeof Chart !== 'undefined' && typeof XLSX !== 'undefined');
+  if (!ready()) await new Promise(r => window.addEventListener('load', r, { once: true }));
+
+  // Only gate when a sheet is actually configured. Without an endpoint the app
+  // runs on browser storage alone and there is nothing of yours to protect.
+  const needsAuth = !!getEndpoint() && !!getClientId();
+  if (needsAuth && !getIdToken()) { showGate(); return; }
+
+  try {
+    await boot();
+  } catch (e) {
+    if (e?.auth || /sign in|not permitted/i.test(e?.message || '')) {
+      setIdToken('');
+      showGate(e.message);
+    } else {
+      throw e;
+    }
+  }
 })();

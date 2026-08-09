@@ -502,3 +502,21 @@ details[open] .add-details-toggle::before{transform:rotate(90deg)}
 .newopt-ok{background:var(--ink);color:var(--paper);border-color:var(--ink)}
 .newopt-ok:hover{background:#000}
 .newopt-cancel:hover{background:var(--paper-2)}
+
+/* ---------------------------------------------------------------- sign-in gate */
+#gate{display:flex;align-items:center;justify-content:center;min-height:70vh;padding:20px}
+.gate-card{
+  max-width:400px;width:100%;text-align:center;
+  border:1px solid var(--rule-2);background:#fff;padding:36px 30px;
+}
+.gate-mark{color:var(--amber);font-size:28px;line-height:1;margin-bottom:10px}
+.gate-title{font-size:20px;font-weight:700;letter-spacing:.22em;margin:0 0 8px}
+.gate-sub{font-size:13px;color:var(--ink-2);margin:0 0 22px;line-height:1.5}
+#gsi-button{display:flex;justify-content:center;min-height:44px}
+.gate-note{font-size:11px;color:var(--ink-3);margin:20px 0 0;line-height:1.5}
+.gate-error{font-size:12px;color:var(--red);margin:0;line-height:1.5;text-align:left}
+.signout-btn{
+  background:none;border:0;color:#8d97a5;cursor:pointer;font-family:var(--mono);
+  font-size:10px;text-decoration:underline;text-underline-offset:2px;padding:0 0 0 6px;
+}
+.signout-btn:hover{color:var(--paper)}

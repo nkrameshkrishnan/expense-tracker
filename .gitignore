@@ -1,8 +1,10 @@
-backend/.venv/
-backend/expenses.db
-backend/expenses.db-wal
-backend/expenses.db-shm
-backend/exports/
+.DS_Store
 __pycache__/
 *.pyc
-.DS_Store
+
+# Never commit real financial data to a public repo
+data/seed.json
+data/seed-budget.json
+*_Consolidated_*.xlsx
+Expense*.xlsx
+*.csv

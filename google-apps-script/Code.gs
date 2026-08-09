@@ -25,9 +25,75 @@
  * then Deploy → New deployment → Web app → Execute as Me, Access Anyone.
  */
 
-// Long random string. Must match the token in the web app. The script refuses to
-// run while this is the placeholder.
-var SHARED_TOKEN = 'CHANGE_ME';
+/* ============================ AUTHENTICATION ============================
+ * Access is granted by verifying a Google ID token SERVER-SIDE, here in Apps
+ * Script. That matters: a check written in the browser can be deleted by
+ * whoever is using the browser, so client-side "login" on a static site is
+ * decoration. This runs on Google's servers and cannot be bypassed.
+ *
+ * The browser signs in with Google Identity Services, receives a signed JWT,
+ * and sends it with every request. We ask Google whether that JWT is real,
+ * whether it was minted for THIS app, and whether the email is on the list.
+ * Forging one would require Google's signing key.
+ *
+ * SETUP (once):
+ *  1. console.cloud.google.com -> new project -> APIs & Services -> Credentials
+ *  2. Create OAuth client ID -> Web application
+ *     Authorised JavaScript origins:
+ *       https://nkrameshkrishnan.github.io
+ *       http://localhost:8080          (only if you run it locally)
+ *  3. Paste the client ID below AND into assets/config.js
+ *  4. List the emails allowed in. Everyone else is refused.
+ *
+ * The client ID is public by design - it is not a secret and appears in the
+ * page source. Security comes from the origin restriction plus this check.
+ */
+var OAUTH_CLIENT_ID = 'CHANGE_ME.apps.googleusercontent.com';
+var ALLOWED_EMAILS = [
+  'ramesh@example.com',   // <- your Google account
+  'surya@example.com',    // <- Surya's Google account
+];
+
+/**
+ * Verify a Google ID token and confirm the signer is allowed in.
+ * Throws on any doubt. Never returns a "maybe".
+ */
+function requireUser(idToken) {
+  if (OAUTH_CLIENT_ID.indexOf('CHANGE_ME') === 0) {
+    throw new Error('OAUTH_CLIENT_ID is not configured in Code.gs.');
+  }
+  if (!idToken) throw new Error('Sign in with Google to continue.');
+
+  // Google's tokeninfo endpoint validates the signature for us, so no crypto
+  // library is needed. Cache briefly so a burst of writes is not 200 round trips.
+  var digest = Utilities.base64EncodeWebSafe(
+    Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, idToken));
+  var cache = CacheService.getScriptCache();
+  var cached = cache.get('idt:' + digest);
+  if (cached) return JSON.parse(cached);
+
+  var res = UrlFetchApp.fetch(
+    'https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken),
+    { muteHttpExceptions: true });
+  if (res.getResponseCode() !== 200) throw new Error('Google rejected that sign-in. Sign in again.');
+
+  var info = JSON.parse(res.getContentText());
+  if (info.aud !== OAUTH_CLIENT_ID) throw new Error('That sign-in was issued for a different app.');
+  if (String(info.email_verified) !== 'true') throw new Error('Google account email is not verified.');
+  if (Number(info.exp) * 1000 < Date.now()) throw new Error('Sign-in expired. Sign in again.');
+
+  var email = String(info.email || '').toLowerCase();
+  var allowed = false;
+  for (var i = 0; i < ALLOWED_EMAILS.length; i++) {
+    if (String(ALLOWED_EMAILS[i]).toLowerCase() === email) { allowed = true; break; }
+  }
+  if (!allowed) throw new Error('Account ' + email + ' is not permitted to use this tracker.');
+
+  // Cache until the token expires, capped at 5 minutes.
+  var ttl = Math.max(0, Math.min(300, Number(info.exp) - Math.floor(Date.now() / 1000)));
+  if (ttl > 0) cache.put('idt:' + digest, JSON.stringify(info), ttl);
+  return info;
+}
 
 var TX_SHEET = 'Transactions';
 var BUDGET_SHEET = 'Budget';
@@ -54,13 +120,6 @@ function json(o) {
 }
 function ok(d) { return json(Object.assign({ ok: true }, d)); }
 function fail(m, c) { return json({ ok: false, error: String(m), code: c || 'ERROR' }); }
-
-function checkToken(t) {
-  if (SHARED_TOKEN === 'CHANGE_ME') {
-    throw new Error('SHARED_TOKEN is still the placeholder. Set it in Code.gs first.');
-  }
-  if (String(t || '') !== SHARED_TOKEN) throw new Error('Bad or missing token.');
-}
 
 /** Refuses to touch a workbook whose shape it does not recognise. */
 function book() {
@@ -401,13 +460,14 @@ function writeBudget(bg, budget) {
 function doGet(e) {
   try {
     var p = (e && e.parameter) || {};
-    checkToken(p.token);
+    var user = requireUser(p.idToken);
     var b = book();
     return ok({
       transactions: readTransactions(b.tx),
       budget: readBudget(b.bg),
       sheetName: b.ss.getName(),
       layout: 'tracker',
+      user: { email: user.email, name: user.name || '', picture: user.picture || '' },
     });
   } catch (err) {
     return fail(err.message);
@@ -421,7 +481,7 @@ function doPost(e) {
 
     var body = {};
     if (e && e.postData && e.postData.contents) body = JSON.parse(e.postData.contents);
-    checkToken(body.token);
+    var user = requireUser(body.idToken);
 
     var b = book();
     var tx = b.tx;

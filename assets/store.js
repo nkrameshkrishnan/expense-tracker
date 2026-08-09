@@ -8,7 +8,7 @@
    Config precedence: what you type under Data → Google Sheet (localStorage) wins over
    the build-time values injected from GitHub secrets. */
 
-import { SHEETS_ENDPOINT, SHEETS_TOKEN } from './config.js';
+import { SHEETS_ENDPOINT, SHEETS_TOKEN, GOOGLE_CLIENT_ID } from './config.js';
 
 export const YEAR = 2026;
 
@@ -45,6 +45,11 @@ export const PERSON_KEY = 'ledger.person';
 export const CUSTOM_KEY = 'ledger.customLists';
 export const ENDPOINT_KEY = 'ledger.sheetsEndpoint';
 export const TOKEN_KEY = 'ledger.sheetsToken';
+export const ID_TOKEN_KEY = 'ledger.googleIdToken';
+
+export const getClientId = () => (localStorage.getItem('ledger.clientId') || GOOGLE_CLIENT_ID || '').trim();
+export const getIdToken = () => sessionStorage.getItem(ID_TOKEN_KEY) || '';
+export const setIdToken = t => t ? sessionStorage.setItem(ID_TOKEN_KEY, t) : sessionStorage.removeItem(ID_TOKEN_KEY);
 
 export const getEndpoint = () => (localStorage.getItem(ENDPOINT_KEY) || SHEETS_ENDPOINT || '').trim();
 export const getToken = () => (localStorage.getItem(TOKEN_KEY) || SHEETS_TOKEN || '').trim();
@@ -97,7 +102,7 @@ class SheetsStore {
   }
 
   async _get() {
-    const url = `${this.endpoint}?token=${encodeURIComponent(this.token)}&t=${Date.now()}`;
+    const url = `${this.endpoint}?idToken=${encodeURIComponent(getIdToken())}&t=${Date.now()}`;
     const res = await fetch(url, { method: 'GET', redirect: 'follow' });
     if (!res.ok) throw new Error(`Sheet responded ${res.status}. Check the deployment is set to "Anyone".`);
     const text = await res.text();
@@ -108,7 +113,11 @@ class SheetsStore {
       // Almost always Google's sign-in page: the web app is not public.
       throw new Error('Got HTML instead of JSON — redeploy the Apps Script with Access set to "Anyone".');
     }
-    if (!data.ok) throw new Error(data.error || 'Sheet refused the request.');
+    if (!data.ok) {
+      const err = new Error(data.error || 'Sheet refused the request.');
+      if (/sign in|sign-in|not permitted|rejected that sign/i.test(err.message)) err.auth = true;
+      throw err;
+    }
     return data;
   }
 
@@ -117,12 +126,16 @@ class SheetsStore {
     const res = await fetch(this.endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ ...payload, token: this.token }),
+      body: JSON.stringify({ ...payload, idToken: getIdToken() }),
       redirect: 'follow',
     });
     if (!res.ok) throw new Error(`Sheet responded ${res.status}.`);
     const data = JSON.parse(await res.text());
-    if (!data.ok) throw new Error(data.error || 'Write rejected by the sheet.');
+    if (!data.ok) {
+      const err = new Error(data.error || 'Write rejected by the sheet.');
+      if (/sign in|sign-in|not permitted|rejected that sign/i.test(err.message)) err.auth = true;
+      throw err;
+    }
     this.cache = null;                       // the sheet is the truth; reread next time
     return data;
   }
@@ -130,6 +143,7 @@ class SheetsStore {
   _fill(d) {
     this.cache = { transactions: d.transactions.map(normalise), budget: d.budget };
     this.sheetName = d.sheetName || '';
+    this.user = d.user || null;      // verified by Apps Script, not by the browser
     return this.cache;
   }
   async ping() { return this._fill(await this._get()); }
