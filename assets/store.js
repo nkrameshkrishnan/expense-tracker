@@ -48,8 +48,17 @@ export const TOKEN_KEY = 'ledger.sheetsToken';
 export const ID_TOKEN_KEY = 'ledger.googleIdToken';
 
 export const getClientId = () => (localStorage.getItem('ledger.clientId') || GOOGLE_CLIENT_ID || '').trim();
-export const getIdToken = () => sessionStorage.getItem(ID_TOKEN_KEY) || '';
-export const setIdToken = t => t ? sessionStorage.setItem(ID_TOKEN_KEY, t) : sessionStorage.removeItem(ID_TOKEN_KEY);
+// sessionStorage can throw in locked-down browser contexts (strict privacy
+// modes, some sandboxed embeds). Falls back to an in-memory value for the
+// lifetime of the tab rather than crashing the whole app on that one call.
+let _idTokenMem = '';
+export const getIdToken = () => { try { return sessionStorage.getItem(ID_TOKEN_KEY) || ''; } catch { return _idTokenMem; } };
+export const setIdToken = t => {
+  try {
+    if (t) sessionStorage.setItem(ID_TOKEN_KEY, t); else sessionStorage.removeItem(ID_TOKEN_KEY);
+  } catch { /* fall through to memory */ }
+  _idTokenMem = t || '';
+};
 
 export const getEndpoint = () => (localStorage.getItem(ENDPOINT_KEY) || SHEETS_ENDPOINT || '').trim();
 export const getToken = () => (localStorage.getItem(TOKEN_KEY) || SHEETS_TOKEN || '').trim();
