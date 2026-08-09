@@ -433,6 +433,10 @@ function renderAdd() {
 }
 
 /* ============================================================== TRANSACTIONS */
+// Persists across re-renders (filtering, editing, deleting) so collapsing a
+// month doesn't spring back open every time the list redraws.
+const txCollapsed = new Set();
+
 function renderTransactions() {
   const f = state.filter;
   let rows = scoped();
@@ -464,6 +468,17 @@ function renderTransactions() {
     g.income  = g.rows.filter(r => r.type === 'Income').reduce((a, r) => a + r.amount, 0);
     g.expense = g.rows.filter(r => r.type === 'Expense').reduce((a, r) => a + r.amount, 0);
   }
+
+  // First time we see these groups (e.g. first load, or a filter just narrowed
+  // the list to new months): collapse everything except the newest month, so
+  // opening the page doesn't dump the whole year down the screen at once.
+  // A month the user has explicitly toggled keeps whatever state they set.
+  groups.forEach((g, i) => {
+    if (!txCollapsed.has('__seen:' + g.key)) {
+      txCollapsed.add('__seen:' + g.key);
+      if (i > 0) txCollapsed.add(g.key);
+    }
+  });
 
   const typeIcon = t => t === 'Income' ? '↑' : t === 'Transfer' ? '⇄' : '↓';
   const typeClass = t => t === 'Income' ? 'tx-income' : t === 'Transfer' ? 'tx-transfer' : '';
@@ -545,29 +560,76 @@ function renderTransactions() {
 
   ${activePills ? `<div class="tx-pills">${activePills}</div>` : ''}
 
+  ${groups.length > 1 ? `<div class="tx-collapse-all">
+    <button class="tx-collapse-btn" id="tx-expand-all">Expand all</button>
+    <span class="tx-sep">·</span>
+    <button class="tx-collapse-btn" id="tx-collapse-all">Collapse all</button>
+  </div>` : ''}
+
   <div class="tx-list">
     ${rows.length === 0
       ? `<div class="empty">${hasFilters ? 'No entries match those filters.' : 'No transactions yet — add one with the button above.'}</div>`
-      : groups.map(g => `
-          <div class="tx-group">
-            <div class="tx-group-header">
+      : groups.map(g => {
+          const closed = txCollapsed.has(g.key);
+          return `
+          <div class="tx-group${closed ? ' closed' : ''}" data-month="${g.key}">
+            <button class="tx-group-header" data-toggle="${g.key}" aria-expanded="${!closed}">
+              <span class="tx-group-chevron">▾</span>
               <span class="tx-group-label">${esc(g.label)}</span>
+              <span class="tx-group-count muted">${g.rows.length}</span>
               <span class="tx-group-stats num">
                 ${g.income > 0 ? `<span class="tx-income">+${money(g.income)}</span>` : ''}
                 ${g.income > 0 && g.expense > 0 ? '<span class="tx-sep">·</span>' : ''}
                 ${g.expense > 0 ? `<span>${money(g.expense)}</span>` : ''}
               </span>
-            </div>
-            ${g.rows.map(txRow).join('')}
-          </div>`
-        ).join('')
+            </button>
+            <div class="tx-group-body">${g.rows.map(txRow).join('')}</div>
+          </div>`;
+        }).join('')
     }
   </div>`;
 
+  // — month group collapse/expand
+  view.querySelectorAll('[data-toggle]').forEach(btn => btn.onclick = () => {
+    const key = btn.dataset.toggle;
+    const group = btn.closest('.tx-group');
+    const nowClosed = !group.classList.contains('closed');
+    group.classList.toggle('closed', nowClosed);
+    btn.setAttribute('aria-expanded', String(!nowClosed));
+    if (nowClosed) txCollapsed.add(key); else txCollapsed.delete(key);
+  });
+  $('#tx-expand-all')?.addEventListener('click', () => {
+    groups.forEach(g => txCollapsed.delete(g.key));
+    view.querySelectorAll('.tx-group').forEach(el => el.classList.remove('closed'));
+    view.querySelectorAll('[data-toggle]').forEach(b => b.setAttribute('aria-expanded', 'true'));
+  });
+  $('#tx-collapse-all')?.addEventListener('click', () => {
+    groups.forEach(g => txCollapsed.add(g.key));
+    view.querySelectorAll('.tx-group').forEach(el => el.classList.add('closed'));
+    view.querySelectorAll('[data-toggle]').forEach(b => b.setAttribute('aria-expanded', 'false'));
+  });
+
   // — filter events
   const refilter = () => renderTransactions();
-  $('#q').oninput = e => { f.q = e.target.value; refilter(); $('#q')?.focus(); };
-  $('#qclear')?.addEventListener('click', () => { f.q = ''; refilter(); });
+
+  /* Typing must NOT re-render the search box. renderTransactions() replaces
+     view.innerHTML, which destroys the <input> and rebuilds it with the caret
+     at position 0 - so the next character lands at the front and the text comes
+     out backwards ("coffee" -> "eeffoc"). Instead, remember the caret, re-render,
+     then restore focus and caret onto the fresh input. Debounced so a 687-row
+     list isn't rebuilt on every keystroke. */
+  let qTimer = null;
+  $('#q').oninput = e => {
+    f.q = e.target.value;
+    const caret = e.target.selectionStart;
+    clearTimeout(qTimer);
+    qTimer = setTimeout(() => {
+      refilter();
+      const el = $('#q');
+      if (el) { el.focus(); el.setSelectionRange(caret, caret); }
+    }, 150);
+  };
+  $('#qclear')?.addEventListener('click', () => { f.q = ''; refilter(); $('#q')?.focus(); });
   $('#fm').onchange = e => { f.month = e.target.value; refilter(); };
   $('#fc').onchange = e => { f.cat = e.target.value; refilter(); };
   $('#ft').onchange = e => { f.type = e.target.value; refilter(); };
