@@ -9,7 +9,7 @@ const $ = s => document.querySelector(s);
 const view = $('#view');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-const state = { store: null, rows: [], budget: emptyBudget(), month: 0, tab: 'dashboard', editing: null, filter: { q: '', cat: '', month: '' } };
+const state = { store: null, rows: [], budget: emptyBudget(), month: 0, tab: 'dashboard', editing: null, filter: { q: '', cat: '', month: '', type: '' } };
 
 let busy = false;
 /** Wraps a write so the UI cannot fire two overlapping sheet writes. */
@@ -196,53 +196,189 @@ function renderAdd() {
 function renderTransactions() {
   const f = state.filter;
   let rows = state.rows;
-  if (f.q) { const q = f.q.toLowerCase(); rows = rows.filter(r => (r.description + ' ' + r.subcategory + ' ' + r.notes + ' ' + r.category).toLowerCase().includes(q)); }
+  if (f.q) {
+    const q = f.q.toLowerCase();
+    rows = rows.filter(r => (r.description + ' ' + r.subcategory + ' ' + r.notes + ' ' + r.category).toLowerCase().includes(q));
+  }
   if (f.cat) rows = rows.filter(r => r.category === f.cat);
+  if (f.type) rows = rows.filter(r => r.type === f.type);
   if (f.month) rows = rows.filter(r => monthOf(r) === Number(f.month));
-  const total = rows.reduce((a, r) => a + (r.type === 'Expense' ? r.amount : 0), 0);
+
+  const income  = rows.filter(r => r.type === 'Income').reduce((a, r) => a + r.amount, 0);
+  const expense = rows.filter(r => r.type === 'Expense').reduce((a, r) => a + r.amount, 0);
+  const net = income - expense;
+  const hasFilters = f.q || f.cat || f.month || f.type;
+
+  // Group rows by YYYY-MM for section headers
+  const groups = [];
+  const seen = new Map();
+  for (const r of rows) {
+    const key = String(r.date).slice(0, 7); // YYYY-MM
+    if (!seen.has(key)) { seen.set(key, groups.length); groups.push({ key, label: '', rows: [] }); }
+    groups[seen.get(key)].rows.push(r);
+  }
+  // Label each group e.g. "Jul 2026"
+  for (const g of groups) {
+    const [y, m] = g.key.split('-');
+    g.label = (MONTHS[Number(m) - 1] || m) + ' ' + y;
+    g.income  = g.rows.filter(r => r.type === 'Income').reduce((a, r) => a + r.amount, 0);
+    g.expense = g.rows.filter(r => r.type === 'Expense').reduce((a, r) => a + r.amount, 0);
+  }
+
+  const typeIcon = t => t === 'Income' ? '↑' : t === 'Transfer' ? '⇄' : '↓';
+  const typeClass = t => t === 'Income' ? 'tx-income' : t === 'Transfer' ? 'tx-transfer' : '';
+
+  const txRow = r => `
+    <div class="tx-row ${typeClass(r.type)}" data-id="${r.id}">
+      <div class="tx-date num">${String(r.date).slice(8, 10)}</div>
+      <div class="tx-type-icon ${typeClass(r.type)}">${typeIcon(r.type)}</div>
+      <div class="tx-body">
+        <div class="tx-desc">${esc(r.description) || `<span class="muted">${esc(r.category)}</span>`}
+          ${r.recurring === 'Yes' ? '<span class="tx-badge">Recurring</span>' : ''}
+        </div>
+        <div class="tx-meta">
+          <span class="tx-cat">${esc(r.category)}${r.subcategory ? ' · ' + esc(r.subcategory) : ''}</span>
+          ${r.payment ? `<span class="tx-sep">·</span><span class="tx-pay">${esc(r.payment)}</span>` : ''}
+        </div>
+      </div>
+      <div class="tx-amount num ${typeClass(r.type)}">${r.type === 'Income' ? '+' : ''}${money(r.amount)}</div>
+      <div class="tx-actions">
+        <button class="txbtn edit" data-edit="${r.id}" title="Edit">✎</button>
+        <button class="txbtn del" data-del="${r.id}" title="Delete">✕</button>
+      </div>
+    </div>`;
+
+  const activePills = [
+    f.q    ? `<span class="fpill" data-clear="q">${esc(f.q)} ✕</span>` : '',
+    f.cat  ? `<span class="fpill" data-clear="cat">${esc(f.cat)} ✕</span>` : '',
+    f.type ? `<span class="fpill" data-clear="type">${esc(f.type)} ✕</span>` : '',
+    f.month ? `<span class="fpill" data-clear="month">${MONTHS[Number(f.month)-1]} ✕</span>` : '',
+  ].filter(Boolean).join('');
 
   view.innerHTML = `
-  <div class="head"><div><h1>Transactions</h1><p class="sub">${rows.length} shown of ${state.rows.length} &middot; ${money(total)} of expense in view</p></div></div>
-  <div class="filters">
-    <label class="f"><span>Search</span><input id="q" value="${esc(f.q)}" placeholder="description, notes\u2026"></label>
-    <label class="f"><span>Category</span><select id="fc"><option value="">All</option>${CAT_NAMES.map(c => `<option${c === f.cat ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></label>
-    <label class="f"><span>Month</span><select id="fm"><option value="">All</option>${MONTHS.map((m, i) => `<option value="${i + 1}"${String(i + 1) === f.month ? ' selected' : ''}>${m}</option>`).join('')}</select></label>
-    <button class="btn ghost" id="clearf">Reset</button>
+  <div class="head">
+    <div><h1>Transactions</h1>
+      <p class="sub">${rows.length} of ${state.rows.length} entries${hasFilters ? ' · filtered' : ''}</p>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn" id="tx-add">+ Add entry</button>
   </div>
-  ${rows.length ? `<div class="tablewrap"><table><thead><tr>
-    <th class="gutter">#</th><th>Date</th><th>Type</th><th>Category</th><th>Description</th>
-    <th class="n">Amount</th><th>Payment</th><th></th></tr></thead><tbody>
-    ${rows.map((r, i) => `<tr>
-      <td class="gutter">${i + 1}</td>
-      <td class="num">${esc(r.date)}</td>
-      <td><span class="tag">${esc(r.type)}</span></td>
-      <td>${esc(r.category)}${r.subcategory ? `<br><span class="muted" style="font-size:11px">${esc(r.subcategory)}</span>` : ''}</td>
-      <td>${esc(r.description) || '<span class="muted">\u2014</span>'}</td>
-      <td class="n num">${money(r.amount)}</td>
-      <td>${esc(r.payment) || '<span class="muted">\u2014</span>'}</td>
-      <td style="white-space:nowrap"><button class="rowbtn edit" data-edit="${r.id}" title="Edit">&#9998;</button><button class="rowbtn" data-del="${r.id}" title="Delete">&#10005;</button></td>
-    </tr>`).join('')}
-  </tbody></table></div>` : '<div class="empty">Nothing matches those filters.</div>'}`;
 
-  $('#q').oninput = e => { f.q = e.target.value; renderTransactions(); $('#q').focus(); };
-  $('#fc').onchange = e => { f.cat = e.target.value; renderTransactions(); };
-  $('#fm').onchange = e => { f.month = e.target.value; renderTransactions(); };
-  $('#clearf').onclick = () => { state.filter = { q: '', cat: '', month: '' }; renderTransactions(); };
+  <div class="tx-summary">
+    <div class="tx-sum-item ${expense > 0 ? '' : 'muted-block'}">
+      <span class="tx-sum-label">Expense</span>
+      <span class="tx-sum-val num">${money(expense)}</span>
+    </div>
+    <div class="tx-sum-item ${income > 0 ? '' : 'muted-block'}">
+      <span class="tx-sum-label">Income</span>
+      <span class="tx-sum-val num tx-income">${money(income)}</span>
+    </div>
+    <div class="tx-sum-item ${net !== 0 ? '' : 'muted-block'}">
+      <span class="tx-sum-label">Net</span>
+      <span class="tx-sum-val num ${net < 0 ? 'tx-over' : 'tx-income'}">${net >= 0 ? '+' : ''}${money(net)}</span>
+    </div>
+  </div>
 
+  <div class="tx-filterbar">
+    <div class="tx-search-wrap">
+      <span class="tx-search-icon">⌕</span>
+      <input id="q" class="tx-search" value="${esc(f.q)}" placeholder="Search description, category, notes…" autocomplete="off">
+      ${f.q ? `<button class="tx-search-clear" id="qclear">✕</button>` : ''}
+    </div>
+    <div class="tx-filter-selects">
+      <select id="fm">
+        <option value="">All months</option>
+        ${MONTHS.map((m, i) => `<option value="${i+1}"${String(i+1) === f.month ? ' selected' : ''}>${m}</option>`).join('')}
+      </select>
+      <select id="fc">
+        <option value="">All categories</option>
+        ${CAT_NAMES.map(c => `<option${c === f.cat ? ' selected' : ''}>${esc(c)}</option>`).join('')}
+      </select>
+      <select id="ft">
+        <option value="">All types</option>
+        ${TYPES.map(t => `<option${t === f.type ? ' selected' : ''}>${esc(t)}</option>`).join('')}
+      </select>
+      ${hasFilters ? `<button class="btn ghost tx-reset" id="clearf">Reset</button>` : ''}
+    </div>
+  </div>
+
+  ${activePills ? `<div class="tx-pills">${activePills}</div>` : ''}
+
+  <div class="tx-list">
+    ${rows.length === 0
+      ? `<div class="empty">${hasFilters ? 'No entries match those filters.' : 'No transactions yet — add one with the button above.'}</div>`
+      : groups.map(g => `
+          <div class="tx-group">
+            <div class="tx-group-header">
+              <span class="tx-group-label">${esc(g.label)}</span>
+              <span class="tx-group-stats num">
+                ${g.income > 0 ? `<span class="tx-income">+${money(g.income)}</span>` : ''}
+                ${g.income > 0 && g.expense > 0 ? '<span class="tx-sep">·</span>' : ''}
+                ${g.expense > 0 ? `<span>${money(g.expense)}</span>` : ''}
+              </span>
+            </div>
+            ${g.rows.map(txRow).join('')}
+          </div>`
+        ).join('')
+    }
+  </div>`;
+
+  // — filter events
+  const refilter = () => renderTransactions();
+  $('#q').oninput = e => { f.q = e.target.value; refilter(); $('#q')?.focus(); };
+  $('#qclear')?.addEventListener('click', () => { f.q = ''; refilter(); });
+  $('#fm').onchange = e => { f.month = e.target.value; refilter(); };
+  $('#fc').onchange = e => { f.cat = e.target.value; refilter(); };
+  $('#ft').onchange = e => { f.type = e.target.value; refilter(); };
+  $('#clearf')?.addEventListener('click', () => { state.filter = { q: '', cat: '', month: '', type: '' }; refilter(); });
+
+  // — active filter pills
+  view.querySelectorAll('[data-clear]').forEach(el => el.onclick = () => {
+    state.filter[el.dataset.clear] = '';
+    refilter();
+  });
+
+  // — add button shortcut
+  $('#tx-add').onclick = () => { state.editing = null; go('add'); };
+
+  // — edit
   view.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => {
     state.editing = state.rows.find(r => r.id === Number(b.dataset.edit));
     go('add');
   });
+
+  // — delete with inline confirm replacing browser dialog
   view.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
     const r = state.rows.find(x => x.id === Number(b.dataset.del));
-    const where = state.store.kind === 'sheets' ? 'the Google Sheet' : 'browser storage';
-    if (!confirm(`Delete this entry from ${where}?\n\n${r.date} \u2014 ${r.category} \u2014 ${money(r.amount)}\n\nThis removes the row and cannot be undone.`)) return;
-    const done = await withBusy('Deleting from the sheet', async () => {
-      await state.store.remove(r.id); await refresh();
-    });
-    renderTransactions();
-    if (done) notice('Row deleted.', 'ok');
+    if (!r) return;
+    const row = b.closest('.tx-row');
+    // swap the row for an inline confirmation
+    const orig = row.innerHTML;
+    row.innerHTML = `
+      <div class="tx-confirm">
+        <span>Delete <b>${esc(r.category)}</b> ${money(r.amount)} on ${esc(r.date)}?</span>
+        <div style="display:flex;gap:8px;flex-shrink:0">
+          <button class="btn danger" style="padding:4px 12px;font-size:12px" id="cd-yes">Delete</button>
+          <button class="btn ghost"  style="padding:4px 12px;font-size:12px" id="cd-no">Cancel</button>
+        </div>
+      </div>`;
+    row.querySelector('#cd-no').onclick = () => { row.innerHTML = orig; wireActions(); };
+    row.querySelector('#cd-yes').onclick = async () => {
+      row.style.opacity = '.4';
+      const done = await withBusy('Deleting', async () => {
+        await state.store.remove(r.id); await refresh();
+      });
+      if (done) { renderTransactions(); notice('Entry deleted.', 'ok'); }
+      else row.style.opacity = '';
+    };
   });
+
+  function wireActions() {
+    view.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => {
+      state.editing = state.rows.find(r => r.id === Number(b.dataset.edit));
+      go('add');
+    });
+  }
 }
 
 /* ==================================================================== BUDGET */
