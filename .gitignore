@@ -1,0 +1,8 @@
+backend/.venv/
+backend/expenses.db
+backend/expenses.db-wal
+backend/expenses.db-shm
+backend/exports/
+__pycache__/
+*.pyc
+.DS_Store

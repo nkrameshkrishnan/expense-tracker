@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ledger &mdash; Expense Tracker 2026</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./assets/styles.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js" defer></script>
+</head>
+<body>
+
+<header class="rail">
+  <div class="rail-in">
+    <div class="brand">
+      <span class="brand-mark">&#8214;</span>
+      <span class="brand-name">LEDGER</span>
+      <span class="brand-year">2026 &middot; CAD</span>
+    </div>
+    <nav class="tabs" id="tabs">
+      <button data-tab="dashboard" class="on">Dashboard</button>
+      <button data-tab="add">Add</button>
+      <button data-tab="transactions">Transactions</button>
+      <button data-tab="budget">Budget</button>
+      <button data-tab="data">Data</button>
+    </nav>
+    <div class="conn" id="conn" title="Storage backend">&#9679; local</div>
+  </div>
+</header>
+
+<div id="banner" class="banner" hidden></div>
+
+<main id="view"></main>
+
+<footer class="foot">
+  <span id="foot-count">&mdash;</span>
+  <span class="sep">/</span>
+  <span>Amounts always positive. <b>Type</b> decides the sign.</span>
+</footer>
+
+<script type="module" src="./assets/app.js"></script>
+</body>
+</html>
