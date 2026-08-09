@@ -504,7 +504,11 @@ details[open] .add-details-toggle::before{transform:rotate(90deg)}
 .newopt-cancel:hover{background:var(--paper-2)}
 
 /* ---------------------------------------------------------------- sign-in gate */
-#gate{display:flex;align-items:center;justify-content:center;min-height:70vh;padding:20px}
+#gate{
+  position:fixed;inset:0;z-index:500;
+  display:flex;align-items:center;justify-content:center;padding:20px;
+  background:var(--paper);
+}
 .gate-card{
   max-width:400px;width:100%;text-align:center;
   border:1px solid var(--rule-2);background:#fff;padding:36px 30px;

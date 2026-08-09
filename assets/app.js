@@ -21,11 +21,18 @@ const state = {
 /* ------------------------------------------------------------ Google sign-in
    The ID token lives in sessionStorage, so closing the tab signs you out.
    It is only ever a claim - Apps Script decides whether it is honoured. */
+/* A true full-viewport overlay rather than a sibling whose visibility has to
+   stay manually in sync with #view. That sync WAS the bug: only the initial
+   page-load path and a successful sign-in ever touched it, so any auth
+   failure that happened mid-session (a token expiring after ~an hour, then
+   the user clicking Reload, Add, or anything else that hits the sheet) left
+   the previous page's content fully rendered underneath a banner that
+   explained nothing and offered no way back in. Wrapping this in a fixed,
+   opaque, high-z-index layer means showing it can never result in stale
+   content bleeding through, no matter which code path triggered it. */
 function showGate(message) {
   const gate = $('#gate');
-  const main = $('#view');
   gate.hidden = false;
-  main.style.display = 'none';
   gate.innerHTML = `
     <div class="gate-card">
       <div class="gate-mark">&#8214;</div>
@@ -49,7 +56,6 @@ function showGate(message) {
       callback: async res => {
         setIdToken(res.credential);
         gate.hidden = true;
-        main.style.display = '';
         await boot();
       },
       auto_select: true,
@@ -196,6 +202,11 @@ async function withBusy(label, fn) {
     await fn();
     return true;
   } catch (e) {
+    // A Google sign-in can expire mid-session (roughly hourly). Previously
+    // every action here just showed a red banner and left the page sitting
+    // in a half-authenticated state with no way forward. Route auth failures
+    // to the same re-sign-in screen the app uses on first load, instead.
+    if (e?.auth) { setIdToken(''); showGate(e.message); return false; }
     notice(`${label} failed: ${e.message}`, 'bad');
     return false;
   } finally {
@@ -1076,8 +1087,8 @@ function renderBudget() {
 function renderData() {
   const src = endpointSource();
   const ep = localStorage.getItem(ENDPOINT_KEY) || '';
-  const tk = localStorage.getItem(TOKEN_KEY) || '';
   const live = state.store.kind === 'sheets';
+  const who = state.store.user?.email || '';
 
   view.innerHTML = `
   <div class="head"><div><h1>Data</h1><p class="sub">Where your data lives, and how to get it in and out.</p></div></div>
@@ -1085,24 +1096,25 @@ function renderData() {
   <div class="eyebrow">Google Sheet connection</div>
   <div class="panel stack">
     <p class="note" style="margin:0">Status: <b>${live
-      ? 'connected \u2014 reading and writing "' + esc(state.store.sheetName || 'your sheet') + '" live'
+      ? 'connected \u2014 reading and writing "' + esc(state.store.sheetName || 'your sheet') + '" live' + (who ? ' as ' + esc(who) : '')
       : state.store.kind === 'memory' ? 'session memory only, nothing is being saved'
       : 'not connected \u2014 changes stay in this browser'}</b>.
-      Endpoint source: <b>${src === 'build' ? 'GitHub secret, injected at deploy' : src === 'runtime' ? 'entered here, stored in this browser only' : 'none'}</b>.</p>
+      Endpoint source: <b>${src === 'build' ? 'GitHub secret, injected at deploy' : src === 'runtime' ? 'entered here, stored in this browser only' : 'none'}</b>.
+      Access: <b>Google sign-in</b>, verified by Apps Script against an allow-list \u2014 there is no separate token to manage here anymore.</p>
     <div class="stack" style="max-width:620px">
       <label class="f"><span>Apps Script web app URL</span>
         <input id="ep" placeholder="https://script.google.com/macros/s/AKfy.../exec" value="${esc(ep)}"></label>
-      <label class="f"><span>Shared token (must match SHARED_TOKEN in Code.gs)</span>
-        <input id="tk" type="password" value="${esc(tk)}"></label>
     </div>
     <div class="actions">
       <button class="btn" id="connect">Connect &amp; test</button>
       <button class="btn ghost" id="disconnect">Disconnect</button>
       <button class="btn ghost" id="reload" ${live ? '' : 'disabled'}>Reload from sheet</button>
+      ${getIdToken() ? '<button class="btn ghost" id="data-signout">Sign out</button>' : ''}
     </div>
-    <p class="note"><b>Anything set here stays in this browser and is never published.</b> Values injected from
+    <p class="note"><b>The endpoint URL stays in this browser and is never published.</b> Values injected from
     GitHub secrets end up in <code>assets/config.js</code>, which is served to every visitor of the site \u2014
-    a secret in Actions is not a secret in a static page. Use this box instead if the sheet holds anything private.</p>
+    a secret in Actions keeps it out of the repo, not out of the page. Enter it here instead if you would
+    rather it never appear in the deployed site at all.</p>
   </div>
 
   <div class="eyebrow">Export</div>
@@ -1148,16 +1160,15 @@ function renderData() {
   </div></div>`;
 
   $('#connect').onclick = async () => {
-    const url = $('#ep').value.trim(), token = $('#tk').value.trim();
+    const url = $('#ep').value.trim();
     if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(url)) {
       return notice('That does not look like an Apps Script /exec URL. Deploy the script as a Web app and copy the URL ending in /exec.', 'bad');
     }
-    if (!token) return notice('Set a token. It has to match SHARED_TOKEN in Code.gs.', 'bad');
     localStorage.setItem(ENDPOINT_KEY, url);
-    localStorage.setItem(TOKEN_KEY, token);
+    if (getClientId() && !getIdToken()) { showGate(); return; }
     await withBusy('Testing the connection', async () => {
       state.store = await openStore(() => {});
-      if (state.store.kind !== 'sheets') throw new Error('could not reach the sheet with those settings');
+      if (state.store.kind !== 'sheets') throw new Error('could not reach the sheet with that URL \u2014 check it is deployed and you are signed in with an allowed account');
       await refresh();
     });
     if (state.store.kind === 'sheets') notice(`Connected to "${state.store.sheetName}" \u2014 ${state.rows.length} rows loaded.`, 'ok');
@@ -1165,9 +1176,11 @@ function renderData() {
   };
 
   $('#disconnect').onclick = async () => {
-    localStorage.removeItem(ENDPOINT_KEY); localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(ENDPOINT_KEY);
     state.store = await openStore(notice); await refresh(); renderData();
   };
+
+  $('#data-signout')?.addEventListener('click', signOut);
 
   $('#reload').onclick = async () => {
     const done = await withBusy('Reloading from the sheet', async () => {
