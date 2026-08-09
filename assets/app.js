@@ -1,6 +1,6 @@
 import {
   openStore, CAT_NAMES, EXPENSE_CATS, CAT_TYPE, TYPES, PAYMENTS, ACCOUNTS,
-  MONTHS, YEAR, BACKEND_KEY, emptyBudget,
+  MONTHS, YEAR, ENDPOINT_KEY, TOKEN_KEY, endpointSource, getEndpoint, emptyBudget,
 } from './store.js';
 import { aggregate, money, pct, monthOf, exportWorkbook, importFile } from './xlsxio.js';
 import * as charts from './charts.js';
@@ -10,6 +10,25 @@ const view = $('#view');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const state = { store: null, rows: [], budget: emptyBudget(), month: 0, tab: 'dashboard', editing: null, filter: { q: '', cat: '', month: '' } };
+
+let busy = false;
+/** Wraps a write so the UI cannot fire two overlapping sheet writes. */
+async function withBusy(label, fn) {
+  if (busy) { notice('Another change is still saving — one at a time.', 'bad'); return false; }
+  busy = true;
+  document.body.style.cursor = 'progress';
+  notice(label + '\u2026');
+  try {
+    await fn();
+    return true;
+  } catch (e) {
+    notice(`${label} failed: ${e.message}`, 'bad');
+    return false;
+  } finally {
+    busy = false;
+    document.body.style.cursor = '';
+  }
+}
 
 function notice(msg, kind = '') {
   const b = $('#banner');
@@ -24,8 +43,12 @@ async function refresh() {
   state.budget = await state.store.getBudget();
   $('#foot-count').textContent = `${state.rows.length} transactions stored`;
   const c = $('#conn');
-  c.textContent = state.store.kind === 'remote' ? '\u25cf backend' : state.store.kind === 'memory' ? '\u25cf session only' : '\u25cf local';
-  c.className = 'conn' + (state.store.kind === 'remote' ? ' remote' : '');
+  const label = { sheets: '\u25cf google sheet', local: '\u25cf browser only', memory: '\u25cf session only' };
+  c.textContent = label[state.store.kind] || '\u25cf ?';
+  c.title = state.store.kind === 'sheets'
+    ? `Reading and writing "${state.store.sheetName || 'your sheet'}" live`
+    : 'Not connected to a Google Sheet — changes stay in this browser';
+  c.className = 'conn' + (state.store.kind === 'sheets' ? ' remote' : '');
 }
 
 /* ================================================================= DASHBOARD */
@@ -142,20 +165,30 @@ function renderAdd() {
     if (Number(d.date.slice(0, 4)) !== YEAR) {
       $('#err').textContent = `Heads up: ${d.date} is outside ${YEAR}. It will save, but the dashboard only summarises ${YEAR}.`;
     }
-    try {
-      if (state.editing) {
+    const btn = ev.target.querySelector('button[type=submit]');
+    btn.disabled = true;
+    if (state.editing) {
+      const done = await withBusy('Updating the sheet', async () => {
         await state.store.update(state.editing.id, { ...d, amount });
         state.editing = null;
-        await refresh(); notice('Entry updated.', 'ok'); go('transactions');
-      } else {
+        await refresh();
+      });
+      btn.disabled = false;
+      if (done) { notice('Entry updated in the sheet.', 'ok'); go('transactions'); }
+    } else {
+      const done = await withBusy('Writing to the sheet', async () => {
         await state.store.add({ ...d, amount });
         await refresh();
-        $('#hint').textContent = `Saved ${money(amount)} \u2014 ${state.rows.length} total.`;
+      });
+      btn.disabled = false;
+      if (done) {
+        notice(`Saved ${money(amount)} to ${state.store.kind === 'sheets' ? 'the sheet' : 'browser storage'}.`, 'ok');
+        $('#hint').textContent = `${state.rows.length} entries total.`;
         ev.target.reset();
         ev.target.date.value = d.date;
         ev.target.querySelector('[name=amount]').focus();
       }
-    } catch (err) { $('#err').textContent = 'Could not save: ' + err.message; }
+    }
   };
 }
 
@@ -202,8 +235,13 @@ function renderTransactions() {
   });
   view.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
     const r = state.rows.find(x => x.id === Number(b.dataset.del));
-    if (!confirm(`Delete this entry?\n\n${r.date} \u2014 ${r.category} \u2014 ${money(r.amount)}\n\nThis cannot be undone.`)) return;
-    await state.store.remove(r.id); await refresh(); renderTransactions(); notice('Entry deleted.', 'ok');
+    const where = state.store.kind === 'sheets' ? 'the Google Sheet' : 'browser storage';
+    if (!confirm(`Delete this entry from ${where}?\n\n${r.date} \u2014 ${r.category} \u2014 ${money(r.amount)}\n\nThis removes the row and cannot be undone.`)) return;
+    const done = await withBusy('Deleting from the sheet', async () => {
+      await state.store.remove(r.id); await refresh();
+    });
+    renderTransactions();
+    if (done) notice('Row deleted.', 'ok');
   });
 }
 
@@ -242,15 +280,43 @@ function renderBudget() {
       const c = tr.dataset.cat; b[c] = {};
       tr.querySelectorAll('input').forEach(i => { b[c][i.dataset.m] = Number(i.value) || 0; });
     });
-    await state.store.setBudget(b); await refresh(); notice('Budget saved.', 'ok');
+    const done = await withBusy('Saving the budget', async () => { await state.store.setBudget(b); await refresh(); });
+    if (done) notice('Budget written to the sheet.', 'ok');
   };
 }
 
 /* ====================================================================== DATA */
 function renderData() {
-  const url = localStorage.getItem(BACKEND_KEY) || '';
+  const src = endpointSource();
+  const ep = localStorage.getItem(ENDPOINT_KEY) || '';
+  const tk = localStorage.getItem(TOKEN_KEY) || '';
+  const live = state.store.kind === 'sheets';
+
   view.innerHTML = `
-  <div class="head"><div><h1>Data</h1><p class="sub">Import, export, and where your data lives.</p></div></div>
+  <div class="head"><div><h1>Data</h1><p class="sub">Where your data lives, and how to get it in and out.</p></div></div>
+
+  <div class="eyebrow">Google Sheet connection</div>
+  <div class="panel stack">
+    <p class="note" style="margin:0">Status: <b>${live
+      ? 'connected \u2014 reading and writing "' + esc(state.store.sheetName || 'your sheet') + '" live'
+      : state.store.kind === 'memory' ? 'session memory only, nothing is being saved'
+      : 'not connected \u2014 changes stay in this browser'}</b>.
+      Endpoint source: <b>${src === 'build' ? 'GitHub secret, injected at deploy' : src === 'runtime' ? 'entered here, stored in this browser only' : 'none'}</b>.</p>
+    <div class="stack" style="max-width:620px">
+      <label class="f"><span>Apps Script web app URL</span>
+        <input id="ep" placeholder="https://script.google.com/macros/s/AKfy.../exec" value="${esc(ep)}"></label>
+      <label class="f"><span>Shared token (must match SHARED_TOKEN in Code.gs)</span>
+        <input id="tk" type="password" value="${esc(tk)}"></label>
+    </div>
+    <div class="actions">
+      <button class="btn" id="connect">Connect &amp; test</button>
+      <button class="btn ghost" id="disconnect">Disconnect</button>
+      <button class="btn ghost" id="reload" ${live ? '' : 'disabled'}>Reload from sheet</button>
+    </div>
+    <p class="note"><b>Anything set here stays in this browser and is never published.</b> Values injected from
+    GitHub secrets end up in <code>assets/config.js</code>, which is served to every visitor of the site \u2014
+    a secret in Actions is not a secret in a static page. Use this box instead if the sheet holds anything private.</p>
+  </div>
 
   <div class="eyebrow">Export</div>
   <div class="panel stack">
@@ -259,34 +325,54 @@ function renderData() {
       <button class="btn ghost" id="json">Download .json backup</button>
       <span class="muted">${state.rows.length} transactions</span>
     </div>
-    <p class="note">The .xlsx has three sheets &mdash; Transactions, Budget, and a Pivot cross-tab built from live SUMIFS formulas, so it keeps working when you open it in Google Sheets. Charts are not included in this export; the full charted workbook comes from the backend export or the original tracker file.</p>
+    <p class="note">Three sheets \u2014 Transactions, Budget, and a Pivot cross-tab of live SUMIFS formulas that keep
+    working in Google Sheets. No charts: the browser cannot write chart objects into an .xlsx. The charts you see
+    on the Dashboard are rendered live from the sheet data instead.</p>
   </div>
 
   <div class="eyebrow">Import</div>
   <div class="panel stack">
     <input type="file" id="file" accept=".xlsx,.xls,.csv">
-    <div class="actions"><label><input type="checkbox" id="replace"> Replace everything (instead of appending)</label></div>
+    <div class="actions"><label><input type="checkbox" id="replace"> Replace everything first</label></div>
     <div id="imp" class="note"></div>
-    <p class="note">Expects a flat table with at least <code>Date</code> and <code>Amount</code> columns &mdash; anything this app exports, or the tracker workbook's Transactions sheet. The original month-per-tab layout is <b>not</b> auto-detected; that data is already seeded.</p>
-  </div>
-
-  <div class="eyebrow">Storage backend</div>
-  <div class="panel stack">
-    <p class="note" style="margin:0">Currently: <b>${state.store.kind === 'remote' ? 'local FastAPI backend' : state.store.kind === 'memory' ? 'session memory (nothing is being saved)' : 'IndexedDB in this browser'}</b>.
-    Leave the box empty to use browser storage. Point it at <code>http://127.0.0.1:8000</code> to use the SQLite backend in <code>backend/</code>.</p>
-    <div class="actions">
-      <input id="burl" style="min-width:280px" placeholder="http://127.0.0.1:8000" value="${esc(url)}">
-      <button class="btn" id="bsave">Connect</button>
-      <button class="btn ghost" id="bclear">Use browser storage</button>
-    </div>
-    <p class="note">Browser storage is per-browser and per-device &mdash; it does not follow you to your phone. The backend is shared across browsers on that machine but only reachable while it is running. Safari blocks HTTPS pages from calling <code>http://localhost</code>; use Chrome, Edge or Firefox for the backend.</p>
+    <p class="note">Needs a flat table with at least <code>Date</code> and <code>Amount</code> columns. Rows are
+    appended to the connected sheet in batches of 500.</p>
   </div>
 
   <div class="eyebrow">Danger zone</div>
   <div class="panel"><div class="actions">
-    <button class="btn danger" id="wipe">Delete all transactions</button>
-    <span class="muted">Export first &mdash; this cannot be undone.</span>
+    <button class="btn danger" id="wipe">Delete every row${live ? ' from the sheet' : ''}</button>
+    <span class="muted">Export first \u2014 this cannot be undone.</span>
   </div></div>`;
+
+  $('#connect').onclick = async () => {
+    const url = $('#ep').value.trim(), token = $('#tk').value.trim();
+    if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(url)) {
+      return notice('That does not look like an Apps Script /exec URL. Deploy the script as a Web app and copy the URL ending in /exec.', 'bad');
+    }
+    if (!token) return notice('Set a token. It has to match SHARED_TOKEN in Code.gs.', 'bad');
+    localStorage.setItem(ENDPOINT_KEY, url);
+    localStorage.setItem(TOKEN_KEY, token);
+    await withBusy('Testing the connection', async () => {
+      state.store = await openStore(() => {});
+      if (state.store.kind !== 'sheets') throw new Error('could not reach the sheet with those settings');
+      await refresh();
+    });
+    if (state.store.kind === 'sheets') notice(`Connected to "${state.store.sheetName}" \u2014 ${state.rows.length} rows loaded.`, 'ok');
+    renderData();
+  };
+
+  $('#disconnect').onclick = async () => {
+    localStorage.removeItem(ENDPOINT_KEY); localStorage.removeItem(TOKEN_KEY);
+    state.store = await openStore(notice); await refresh(); renderData();
+  };
+
+  $('#reload').onclick = async () => {
+    const done = await withBusy('Reloading from the sheet', async () => {
+      state.store.cache = null; await refresh();
+    });
+    if (done) { renderData(); notice(`Reloaded ${state.rows.length} rows.`, 'ok'); }
+  };
 
   $('#xlsx').onclick = () => { try { exportWorkbook(state.rows, state.budget); notice('Workbook downloaded.', 'ok'); } catch (e) { notice(e.message, 'bad'); } };
   $('#json').onclick = () => {
@@ -302,33 +388,27 @@ function renderData() {
     try {
       const { rows, skipped, reasons, sheet } = await importFile(file);
       if (!rows.length) { out.innerHTML = `<b class="over">No usable rows found on "${esc(sheet)}".</b>`; return; }
-      if (!confirm(`Import ${rows.length} rows from "${sheet}"?${skipped ? `\n\n${skipped} rows will be skipped (missing a valid date or amount).` : ''}`)) { out.textContent = 'Cancelled.'; return; }
-      if ($('#replace').checked) await state.store.clear();
-      await state.store.bulkAdd(rows);
-      await refresh();
-      out.innerHTML = `<b class="under">Imported ${rows.length} rows.</b>${skipped ? ` ${skipped} skipped${reasons.length ? ' (e.g. ' + esc(reasons.join(', ')) + ')' : ''}.` : ''}`;
-      notice(`Imported ${rows.length} transactions.`, 'ok');
+      const dest = state.store.kind === 'sheets' ? 'your Google Sheet' : 'browser storage';
+      if (!confirm(`Import ${rows.length} rows from "${sheet}" into ${dest}?${skipped ? `\n\n${skipped} rows will be skipped (no valid date or amount).` : ''}`)) { out.textContent = 'Cancelled.'; return; }
+      const done = await withBusy(`Writing ${rows.length} rows`, async () => {
+        if ($('#replace').checked) await state.store.clear();
+        await state.store.bulkAdd(rows);
+        await refresh();
+      });
+      if (done) {
+        out.innerHTML = `<b class="under">Imported ${rows.length} rows.</b>${skipped ? ` ${skipped} skipped${reasons.length ? ' (e.g. ' + esc(reasons.join(', ')) + ')' : ''}.` : ''}`;
+        notice(`Imported ${rows.length} transactions.`, 'ok');
+      }
     } catch (err) { out.innerHTML = `<b class="over">${esc(err.message)}</b>`; }
   };
 
-  $('#bsave').onclick = async () => {
-    const v = $('#burl').value.trim();
-    if (!v) return notice('Enter a URL, or press "Use browser storage".', 'bad');
-    localStorage.setItem(BACKEND_KEY, v);
-    state.store = await openStore(notice);
-    if (state.store.kind !== 'remote') localStorage.removeItem(BACKEND_KEY);
-    else notice('Connected to backend at ' + v, 'ok');
-    await refresh(); renderData();
-  };
-  $('#bclear').onclick = async () => {
-    localStorage.removeItem(BACKEND_KEY);
-    state.store = await openStore(notice); await refresh(); renderData();
-    notice('Using browser storage.', 'ok');
-  };
   $('#wipe').onclick = async () => {
-    if (!confirm(`Delete all ${state.rows.length} transactions and reset the budget?\n\nThis cannot be undone.`)) return;
+    const where = state.store.kind === 'sheets' ? 'your Google Sheet' : 'browser storage';
+    if (!confirm(`Delete all ${state.rows.length} transactions from ${where}?\n\nThis cannot be undone.`)) return;
     if (!confirm('Really sure? Export a backup first if you have not.')) return;
-    await state.store.clear(); await refresh(); renderData(); notice('All data deleted.', 'ok');
+    const done = await withBusy('Clearing the sheet', async () => { await state.store.clear(); await refresh(); });
+    renderData();
+    if (done) notice('All rows deleted.', 'ok');
   };
 }
 
@@ -346,8 +426,10 @@ function go(tab) {
 
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => { if (b.dataset.tab !== 'add') state.editing = null; go(b.dataset.tab); });
 
-/** First run: load the 230 rows carried over from Expense.xlsx. */
+/** First run only, and only into browser storage. Seeding a live Google Sheet
+    behind your back would be the wrong default — do that from Data → Import. */
 async function seedIfEmpty() {
+  if (state.store.kind === 'sheets') return;
   if (!(await state.store.isEmpty())) return;
   try {
     const [rows, budget] = await Promise.all([
@@ -356,7 +438,7 @@ async function seedIfEmpty() {
     ]);
     await state.store.bulkAdd(rows);
     if (budget) await state.store.setBudget(budget);
-    notice(`Loaded ${rows.length} transactions carried over from your Expense.xlsx (Jan / Mar / Apr / Jul 2026). Clear them any time under Data.`);
+    notice(`Loaded ${rows.length} rows from your Expense.xlsx into browser storage. Connect your Google Sheet under Data to make it the source of truth.`);
   } catch {
     notice('No seed data loaded — add your first entry under "Add".');
   }
