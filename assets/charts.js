@@ -100,3 +100,57 @@ export function paymentSplit(byPayment) {
     options: { maintainAspectRatio: false, responsive: true, cutout: '55%', plugins: { legend: { position: 'right', labels: { boxWidth: 10, boxHeight: 10, padding: 10 } } } },
   });
 }
+
+/* ---- person comparison ---------------------------------------------------- */
+const PERSON_COLORS = { Ramesh: TEAL, Surya: BLUE, Joint: AMBER, Unassigned: SAND };
+const colorFor = p => PERSON_COLORS[p] || SAND;
+
+export function personSplit(breakdown) {
+  mount('c-person-split', {
+    type: 'doughnut',
+    data: {
+      labels: breakdown.map(b => b.person),
+      datasets: [{
+        data: breakdown.map(b => b.expense),
+        backgroundColor: breakdown.map(b => colorFor(b.person)),
+        borderColor: '#fff', borderWidth: 2,
+      }],
+    },
+    options: {
+      maintainAspectRatio: false, responsive: true, cutout: '55%',
+      plugins: { legend: { position: 'right', labels: { boxWidth: 10, boxHeight: 10, padding: 10 } } },
+    },
+  });
+}
+
+export function personByMonth(series, months) {
+  mount('c-person-month', {
+    type: 'bar',
+    data: {
+      labels: months,
+      datasets: series.map(s => ({
+        label: s.person, data: s.data, backgroundColor: colorFor(s.person),
+      })),
+    },
+    options: {
+      maintainAspectRatio: false, responsive: true, plugins: legendTop,
+      scales: { x: { ...gridX, stacked: false }, y: { ...gridY, stacked: false } },
+    },
+  });
+}
+
+export function personVsBudget(rows) {
+  mount('c-person-cat', {
+    type: 'bar',
+    data: {
+      labels: rows.map(r => r.category),
+      datasets: rows[0] ? Object.keys(rows[0].byPerson).map(p => ({
+        label: p, data: rows.map(r => r.byPerson[p] || 0), backgroundColor: colorFor(p),
+      })) : [],
+    },
+    options: {
+      indexAxis: 'y', maintainAspectRatio: false, responsive: true, plugins: legendTop,
+      scales: { x: { ...gridY, stacked: true }, y: { grid: { display: false }, border: { color: RULE }, stacked: true, ticks: { font: { size: 10 } } } },
+    },
+  });
+}

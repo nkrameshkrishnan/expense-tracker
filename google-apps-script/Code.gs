@@ -34,8 +34,8 @@ var BUDGET_SHEET = 'Budget';
 
 var C_DATE = 1, C_MONTH = 2, C_YEAR = 3, C_TYPE = 4, C_CATEGORY = 5, C_SUBCAT = 6,
     C_DESC = 7, C_AMOUNT = 8, C_PAYMENT = 9, C_ACCOUNT = 10, C_RECUR = 11,
-    C_NOTES = 12, C_ID = 13;
-var LAST_COL = C_ID;
+    C_NOTES = 12, C_ID = 13, C_PERSON = 14;
+var LAST_COL = C_PERSON;
 
 var EXPECTED = ['Date', 'Month', 'Year', 'Type', 'Category', 'Subcategory',
                 'Description', 'Amount (CAD)', 'Payment Method', 'Account',
@@ -86,10 +86,13 @@ function book() {
   return { ss: ss, tx: tx, bg: bg };
 }
 
-/** Adds the ID column and back-fills ids for rows that predate this script. */
+/** Adds the ID and Person columns and back-fills ids for pre-existing rows. */
 function ensureIdColumn(tx) {
   if (String(tx.getRange(1, C_ID).getValue()).trim() !== 'ID') {
     tx.getRange(1, C_ID).setValue('ID').setFontWeight('bold');
+  }
+  if (String(tx.getRange(1, C_PERSON).getValue()).trim() !== 'Person') {
+    tx.getRange(1, C_PERSON).setValue('Person').setFontWeight('bold');
   }
   var last = tx.getLastRow();
   if (last < 2) return;
@@ -144,6 +147,7 @@ function readTransactions(tx) {
       account: String(r[C_ACCOUNT - 1] || ''),
       recurring: String(r[C_RECUR - 1] || 'No'),
       notes: String(r[C_NOTES - 1] || ''),
+      person: String(r[C_PERSON - 1] || ''),
     });
   }
   out.sort(function (a, b) {
@@ -202,6 +206,7 @@ function validate(rec) {
     account: String(rec.account || ''),
     recurring: rec.recurring === 'Yes' ? 'Yes' : 'No',
     notes: String(rec.notes || ''),
+    person: ['Ramesh', 'Surya', 'Joint'].indexOf(rec.person) === -1 ? '' : rec.person,
   };
 }
 
@@ -221,6 +226,7 @@ function writeRow(tx, row, v, id) {
     v.payment, v.account, v.recurring, v.notes]]);
   tx.getRange(row, C_AMOUNT).setNumberFormat('"$"#,##0.00');
   tx.getRange(row, C_ID).setValue(id);
+  tx.getRange(row, C_PERSON).setValue(v.person);
 }
 
 function recOf(v, id) {
@@ -228,6 +234,7 @@ function recOf(v, id) {
     id: id, date: isoDate(v.date), type: v.type, category: v.category,
     subcategory: v.subcategory, description: v.description, amount: v.amount,
     payment: v.payment, account: v.account, recurring: v.recurring, notes: v.notes,
+    person: v.person,
   };
 }
 
@@ -236,6 +243,7 @@ function clearRow(tx, row) {
   tx.getRange(row, C_DATE).clearContent();
   tx.getRange(row, C_TYPE, 1, C_NOTES - C_TYPE + 1).clearContent();
   tx.getRange(row, C_ID).clearContent();
+  tx.getRange(row, C_PERSON).clearContent();
   if (String(tx.getRange(row, C_MONTH).getFormula() || '') === '') {
     tx.getRange(row, C_MONTH, 1, 2).clearContent();
   }

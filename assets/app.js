@@ -1,15 +1,44 @@
 import {
   openStore, CAT_NAMES, EXPENSE_CATS, CAT_TYPE, TYPES, PAYMENTS, ACCOUNTS,
   MONTHS, YEAR, ENDPOINT_KEY, TOKEN_KEY, endpointSource, getEndpoint, emptyBudget,
+  PEOPLE, UNASSIGNED, PERSON_KEY,
 } from './store.js';
-import { aggregate, money, pct, monthOf, exportWorkbook, importFile } from './xlsxio.js';
+import { aggregate, money, pct, monthOf, exportWorkbook, importFile,
+         byPersonFilter, personBreakdown, personSeries } from './xlsxio.js';
 import * as charts from './charts.js';
 
 const $ = s => document.querySelector(s);
 const view = $('#view');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-const state = { store: null, rows: [], budget: emptyBudget(), month: 0, tab: 'dashboard', editing: null, filter: { q: '', cat: '', month: '', type: '' } };
+const state = {
+  store: null, rows: [], budget: emptyBudget(), month: 0, tab: 'dashboard', editing: null,
+  person: localStorage.getItem(PERSON_KEY) || '',        // '' = whole family
+  filter: { q: '', cat: '', month: '', type: '' },
+};
+
+/** Rows for whoever is currently selected. Every page reads through this. */
+const scoped = () => byPersonFilter(state.rows, state.person);
+const personLabel = () => state.person || 'Family';
+
+/** Segmented control in the header rail. Present on every tab, so the choice
+    follows you between Dashboard, Transactions, Add and Budget. */
+function renderPeopleSwitch() {
+  const el = $('#people');
+  if (!el) return;
+  const present = new Set(state.rows.map(r => r.person || UNASSIGNED));
+  const opts = ['', ...PEOPLE.filter(p => present.has(p))];
+  if (present.has(UNASSIGNED)) opts.push(UNASSIGNED);
+  el.innerHTML = opts.map(p => {
+    const label = p === '' ? 'Family' : p === UNASSIGNED ? 'Unassigned' : p;
+    return `<button class="person-btn${state.person === p ? ' on' : ''}" data-person="${esc(p)}">${esc(label)}</button>`;
+  }).join('');
+  el.querySelectorAll('.person-btn').forEach(b => b.onclick = () => {
+    state.person = b.dataset.person;
+    localStorage.setItem(PERSON_KEY, state.person);
+    go(state.tab);
+  });
+}
 
 let busy = false;
 /** Wraps a write so the UI cannot fire two overlapping sheet writes. */
@@ -42,6 +71,7 @@ async function refresh() {
   state.rows = await state.store.list();
   state.budget = await state.store.getBudget();
   $('#foot-count').textContent = `${state.rows.length} transactions stored`;
+  renderPeopleSwitch();
   const c = $('#conn');
   const label = { sheets: '\u25cf google sheet', local: '\u25cf browser only', memory: '\u25cf session only' };
   c.textContent = label[state.store.kind] || '\u25cf ?';
@@ -60,12 +90,17 @@ function monthSelect(id, value) {
 }
 
 function renderDashboard() {
-  const a = aggregate(state.rows, state.budget, state.month);
+  const a = aggregate(scoped(), state.budget, state.month);
   const label = state.month === 0 ? `Full year ${YEAR}` : `${MONTHS[state.month - 1]} ${YEAR}`;
+  // Comparison is always computed across everyone, so it stays meaningful
+  // even while the rest of the page is filtered to one person.
+  const people = personBreakdown(state.rows, state.month);
+  const pSeries = personSeries(state.rows);
+  const showCompare = people.length > 1;
 
   view.innerHTML = `
   <div class="head">
-    <div><h1>Dashboard</h1><p class="sub">${esc(label)} &middot; ${a.count} transactions in period</p></div>
+    <div><h1>Dashboard</h1><p class="sub">${esc(personLabel())} &middot; ${esc(label)} &middot; ${a.count} transactions</p></div>
     <div class="spacer"></div>${monthSelect('m-sel', state.month)}
   </div>
 
@@ -74,7 +109,9 @@ function renderDashboard() {
     ${kpi('Expense', money(a.expense), `${a.count} entries`)}
     ${kpi('Net', money(a.net), a.net < 0 ? 'spending exceeds income' : '', a.net < 0 ? 'neg' : 'pos')}
     ${kpi('Savings rate', a.income > 0 ? pct(a.savingsRate) : '\u2014', a.income > 0 ? '' : 'needs income data')}
-    ${kpi('Budget used', a.expenseBudget > 0 ? pct(a.budgetUsed) : '\u2014', a.expenseBudget > 0 ? `of ${money(a.expenseBudget)}` : 'no budget set', a.budgetUsed > 1 ? 'neg' : '')}
+    ${kpi('Budget used', a.expenseBudget > 0 ? pct(a.budgetUsed) : '\u2014',
+        a.expenseBudget > 0 ? (state.person ? `of ${money(a.expenseBudget)} household` : `of ${money(a.expenseBudget)}`) : 'no budget set',
+        a.budgetUsed > 1 ? 'neg' : '')}
     ${kpi('Avg / day', money(a.avgDaily), state.month === 0 ? 'over 365 days' : `over ${new Date(YEAR, state.month, 0).getDate()} days`)}
   </div>
 
@@ -83,8 +120,29 @@ function renderDashboard() {
     ${a.overBudget.map(r => `<tr><td>${esc(r.category)}</td><td class="n num">${money(r.actual)}</td><td class="n num">${money(r.budget)}</td><td class="n num over">${money(-r.variance)}</td><td class="n num over">${pct(r.used)}</td></tr>`).join('')}
   </tbody></table></div>` : ''}
 
+  ${showCompare ? `
+  <div class="eyebrow">Who spent what &mdash; ${esc(label)}</div>
+  <div class="person-cards">
+    ${people.map(b => `
+      <div class="person-card${state.person === (b.person === UNASSIGNED ? UNASSIGNED : b.person) ? ' on' : ''}" data-jump="${esc(b.person)}">
+        <div class="person-card-head">
+          <span class="person-swatch" data-p="${esc(b.person)}"></span>
+          <span class="person-card-name">${esc(b.person)}</span>
+        </div>
+        <div class="person-card-val num">${money(b.expense)}</div>
+        <div class="person-card-bar"><div class="person-card-fill" data-p="${esc(b.person)}" style="width:${(b.share*100).toFixed(1)}%"></div></div>
+        <div class="person-card-meta">
+          <span class="muted">${pct(b.share)} of spend</span>
+          ${b.income > 0 ? `<span class="tx-income num">+${money(b.income)}</span>` : `<span class="muted num">${b.count} entries</span>`}
+        </div>
+      </div>`).join('')}
+  </div>` : ''}
+
   <div class="eyebrow">Charts</div>
   <div class="grid2">
+    ${showCompare ? `
+    <div class="panel"><h3>Spend split by person &mdash; ${esc(label)}</h3><div class="chartbox"><canvas id="c-person-split"></canvas></div></div>
+    <div class="panel"><h3>Monthly spend by person</h3><div class="chartbox"><canvas id="c-person-month"></canvas></div></div>` : ''}
     <div class="panel"><h3>Income vs expense by month</h3><div class="chartbox"><canvas id="c-ie"></canvas></div></div>
     <div class="panel"><h3>Net savings by month</h3><div class="chartbox"><canvas id="c-net"></canvas></div></div>
     <div class="panel"><h3>Expense vs budget ceiling</h3><div class="chartbox"><canvas id="c-trend"></canvas></div></div>
@@ -106,6 +164,16 @@ function renderDashboard() {
   $('#m-sel').onchange = e => { state.month = Number(e.target.value); renderDashboard(); };
 
   if (typeof Chart === 'undefined') { notice('Chart.js did not load, so charts are unavailable. Everything else works.', 'bad'); return; }
+  if (showCompare) {
+    charts.personSplit(people);
+    charts.personByMonth(pSeries, MONTHS);
+  }
+  view.querySelectorAll('[data-jump]').forEach(el => el.onclick = () => {
+    const p = el.dataset.jump;
+    state.person = state.person === p ? '' : p;
+    localStorage.setItem(PERSON_KEY, state.person);
+    go('dashboard');
+  });
   charts.incomeVsExpense(a.series);
   charts.netByMonth(a.series);
   charts.trend(a.series);
@@ -122,14 +190,17 @@ function renderAdd() {
   const today = new Date().toISOString().slice(0, 10);
   const selType = e?.type || 'Expense';
   const selCat  = e?.category || 'Groceries';
+  // Default to whoever is selected in the header, so a run of Surya's receipts
+  // does not need the field touched on every entry.
+  const selPerson = e?.person || (PEOPLE.includes(state.person) ? state.person : 'Ramesh');
 
   const curMonth = new Date().getMonth() + 1;
-  const ctxActual = state.rows
+  const ctxActual = scoped()
     .filter(r => r.category === selCat && monthOf(r) === curMonth && Number(String(r.date).slice(0,4)) === YEAR)
     .reduce((a, r) => a + r.amount, 0);
   const ctxBudget = Number(state.budget[selCat]?.[curMonth]) || 0;
   const ctxOver = ctxBudget > 0 && ctxActual > ctxBudget;
-  const recent = state.rows.filter(r => r.category === selCat).slice(0, 5);
+  const recent = scoped().filter(r => r.category === selCat).slice(0, 5);
   const allSubs = [...new Set(state.rows.map(r => r.subcategory).filter(Boolean))];
 
   const opt = (list, sel, blank) =>
@@ -154,8 +225,14 @@ function renderAdd() {
         ${TYPES.map(t => `<button type="button" class="add-type-btn${t === selType ? ' on' : ''}" data-type="${t}">${t}</button>`).join('')}
       </div>
 
+      <div class="add-person-row">
+        <span class="add-label" style="margin-right:4px">Whose</span>
+        ${PEOPLE.map(pp => `<button type="button" class="add-person-btn${pp === selPerson ? ' on' : ''}" data-person="${pp}"><span class="person-swatch" data-p="${pp}"></span>${pp}</button>`).join('')}
+      </div>
+
       <form id="f" autocomplete="off">
         <input type="hidden" name="type" id="type-hidden" value="${selType}">
+        <input type="hidden" name="person" id="person-hidden" value="${esc(selPerson)}">
 
         <div class="add-amount-wrap">
           <span class="add-currency">$</span>
@@ -268,11 +345,19 @@ function renderAdd() {
     };
   });
 
+  view.querySelectorAll('.add-person-btn').forEach(btn => {
+    btn.onclick = () => {
+      view.querySelectorAll('.add-person-btn').forEach(b => b.classList.remove('on'));
+      btn.classList.add('on');
+      $('#person-hidden').value = btn.dataset.person;
+    };
+  });
+
   $('#f-date').oninput = ev => { $('#day-name').textContent = dayName(ev.target.value); };
 
   $('#f-cat').onchange = () => {
     const cat = $('#f-cat').value;
-    const act = state.rows.filter(r => r.category === cat && monthOf(r) === curMonth && Number(String(r.date).slice(0,4)) === YEAR).reduce((a,r)=>a+r.amount,0);
+    const act = scoped().filter(r => r.category === cat && monthOf(r) === curMonth && Number(String(r.date).slice(0,4)) === YEAR).reduce((a,r)=>a+r.amount,0);
     const bud = Number(state.budget[cat]?.[curMonth]) || 0;
     const over = bud > 0 && act > bud;
     const hint = $('#cat-hint');
@@ -336,7 +421,9 @@ function renderAdd() {
         $('#hint').textContent = `${state.rows.length} total`;
         ev.target.reset();
         $('#type-hidden').value = d.type;
+        $('#person-hidden').value = d.person;
         view.querySelectorAll('.add-type-btn').forEach(b => b.classList.toggle('on', b.dataset.type === d.type));
+        view.querySelectorAll('.add-person-btn').forEach(b => b.classList.toggle('on', b.dataset.person === d.person));
         $('#f-date').value = d.date;
         $('#f-cat').value  = d.category;
         setTimeout(() => { $('#amount-input').focus(); }, 50);
@@ -348,7 +435,7 @@ function renderAdd() {
 /* ============================================================== TRANSACTIONS */
 function renderTransactions() {
   const f = state.filter;
-  let rows = state.rows;
+  let rows = scoped();
   if (f.q) {
     const q = f.q.toLowerCase();
     rows = rows.filter(r => (r.description + ' ' + r.subcategory + ' ' + r.notes + ' ' + r.category).toLowerCase().includes(q));
@@ -390,6 +477,7 @@ function renderTransactions() {
           ${r.recurring === 'Yes' ? '<span class="tx-badge">Recurring</span>' : ''}
         </div>
         <div class="tx-meta">
+          ${!state.person ? `<span class="person-chip" data-p="${esc(r.person || UNASSIGNED)}">${esc(r.person || UNASSIGNED)}</span>` : ''}
           <span class="tx-cat">${esc(r.category)}${r.subcategory ? ' · ' + esc(r.subcategory) : ''}</span>
           ${r.payment ? `<span class="tx-sep">·</span><span class="tx-pay">${esc(r.payment)}</span>` : ''}
         </div>
@@ -411,7 +499,7 @@ function renderTransactions() {
   view.innerHTML = `
   <div class="head">
     <div><h1>Transactions</h1>
-      <p class="sub">${rows.length} of ${state.rows.length} entries${hasFilters ? ' · filtered' : ''}</p>
+      <p class="sub">${esc(personLabel())} &middot; ${rows.length} of ${scoped().length} entries${hasFilters ? ' · filtered' : ''}</p>
     </div>
     <div class="spacer"></div>
     <button class="btn" id="tx-add">+ Add entry</button>
@@ -536,7 +624,8 @@ function renderTransactions() {
 
 /* ==================================================================== BUDGET */
 function renderBudget() {
-  // Pre-compute actual spend per category per month for context bars
+  // Budget is deliberately household-level: one ceiling for the two of you.
+  // The bars therefore always show combined spend, whoever is selected above.
   const actuals = {};
   for (const c of CAT_NAMES) {
     actuals[c] = {};
@@ -622,7 +711,7 @@ function renderBudget() {
 
   view.innerHTML = `
   <div class="head">
-    <div><h1>Budget</h1><p class="sub">Set monthly ceilings. Grey bar = actual spent vs budget. Zero means "not budgeted" and is excluded from Budget Used.</p></div>
+    <div><h1>Budget</h1><p class="sub">One shared household ceiling per category. Bars show <b>combined</b> spend for both of you, regardless of who is selected above. Zero means "not budgeted".</p></div>
     <div class="spacer"></div>
     <div class="actions">
       <button class="btn ghost" id="b-clear-all">Clear all</button>
@@ -792,6 +881,21 @@ function renderData() {
     appended to the connected sheet in batches of 500.</p>
   </div>
 
+  <div class="eyebrow">People</div>
+  <div class="panel stack">
+    <p class="note" style="margin:0">${(() => {
+      const un = state.rows.filter(r => !r.person).length;
+      return un
+        ? `<b>${un} entries have no person set</b> — everything imported before this feature existed. Assign them in one go:`
+        : 'Every entry has a person assigned.';
+    })()}</p>
+    ${state.rows.filter(r => !r.person).length ? `
+    <div class="actions">
+      ${PEOPLE.map(pp => `<button class="btn ghost" data-assign="${pp}">Assign all to ${pp}</button>`).join('')}
+    </div>
+    <p class="note">This rewrites every unassigned row in the sheet. You can still change individual entries afterwards from Transactions → edit.</p>` : ''}
+  </div>
+
   <div class="eyebrow">Danger zone</div>
   <div class="panel"><div class="actions">
     <button class="btn danger" id="wipe">Delete every row${live ? ' from the sheet' : ''}</button>
@@ -826,6 +930,17 @@ function renderData() {
     });
     if (done) { renderData(); notice(`Reloaded ${state.rows.length} rows.`, 'ok'); }
   };
+
+  view.querySelectorAll('[data-assign]').forEach(b => b.onclick = async () => {
+    const who = b.dataset.assign;
+    const todo = state.rows.filter(r => !r.person);
+    if (!confirm(`Assign ${todo.length} unassigned entries to ${who}?\n\nThis updates ${todo.length} rows one at a time and may take a moment.`)) return;
+    const done = await withBusy(`Assigning ${todo.length} entries to ${who}`, async () => {
+      for (const r of todo) await state.store.update(r.id, { ...r, person: who });
+      await refresh();
+    });
+    if (done) { notice(`${todo.length} entries assigned to ${who}.`, 'ok'); renderData(); }
+  });
 
   $('#xlsx').onclick = () => { try { exportWorkbook(state.rows, state.budget); notice('Workbook downloaded.', 'ok'); } catch (e) { notice(e.message, 'bad'); } };
   $('#json').onclick = () => {

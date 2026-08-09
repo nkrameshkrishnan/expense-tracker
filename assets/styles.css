@@ -415,3 +415,56 @@ details[open] .add-details-toggle::before{transform:rotate(90deg)}
 .add-recent-desc{display:block;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .add-recent-date{font-size:10.5px}
 .add-recent-amt{font-size:13px;font-weight:600;white-space:nowrap;flex-shrink:0}
+
+/* ================================================================== PEOPLE */
+/* One colour per person, used on the rail, chips, swatches and every chart. */
+.person-swatch{width:8px;height:8px;border-radius:50%;display:inline-block;flex-shrink:0;background:var(--rule-2)}
+.person-swatch[data-p="Ramesh"],.person-card-fill[data-p="Ramesh"]{background:var(--teal)}
+.person-swatch[data-p="Surya"], .person-card-fill[data-p="Surya"] {background:var(--blue)}
+.person-swatch[data-p="Joint"], .person-card-fill[data-p="Joint"] {background:var(--amber)}
+.person-swatch[data-p="Unassigned"],.person-card-fill[data-p="Unassigned"]{background:var(--rule-2)}
+
+/* header rail switch */
+.people{display:flex;border:1px solid #39434f;margin-left:12px;flex-shrink:0}
+.person-btn{
+  background:none;border:0;border-right:1px solid #39434f;color:#98a2b0;
+  font-family:var(--disp);font-size:11px;font-weight:500;letter-spacing:.06em;
+  padding:5px 11px;cursor:pointer;text-transform:uppercase;white-space:nowrap;
+}
+.person-btn:last-child{border-right:0}
+.person-btn:hover{color:var(--paper)}
+.person-btn.on{background:var(--paper);color:var(--ink);font-weight:700}
+@media(max-width:760px){.people{margin-left:0;order:3}.person-btn{padding:4px 9px;font-size:10px}}
+
+/* dashboard person cards */
+.person-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.person-card{
+  border:1px solid var(--rule-2);background:#fff;padding:13px 15px;cursor:pointer;
+  transition:border-color .15s,background .15s;
+}
+.person-card:hover{border-color:var(--ink-2);background:#fffdf7}
+.person-card.on{border-color:var(--ink);border-width:2px;padding:12px 14px}
+.person-card-head{display:flex;align-items:center;gap:7px;margin-bottom:7px}
+.person-card-name{font-size:12px;font-weight:600;letter-spacing:.04em}
+.person-card-val{font-family:var(--mono);font-size:20px;font-weight:600;letter-spacing:-.02em;margin-bottom:8px}
+.person-card-bar{height:3px;background:var(--rule);overflow:hidden;margin-bottom:7px}
+.person-card-fill{height:100%;transition:width .3s}
+.person-card-meta{display:flex;justify-content:space-between;font-size:11px;gap:8px}
+
+/* inline chip on transaction rows */
+.person-chip{
+  font-size:10px;letter-spacing:.06em;padding:0 5px;border:1px solid var(--rule-2);
+  color:var(--ink-3);margin-right:6px;white-space:nowrap;
+}
+.person-chip[data-p="Ramesh"]{border-color:var(--teal);color:var(--teal)}
+.person-chip[data-p="Surya"] {border-color:var(--blue);color:var(--blue)}
+.person-chip[data-p="Joint"] {border-color:var(--amber);color:var(--amber)}
+
+/* add-page person picker */
+.add-person-row{display:flex;align-items:center;gap:8px;margin-bottom:18px;flex-wrap:wrap}
+.add-person-btn{
+  display:flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--rule-2);
+  padding:6px 14px;font-family:var(--disp);font-size:12.5px;cursor:pointer;color:var(--ink-3);
+}
+.add-person-btn:hover{background:var(--paper-2);color:var(--ink)}
+.add-person-btn.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}

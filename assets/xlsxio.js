@@ -1,9 +1,49 @@
 /* Spreadsheet in / spreadsheet out, plus the aggregation the dashboard runs on. */
-import { CAT_NAMES, EXPENSE_CATS, CAT_TYPE, MONTHS, PAYMENTS, YEAR, normalise } from './store.js';
+import { CAT_NAMES, EXPENSE_CATS, CAT_TYPE, MONTHS, PAYMENTS, PEOPLE, UNASSIGNED, YEAR, normalise } from './store.js';
 
 export const money = n => (n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export const pct = n => (n * 100).toFixed(1) + '%';
 export const monthOf = r => Number(String(r.date).slice(5, 7)) || 0;
+
+/** Filter by person. '' means everyone — the family view. */
+export function byPersonFilter(rows, person) {
+  if (!person) return rows;
+  if (person === UNASSIGNED) return rows.filter(r => !r.person);
+  return rows.filter(r => r.person === person);
+}
+
+/** Per-person totals for a period. Always computed across everyone, so the
+    comparison stays meaningful even while the page is filtered to one person. */
+export function personBreakdown(rows, month) {
+  const inScope = rows.filter(r => Number(String(r.date).slice(0, 4)) === YEAR && (month === 0 || monthOf(r) === month));
+  const buckets = [...PEOPLE, UNASSIGNED].map(p => {
+    const mine = p === UNASSIGNED ? inScope.filter(r => !r.person) : inScope.filter(r => r.person === p);
+    return {
+      person: p,
+      expense: mine.filter(r => r.type === 'Expense').reduce((a, r) => a + r.amount, 0),
+      income:  mine.filter(r => r.type === 'Income').reduce((a, r) => a + r.amount, 0),
+      count:   mine.length,
+    };
+  }).filter(b => b.count > 0);
+  const total = buckets.reduce((a, b) => a + b.expense, 0);
+  for (const b of buckets) b.share = total > 0 ? b.expense / total : 0;
+  return buckets;
+}
+
+/** Monthly expense series split by person — feeds the comparison chart. */
+export function personSeries(rows) {
+  const people = [...PEOPLE, UNASSIGNED];
+  return people.map(p => ({
+    person: p,
+    data: MONTHS.map((_, i) => {
+      const m = i + 1;
+      return rows.filter(r =>
+        Number(String(r.date).slice(0, 4)) === YEAR && monthOf(r) === m && r.type === 'Expense' &&
+        (p === UNASSIGNED ? !r.person : r.person === p)
+      ).reduce((a, r) => a + r.amount, 0);
+    }),
+  })).filter(s => s.data.some(v => v > 0));
+}
 
 /** All dashboard numbers come from here. month = 0 means the whole year. */
 export function aggregate(rows, budget, month) {
@@ -66,10 +106,11 @@ export function exportWorkbook(rows, budget) {
   const sorted = [...rows].sort((a, b) => (a.date < b.date ? -1 : 1));
 
   const txAoa = [['Date', 'Month', 'Year', 'Type', 'Category', 'Subcategory', 'Description',
-    'Amount (CAD)', 'Payment Method', 'Account', 'Recurring?', 'Notes']];
+    'Amount (CAD)', 'Payment Method', 'Account', 'Recurring?', 'Notes', 'Person']];
   for (const r of sorted) {
     txAoa.push([r.date, MONTHS[monthOf(r) - 1] || '', Number(String(r.date).slice(0, 4)) || '',
-      r.type, r.category, r.subcategory, r.description, r.amount, r.payment, r.account, r.recurring, r.notes]);
+      r.type, r.category, r.subcategory, r.description, r.amount, r.payment, r.account,
+      r.recurring, r.notes, r.person || '']);
   }
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(txAoa), 'Transactions');
 
@@ -114,6 +155,7 @@ const HEADER_ALIASES = {
   account: 'account', card: 'account',
   'recurring?': 'recurring', recurring: 'recurring',
   notes: 'notes', note: 'notes',
+  person: 'person', who: 'person', member: 'person', owner: 'person',
 };
 
 function excelSerialToISO(v) {
@@ -166,7 +208,7 @@ export async function importFile(file) {
     rows.push(normalise({ date, type, category: String(get('category') || '').trim(),
       subcategory: get('subcategory'), description: get('description'), amount,
       payment: get('payment'), account: get('account'),
-      recurring: get('recurring'), notes: get('notes') }));
+      recurring: get('recurring'), notes: get('notes'), person: get('person') }));
   }
   return { rows, skipped, reasons, sheet: best.sheet };
 }

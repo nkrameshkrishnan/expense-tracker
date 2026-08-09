@@ -30,6 +30,13 @@ export const PAYMENTS = ['Credit Card', 'Debit Card', 'Cash', 'e-Transfer', 'Pre
 export const ACCOUNTS = ['Chequing', 'Savings', 'Visa', 'Mastercard', 'Cash Wallet'];
 export const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+/* Who the money belongs to. 'Joint' is a real third bucket, not a sum of the other
+   two — a shared grocery run is Joint, it is not half Ramesh and half Surya.
+   Rows imported before this feature existed have no person and read as Unassigned. */
+export const PEOPLE = ['Ramesh', 'Surya', 'Joint'];
+export const UNASSIGNED = 'Unassigned';
+export const PERSON_KEY = 'ledger.person';
+
 export const ENDPOINT_KEY = 'ledger.sheetsEndpoint';
 export const TOKEN_KEY = 'ledger.sheetsToken';
 
@@ -67,6 +74,7 @@ export function normalise(r) {
     account: r.account || '',
     recurring: (r.recurring === 'Yes' || r.recur === 'Yes') ? 'Yes' : 'No',
     notes: r.notes || r.note || '',
+    person: PEOPLE.includes(r.person) ? r.person : '',
   };
 }
 
