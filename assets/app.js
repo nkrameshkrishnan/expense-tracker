@@ -119,74 +119,227 @@ const kpi = (k, v, m = '', cls = '') => `<div class="kpi ${cls}"><div class="k">
 /* ======================================================================= ADD */
 function renderAdd() {
   const e = state.editing;
-  const opt = (list, sel) => list.map(o => `<option${o === sel ? ' selected' : ''}>${esc(o)}</option>`).join('');
   const today = new Date().toISOString().slice(0, 10);
+  const selType = e?.type || 'Expense';
+  const selCat  = e?.category || 'Groceries';
+
+  const curMonth = new Date().getMonth() + 1;
+  const ctxActual = state.rows
+    .filter(r => r.category === selCat && monthOf(r) === curMonth && Number(String(r.date).slice(0,4)) === YEAR)
+    .reduce((a, r) => a + r.amount, 0);
+  const ctxBudget = Number(state.budget[selCat]?.[curMonth]) || 0;
+  const ctxOver = ctxBudget > 0 && ctxActual > ctxBudget;
+  const recent = state.rows.filter(r => r.category === selCat).slice(0, 5);
+  const allSubs = [...new Set(state.rows.map(r => r.subcategory).filter(Boolean))];
+
+  const opt = (list, sel, blank) =>
+    (blank ? `<option value=""></option>` : '') +
+    list.map(o => `<option${o === sel ? ' selected' : ''}>${esc(o)}</option>`).join('');
+
+  const dayName = d => { try { return new Date(d + 'T12:00:00').toLocaleDateString('en-CA', { weekday: 'long' }); } catch { return ''; } };
 
   view.innerHTML = `
-  <div class="head"><div>
-    <h1>${e ? 'Edit entry' : 'Add an expense'}</h1>
-    <p class="sub">${e ? 'Editing entry #' + e.id : 'Amount is always positive. Type decides whether it counts as spend or income.'}</p>
-  </div></div>
-
-  <form id="f" class="formgrid" autocomplete="off">
-    <label class="f"><span>Date *</span><input type="date" name="date" value="${esc(e?.date || today)}" required></label>
-    <label class="f"><span>Type *</span><select name="type">${opt(TYPES, e?.type || 'Expense')}</select></label>
-    <label class="f"><span>Category *</span><select name="category">${opt(CAT_NAMES, e?.category || 'Groceries')}</select></label>
-    <label class="f"><span>Amount (CAD) *</span><input type="number" name="amount" step="0.01" min="0.01" value="${e?.amount ?? ''}" required placeholder="0.00"></label>
-
-    <label class="f wide"><span>Description</span><input name="description" value="${esc(e?.description || '')}" placeholder="What was it?"></label>
-    <label class="f"><span>Subcategory</span><input name="subcategory" list="subs" value="${esc(e?.subcategory || '')}"></label>
-    <label class="f"><span>Recurring?</span><select name="recurring">${opt(['No', 'Yes'], e?.recurring || 'No')}</select></label>
-
-    <label class="f"><span>Payment method</span><select name="payment"><option value=""></option>${opt(PAYMENTS, e?.payment || '')}</select></label>
-    <label class="f"><span>Account</span><select name="account"><option value=""></option>${opt(ACCOUNTS, e?.account || '')}</select></label>
-    <label class="f wide"><span>Notes</span><input name="notes" value="${esc(e?.notes || '')}"></label>
-
-    <div class="full">
-      <div class="err" id="err"></div>
-      <div class="actions">
-        <button class="btn" type="submit">${e ? 'Save changes' : 'Add entry'}</button>
-        ${e ? '<button class="btn ghost" type="button" id="cancel">Cancel</button>' : '<button class="btn ghost" type="reset">Clear</button>'}
-        <span class="muted" id="hint"></span>
-      </div>
+  <div class="head">
+    <div>
+      <h1>${e ? 'Edit entry' : 'Add entry'}</h1>
+      <p class="sub">${e ? `Editing #${e.id} \u2014 ${esc(e.category)} ${money(e.amount)}` : 'Amount is always positive \u2014 Type carries the sign.'}</p>
     </div>
-  </form>
-  <datalist id="subs">${[...new Set(state.rows.map(r => r.subcategory).filter(Boolean))].map(s => `<option>${esc(s)}</option>`).join('')}</datalist>
-  <p class="note">Filling <b>Payment method</b> is what makes the payment-split chart work. It is optional everywhere else.</p>`;
+    ${e ? `<div class="spacer"></div><button class="btn ghost" id="cancel">\u2190 Back</button>` : ''}
+  </div>
 
-  $('#cancel')?.addEventListener('click', () => { state.editing = null; go('transactions'); });
+  <div class="add-layout">
+    <div class="add-main">
+
+      <div class="add-type-row">
+        ${TYPES.map(t => `<button type="button" class="add-type-btn${t === selType ? ' on' : ''}" data-type="${t}">${t}</button>`).join('')}
+      </div>
+
+      <form id="f" autocomplete="off">
+        <input type="hidden" name="type" id="type-hidden" value="${selType}">
+
+        <div class="add-amount-wrap">
+          <span class="add-currency">$</span>
+          <input class="add-amount num" type="number" name="amount" step="0.01" min="0.01"
+            value="${e?.amount ?? ''}" placeholder="0.00" inputmode="decimal"
+            autocomplete="off" id="amount-input">
+          <span class="add-currency-code">CAD</span>
+        </div>
+        <div class="err" id="err"></div>
+
+        <div class="add-primary">
+          <div class="add-field">
+            <label for="f-date" class="add-label">Date</label>
+            <input id="f-date" type="date" name="date" value="${esc(e?.date || today)}" required>
+            <span class="add-field-hint muted" id="day-name">${dayName(e?.date || today)}</span>
+          </div>
+          <div class="add-field">
+            <label for="f-cat" class="add-label">Category</label>
+            <select id="f-cat" name="category">${opt(CAT_NAMES, selCat)}</select>
+            <span class="add-field-hint ${ctxOver ? 'over' : 'muted'}" id="cat-hint">
+              ${ctxBudget > 0
+                ? `${MONTHS[curMonth-1]}: ${money(ctxActual)} of ${money(ctxBudget)}${ctxOver ? ' \u2014 over' : ''}`
+                : ctxActual > 0 ? `${MONTHS[curMonth-1]}: ${money(ctxActual)} spent` : 'no budget set'}
+            </span>
+          </div>
+        </div>
+
+        <div class="add-field add-field-full">
+          <label for="f-desc" class="add-label">Description</label>
+          <input id="f-desc" name="description" value="${esc(e?.description || '')}"
+            placeholder="What was it?" list="subs-dl">
+          <datalist id="subs-dl">
+            ${[...new Set(state.rows.filter(r=>r.category===selCat).map(r=>r.description).filter(Boolean))].map(s=>`<option>${esc(s)}</option>`).join('')}
+          </datalist>
+        </div>
+
+        <details class="add-details" ${e && (e.subcategory || e.payment || e.account || e.notes) ? 'open' : ''}>
+          <summary class="add-details-toggle">More details <span class="muted">(subcategory, payment, account, notes)</span></summary>
+          <div class="add-secondary">
+            <div class="add-field">
+              <label for="f-sub" class="add-label">Subcategory</label>
+              <input id="f-sub" name="subcategory" value="${esc(e?.subcategory || '')}" list="subs-all">
+              <datalist id="subs-all">${allSubs.map(s=>`<option>${esc(s)}</option>`).join('')}</datalist>
+            </div>
+            <div class="add-field">
+              <label for="f-pay" class="add-label">Payment method</label>
+              <select id="f-pay" name="payment">${opt(PAYMENTS, e?.payment || '', true)}</select>
+            </div>
+            <div class="add-field">
+              <label for="f-acc" class="add-label">Account</label>
+              <select id="f-acc" name="account">${opt(ACCOUNTS, e?.account || '', true)}</select>
+            </div>
+            <div class="add-field">
+              <label for="f-rec" class="add-label">Recurring?</label>
+              <select id="f-rec" name="recurring">${opt(['No', 'Yes'], e?.recurring || 'No')}</select>
+            </div>
+            <div class="add-field add-field-wide">
+              <label for="f-notes" class="add-label">Notes</label>
+              <input id="f-notes" name="notes" value="${esc(e?.notes || '')}" placeholder="Anything else\u2026">
+            </div>
+          </div>
+        </details>
+
+        <div class="add-submit-row">
+          <button class="btn add-submit" type="submit" id="sub-btn">${e ? 'Save changes' : 'Add entry'}</button>
+          ${e ? `<button class="btn ghost" type="button" id="cancel2">Cancel</button>`
+              : `<button class="btn ghost" type="reset">Clear</button>`}
+          <span class="add-hint num muted" id="hint"></span>
+        </div>
+      </form>
+    </div>
+
+    <div class="add-context" id="ctx-panel">
+      <div class="add-ctx-section">
+        <div class="add-ctx-head" id="ctx-cat-name">${esc(selCat)}</div>
+        <div class="add-ctx-stats" id="ctx-stats">
+          ${ctxBudget > 0 ? `
+            <div class="add-ctx-bar-wrap">
+              <div class="add-ctx-bar-track">
+                <div class="add-ctx-bar-fill ${ctxOver ? 'over' : ''}"
+                  style="width:${Math.min(ctxActual/ctxBudget*100,100).toFixed(1)}%"></div>
+              </div>
+            </div>
+            <div class="add-ctx-row"><span class="muted">Spent ${MONTHS[curMonth-1]}</span><span class="num ${ctxOver ? 'over' : ''}">${money(ctxActual)}</span></div>
+            <div class="add-ctx-row"><span class="muted">Budget</span><span class="num">${money(ctxBudget)}</span></div>
+            <div class="add-ctx-row"><span class="muted">Remaining</span><span class="num ${ctxOver ? 'over' : 'tx-income'}">${money(ctxBudget - ctxActual)}</span></div>`
+          : `<p class="muted" style="font-size:12px;margin:0">No budget set. <a href="#budget" id="go-budget" style="color:var(--ink)">Set one \u2192</a></p>`}
+        </div>
+      </div>
+      ${recent.length ? `
+      <div class="add-ctx-section">
+        <div class="add-ctx-subhead">Recent in this category</div>
+        ${recent.map(r => `
+          <div class="add-recent-row">
+            <div class="add-recent-body">
+              <span class="add-recent-desc">${esc(r.description || r.subcategory || '\u2014')}</span>
+              <span class="add-recent-date num muted">${esc(r.date)}</span>
+            </div>
+            <span class="add-recent-amt num">${money(r.amount)}</span>
+          </div>`).join('')}
+      </div>` : ''}
+    </div>
+  </div>`;
+
+  view.querySelectorAll('.add-type-btn').forEach(btn => {
+    btn.onclick = () => {
+      view.querySelectorAll('.add-type-btn').forEach(b => b.classList.remove('on'));
+      btn.classList.add('on');
+      $('#type-hidden').value = btn.dataset.type;
+    };
+  });
+
+  $('#f-date').oninput = ev => { $('#day-name').textContent = dayName(ev.target.value); };
+
+  $('#f-cat').onchange = () => {
+    const cat = $('#f-cat').value;
+    const act = state.rows.filter(r => r.category === cat && monthOf(r) === curMonth && Number(String(r.date).slice(0,4)) === YEAR).reduce((a,r)=>a+r.amount,0);
+    const bud = Number(state.budget[cat]?.[curMonth]) || 0;
+    const over = bud > 0 && act > bud;
+    const hint = $('#cat-hint');
+    if (hint) {
+      hint.textContent = bud > 0 ? `${MONTHS[curMonth-1]}: ${money(act)} of ${money(bud)}${over ? ' — over' : ''}` : act > 0 ? `${MONTHS[curMonth-1]}: ${money(act)} spent` : 'no budget set';
+      hint.className = `add-field-hint ${over ? 'over' : 'muted'}`;
+    }
+    const head = $('#ctx-cat-name'); if (head) head.textContent = cat;
+    const stats = $('#ctx-stats');
+    if (stats) {
+      if (bud > 0) {
+        stats.innerHTML = `<div class="add-ctx-bar-wrap"><div class="add-ctx-bar-track"><div class="add-ctx-bar-fill ${over?'over':''}" style="width:${Math.min(act/bud*100,100).toFixed(1)}%"></div></div></div>
+          <div class="add-ctx-row"><span class="muted">Spent ${MONTHS[curMonth-1]}</span><span class="num ${over?'over':''}">${money(act)}</span></div>
+          <div class="add-ctx-row"><span class="muted">Budget</span><span class="num">${money(bud)}</span></div>
+          <div class="add-ctx-row"><span class="muted">Remaining</span><span class="num ${over?'over':'tx-income'}">${money(bud-act)}</span></div>`;
+      } else {
+        stats.innerHTML = `<p class="muted" style="font-size:12px;margin:0">No budget set. <a href="#budget" id="go-budget" style="color:var(--ink)">Set one \u2192</a></p>`;
+        $('#go-budget')?.addEventListener('click', ev => { ev.preventDefault(); go('budget'); });
+      }
+    }
+  };
+
+  $('#cancel')?.addEventListener('click',  () => { state.editing = null; go('transactions'); });
+  $('#cancel2')?.addEventListener('click', () => { state.editing = null; go('transactions'); });
+  $('#go-budget')?.addEventListener('click', ev => { ev.preventDefault(); go('budget'); });
+
+  setTimeout(() => { $('#amount-input')?.focus(); }, 50);
 
   $('#f').onsubmit = async ev => {
     ev.preventDefault();
     const d = Object.fromEntries(new FormData(ev.target));
     const amount = Number(d.amount);
-    if (!d.date) return ($('#err').textContent = 'Pick a date.');
-    if (!(amount > 0)) return ($('#err').textContent = 'Amount must be greater than zero. Use the Type field for income, not a minus sign.');
-    if (Number(d.date.slice(0, 4)) !== YEAR) {
-      $('#err').textContent = `Heads up: ${d.date} is outside ${YEAR}. It will save, but the dashboard only summarises ${YEAR}.`;
-    }
-    const btn = ev.target.querySelector('button[type=submit]');
+    const errEl = $('#err');
+    errEl.textContent = '';
+
+    if (!d.date)       { errEl.textContent = 'Pick a date.'; return; }
+    if (!(amount > 0)) { errEl.textContent = 'Amount must be greater than zero.'; $('#amount-input').focus(); return; }
+
+    if (Number(d.date.slice(0,4)) !== YEAR)
+      errEl.textContent = `${d.date} is outside ${YEAR} \u2014 it will save but won\u2019t appear on the dashboard.`;
+
+    const btn = $('#sub-btn');
     btn.disabled = true;
+
     if (state.editing) {
-      const done = await withBusy('Updating the sheet', async () => {
+      const done = await withBusy('Updating', async () => {
         await state.store.update(state.editing.id, { ...d, amount });
         state.editing = null;
         await refresh();
       });
       btn.disabled = false;
-      if (done) { notice('Entry updated in the sheet.', 'ok'); go('transactions'); }
+      if (done) { notice('Entry updated.', 'ok'); go('transactions'); }
     } else {
-      const done = await withBusy('Writing to the sheet', async () => {
+      const done = await withBusy('Saving', async () => {
         await state.store.add({ ...d, amount });
         await refresh();
       });
       btn.disabled = false;
       if (done) {
-        notice(`Saved ${money(amount)} to ${state.store.kind === 'sheets' ? 'the sheet' : 'browser storage'}.`, 'ok');
-        $('#hint').textContent = `${state.rows.length} entries total.`;
+        notice(`${money(amount)} saved.`, 'ok');
+        $('#hint').textContent = `${state.rows.length} total`;
         ev.target.reset();
-        ev.target.date.value = d.date;
-        ev.target.querySelector('[name=amount]').focus();
+        $('#type-hidden').value = d.type;
+        view.querySelectorAll('.add-type-btn').forEach(b => b.classList.toggle('on', b.dataset.type === d.type));
+        $('#f-date').value = d.date;
+        $('#f-cat').value  = d.category;
+        setTimeout(() => { $('#amount-input').focus(); }, 50);
       }
     }
   };
