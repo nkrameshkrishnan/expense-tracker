@@ -58,11 +58,29 @@ function showGate(message) {
         gate.hidden = true;
         await boot();
       },
-      auto_select: true,
+      // auto_select removed on purpose. Google's own docs: on ITP browsers
+      // (Safari, Firefox) the automatic One Tap prompt opens a pop-up, and
+      // Safari blocks pop-ups that were not triggered by a direct click. That
+      // failure is silent from here - no error, no callback, nothing - so a
+      // user on Safari could sign in with Google's own UI and still see
+      // exactly this same gate afterward with no clue why. The rendered
+      // button below is click-triggered, which satisfies the user-gesture
+      // requirement on every browser, so it is the primary path now.
     });
     google.accounts.id.renderButton($('#gsi-button'),
       { theme: 'filled_black', size: 'large', text: 'signin_with', shape: 'rectangular' });
-    google.accounts.id.prompt();
+
+    // Still attempt the automatic prompt as a nice-to-have on browsers where
+    // it works cleanly - but listen for the moment it is skipped or blocked,
+    // and say so plainly instead of leaving the screen looking identical to
+    // "please sign in" with no indication anything was even attempted.
+    google.accounts.id.prompt(notification => {
+      if (notification.isNotDisplayed?.() || notification.isSkippedMoment?.()) {
+        const hint = $('.gate-sub');
+        if (hint) hint.textContent =
+          'The automatic prompt did not open in this browser (common in Safari) \u2014 use the button below instead.';
+      }
+    });
   };
   if (window.google?.accounts?.id) start();
   else window.addEventListener('load', () => window.google?.accounts?.id && start(), { once: true });
