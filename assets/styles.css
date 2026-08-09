@@ -509,6 +509,12 @@ details[open] .add-details-toggle::before{transform:rotate(90deg)}
   display:flex;align-items:center;justify-content:center;padding:20px;
   background:var(--paper);
 }
+/* #gate{display:flex} is an ID selector; the browser's built-in [hidden]{display:none}
+   is only an attribute selector, so on specificity alone #gate ALWAYS won regardless
+   of the hidden attribute — confirmed by rendering this in real Chromium: gate.hidden
+   was true, computed display was still "flex". #gate[hidden] has one more attribute
+   selector than plain #gate, so it outranks it and actually takes effect. */
+#gate[hidden]{display:none}
 .gate-card{
   max-width:400px;width:100%;text-align:center;
   border:1px solid var(--rule-2);background:#fff;padding:36px 30px;
