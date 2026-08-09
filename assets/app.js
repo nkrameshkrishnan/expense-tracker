@@ -1,7 +1,7 @@
 import {
   openStore, CAT_NAMES, EXPENSE_CATS, CAT_TYPE, TYPES, PAYMENTS, ACCOUNTS,
   MONTHS, YEAR, ENDPOINT_KEY, TOKEN_KEY, endpointSource, getEndpoint, emptyBudget,
-  PEOPLE, UNASSIGNED, PERSON_KEY,
+  PEOPLE, UNASSIGNED, PERSON_KEY, CUSTOM_KEY,
 } from './store.js';
 import { aggregate, money, pct, monthOf, exportWorkbook, importFile,
          byPersonFilter, personBreakdown, personSeries } from './xlsxio.js';
@@ -16,6 +16,100 @@ const state = {
   person: localStorage.getItem(PERSON_KEY) || '',        // '' = whole family
   filter: { q: '', cat: '', month: '', type: '' },
 };
+
+/* ------------------------------------------------------- user-defined lists
+   Dropdown options come from three places merged together:
+     1. the built-in constants in store.js
+     2. every value already present in your transactions - so a category that
+        arrived via import shows up without being registered anywhere
+     3. anything you create with "+ New", kept in localStorage
+   That means a new value survives even before any transaction uses it, and an
+   imported value needs no registration at all. */
+function loadCustom() {
+  try { return JSON.parse(localStorage.getItem(CUSTOM_KEY)) || {}; } catch { return {}; }
+}
+function addCustom(kind, value) {
+  const v = String(value || '').trim();
+  if (!v) return '';
+  const c = loadCustom();
+  c[kind] = [...new Set([...(c[kind] || []), v])];
+  localStorage.setItem(CUSTOM_KEY, JSON.stringify(c));
+  return v;
+}
+function removeCustom(kind, value) {
+  const c = loadCustom();
+  c[kind] = (c[kind] || []).filter(x => x !== value);
+  localStorage.setItem(CUSTOM_KEY, JSON.stringify(c));
+}
+const BUILTIN = { category: CAT_NAMES, payment: PAYMENTS, account: ACCOUNTS, subcategory: [] };
+
+/** Merged, de-duplicated, sorted option list for a dropdown. */
+function listFor(kind, forCategory) {
+  const custom = loadCustom()[kind] || [];
+  let fromData;
+  if (kind === 'subcategory') {
+    // Subcategories are scoped to their category - "Hydro" belongs under
+    // Rent / Housing, not under Groceries.
+    const pool = forCategory ? state.rows.filter(r => r.category === forCategory) : state.rows;
+    fromData = pool.map(r => r.subcategory);
+  } else {
+    fromData = state.rows.map(r => r[kind]);
+  }
+  return [...new Set([...(BUILTIN[kind] || []), ...fromData.filter(Boolean), ...custom])]
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b));
+}
+
+/** <select> with every known option plus a "+ New" escape hatch. */
+function selectWithNew(id, kind, selected, { blank = false, forCategory = null } = {}) {
+  const opts = listFor(kind, forCategory);
+  return `<select id="${id}" data-kind="${esc(kind)}">
+    ${blank ? '<option value=""></option>' : ''}
+    ${opts.map(o => `<option${o === selected ? ' selected' : ''}>${esc(o)}</option>`).join('')}
+    ${selected && !opts.includes(selected) ? `<option selected>${esc(selected)}</option>` : ''}
+    <option value="__new__">+ New\u2026</option>
+  </select>`;
+}
+
+/** Turns "+ New" into an inline text field rather than a browser prompt. */
+function wireNewOption(selectId, kind, onAdded) {
+  const sel = $('#' + selectId);
+  if (!sel) return;
+  sel.dataset.prev = sel.value;
+  sel.onchange = () => {
+    if (sel.value !== '__new__') { sel.dataset.prev = sel.value; onAdded?.(sel.value); return; }
+    const prev = sel.dataset.prev || '';
+    const wrap = document.createElement('span');
+    wrap.className = 'newopt';
+    wrap.innerHTML = `<input class="newopt-input" placeholder="New ${esc(kind)}\u2026" autocomplete="off">
+      <button type="button" class="newopt-ok">Add</button>
+      <button type="button" class="newopt-cancel">\u2715</button>`;
+    sel.style.display = 'none';
+    sel.after(wrap);
+    const input = wrap.querySelector('.newopt-input');
+    input.focus();
+    const close = value => {
+      wrap.remove(); sel.style.display = '';
+      if (value) {
+        addCustom(kind, value);
+        const o = document.createElement('option');
+        o.textContent = value;
+        sel.insertBefore(o, sel.querySelector('option[value="__new__"]'));
+        sel.value = value;
+      } else {
+        sel.value = prev;
+      }
+      sel.dataset.prev = sel.value;
+      onAdded?.(sel.value);
+    };
+    wrap.querySelector('.newopt-ok').onclick = () => close(input.value.trim());
+    wrap.querySelector('.newopt-cancel').onclick = () => close(null);
+    input.onkeydown = e => {
+      if (e.key === 'Enter') { e.preventDefault(); close(input.value.trim()); }
+      if (e.key === 'Escape') { e.preventDefault(); close(null); }
+    };
+  };
+}
 
 /** Rows for whoever is currently selected. Every page reads through this. */
 const scoped = () => byPersonFilter(state.rows, state.person);
@@ -251,7 +345,7 @@ function renderAdd() {
           </div>
           <div class="add-field">
             <label for="f-cat" class="add-label">Category</label>
-            <select id="f-cat" name="category">${opt(CAT_NAMES, selCat)}</select>
+            ${selectWithNew('f-cat', 'category', selCat)}
             <span class="add-field-hint ${ctxOver ? 'over' : 'muted'}" id="cat-hint">
               ${ctxBudget > 0
                 ? `${MONTHS[curMonth-1]}: ${money(ctxActual)} of ${money(ctxBudget)}${ctxOver ? ' \u2014 over' : ''}`
@@ -274,16 +368,16 @@ function renderAdd() {
           <div class="add-secondary">
             <div class="add-field">
               <label for="f-sub" class="add-label">Subcategory</label>
-              <input id="f-sub" name="subcategory" value="${esc(e?.subcategory || '')}" list="subs-all">
-              <datalist id="subs-all">${allSubs.map(s=>`<option>${esc(s)}</option>`).join('')}</datalist>
+              ${selectWithNew('f-sub', 'subcategory', e?.subcategory || '', { blank: true, forCategory: selCat })}
+              <span class="add-field-hint muted" id="sub-hint">options for ${esc(selCat)}</span>
             </div>
             <div class="add-field">
               <label for="f-pay" class="add-label">Payment method</label>
-              <select id="f-pay" name="payment">${opt(PAYMENTS, e?.payment || '', true)}</select>
+              ${selectWithNew('f-pay', 'payment', e?.payment || '', { blank: true })}
             </div>
             <div class="add-field">
               <label for="f-acc" class="add-label">Account</label>
-              <select id="f-acc" name="account">${opt(ACCOUNTS, e?.account || '', true)}</select>
+              ${selectWithNew('f-acc', 'account', e?.account || '', { blank: true })}
             </div>
             <div class="add-field">
               <label for="f-rec" class="add-label">Recurring?</label>
@@ -337,6 +431,14 @@ function renderAdd() {
     </div>
   </div>`;
 
+  // selectWithNew() builds plain selects; FormData needs name attributes.
+  [['f-cat','category'],['f-sub','subcategory'],['f-pay','payment'],['f-acc','account']]
+    .forEach(([id,name]) => { const el = $('#'+id); if (el) el.name = name; });
+
+  wireNewOption('f-sub', 'subcategory');
+  wireNewOption('f-pay', 'payment');
+  wireNewOption('f-acc', 'account');
+
   view.querySelectorAll('.add-type-btn').forEach(btn => {
     btn.onclick = () => {
       view.querySelectorAll('.add-type-btn').forEach(b => b.classList.remove('on'));
@@ -355,8 +457,30 @@ function renderAdd() {
 
   $('#f-date').oninput = ev => { $('#day-name').textContent = dayName(ev.target.value); };
 
-  $('#f-cat').onchange = () => {
+  wireNewOption('f-cat', 'category', () => refreshSubOptions());
+
+  /* Subcategories are scoped to the chosen category, so switching category has
+     to rebuild that list. Keeps the current value if it still applies. */
+  function refreshSubOptions() {
     const cat = $('#f-cat').value;
+    const sub = $('#f-sub');
+    if (!sub || cat === '__new__') return;
+    const keep = sub.value;
+    const opts = listFor('subcategory', cat);
+    sub.innerHTML = '<option value=""></option>'
+      + opts.map(o => `<option${o === keep ? ' selected' : ''}>${esc(o)}</option>`).join('')
+      + (keep && !opts.includes(keep) ? `<option selected>${esc(keep)}</option>` : '')
+      + '<option value="__new__">+ New\u2026</option>';
+    sub.name = 'subcategory';
+    sub.dataset.prev = sub.value;
+    wireNewOption('f-sub', 'subcategory');
+    const hint = $('#sub-hint');
+    if (hint) hint.textContent = opts.length ? `${opts.length} option${opts.length>1?'s':''} for ${cat}` : `no subcategories yet for ${cat}`;
+  }
+
+  $('#f-cat').addEventListener('change', () => {
+    const cat = $('#f-cat').value;
+    if (cat === '__new__') return;
     const act = scoped().filter(r => r.category === cat && monthOf(r) === curMonth && Number(String(r.date).slice(0,4)) === YEAR).reduce((a,r)=>a+r.amount,0);
     const bud = Number(state.budget[cat]?.[curMonth]) || 0;
     const over = bud > 0 && act > bud;
@@ -365,6 +489,7 @@ function renderAdd() {
       hint.textContent = bud > 0 ? `${MONTHS[curMonth-1]}: ${money(act)} of ${money(bud)}${over ? ' — over' : ''}` : act > 0 ? `${MONTHS[curMonth-1]}: ${money(act)} spent` : 'no budget set';
       hint.className = `add-field-hint ${over ? 'over' : 'muted'}`;
     }
+    refreshSubOptions();
     const head = $('#ctx-cat-name'); if (head) head.textContent = cat;
     const stats = $('#ctx-stats');
     if (stats) {
@@ -378,7 +503,9 @@ function renderAdd() {
         $('#go-budget')?.addEventListener('click', ev => { ev.preventDefault(); go('budget'); });
       }
     }
-  };
+  });
+
+  refreshSubOptions();
 
   $('#cancel')?.addEventListener('click',  () => { state.editing = null; go('transactions'); });
   $('#cancel2')?.addEventListener('click', () => { state.editing = null; go('transactions'); });
@@ -548,7 +675,7 @@ function renderTransactions() {
       </select>
       <select id="fc">
         <option value="">All categories</option>
-        ${CAT_NAMES.map(c => `<option${c === f.cat ? ' selected' : ''}>${esc(c)}</option>`).join('')}
+        ${listFor('category').map(c => `<option${c === f.cat ? ' selected' : ''}>${esc(c)}</option>`).join('')}
       </select>
       <select id="ft">
         <option value="">All types</option>
@@ -686,10 +813,12 @@ function renderTransactions() {
 
 /* ==================================================================== BUDGET */
 function renderBudget() {
+  // Includes user-created categories, not just the built-in list.
+  const allCats = listFor('category');
   // Budget is deliberately household-level: one ceiling for the two of you.
   // The bars therefore always show combined spend, whoever is selected above.
   const actuals = {};
-  for (const c of CAT_NAMES) {
+  for (const c of listFor('category')) {
     actuals[c] = {};
     for (let m = 1; m <= 12; m++) {
       actuals[c][m] = state.rows
@@ -798,12 +927,12 @@ function renderBudget() {
 
   <div class="eyebrow">Income</div>
   <div class="bcards">
-    ${CAT_NAMES.filter(c => CAT_TYPE[c] === 'Income').map(renderCard).join('')}
+    ${allCats.filter(c => CAT_TYPE[c] === 'Income').map(renderCard).join('')}
   </div>
 
   <div class="eyebrow">Expenses</div>
   <div class="bcards">
-    ${CAT_NAMES.filter(c => CAT_TYPE[c] === 'Expense').map(renderCard).join('')}
+    ${allCats.filter(c => CAT_TYPE[c] !== 'Income').map(renderCard).join('')}
   </div>
 
   <p class="note" style="margin-top:18px">Bar shows actual spend vs this year's budget. Red = over. Nothing saves until you click <b>Save budget</b>.</p>`;

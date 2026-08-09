@@ -27,7 +27,12 @@ export const CAT_TYPE = Object.fromEntries(CATEGORIES);
 
 export const TYPES = ['Expense', 'Income', 'Transfer'];
 export const PAYMENTS = ['Credit Card', 'Debit Card', 'Cash', 'e-Transfer', 'Pre-authorized Debit', 'Other'];
-export const ACCOUNTS = ['Chequing', 'Savings', 'Visa', 'Mastercard', 'Amex', 'Cash Wallet'];
+export const ACCOUNTS = [
+  'CIBC Chequing', 'WealthSimple Chequing', 'Savings',
+  'Visa', 'Mastercard', 'Amex',
+  'WealthSimple TFSA', 'WealthSimple RRSP', 'WealthSimple Non-registered',
+  'Cash Wallet',
+];
 export const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /* Who the money belongs to. 'Joint' is a real third bucket, not a sum of the other
@@ -37,6 +42,7 @@ export const PEOPLE = ['Ramesh', 'Surya', 'Joint'];
 export const UNASSIGNED = 'Unassigned';
 export const PERSON_KEY = 'ledger.person';
 
+export const CUSTOM_KEY = 'ledger.customLists';
 export const ENDPOINT_KEY = 'ledger.sheetsEndpoint';
 export const TOKEN_KEY = 'ledger.sheetsToken';
 
@@ -66,7 +72,9 @@ export function normalise(r) {
     id: r.id,
     date: String(r.date || '').slice(0, 10),
     type,
-    category: CAT_NAMES.includes(raw) ? raw : 'Miscellaneous',
+    // Any non-empty string is allowed: users can create their own categories,
+    // and forcing unknown names to Miscellaneous would silently discard them.
+    category: String(raw || '').trim() || 'Miscellaneous',
     subcategory: r.subcategory || r.sub || '',
     description: r.description || r.desc || '',
     amount: Math.round(amount * 100) / 100,

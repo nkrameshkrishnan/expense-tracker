@@ -487,3 +487,18 @@ details[open] .add-details-toggle::before{transform:rotate(90deg)}
 }
 .add-person-btn:hover{background:var(--paper-2);color:var(--ink)}
 .add-person-btn.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+
+/* ------------------------------------------------- inline "+ New" list entry */
+.newopt{display:flex;gap:4px;align-items:center;width:100%}
+.newopt-input{
+  flex:1;min-width:0;border:1px solid var(--ink);padding:7px 9px;
+  font-family:var(--disp);font-size:13px;background:#fff;color:var(--ink);
+}
+.newopt-input:focus{outline:2px solid var(--ink);outline-offset:-1px}
+.newopt-ok,.newopt-cancel{
+  border:1px solid var(--rule-2);background:#fff;cursor:pointer;
+  font-family:var(--disp);font-size:12px;padding:7px 9px;color:var(--ink);flex-shrink:0;
+}
+.newopt-ok{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.newopt-ok:hover{background:#000}
+.newopt-cancel:hover{background:var(--paper-2)}
