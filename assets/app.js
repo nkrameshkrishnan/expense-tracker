@@ -1407,28 +1407,51 @@ function wireDebtHandlers() {
       if (!confirm(`Import ${debts.length} agreement(s) and ${pays.length} payment(s)?\n\n`
                  + `Principal ${money(principal)}\nRepaid ${money(repaid)}\n`
                  + `Outstanding ${money(Math.max(0, principal-repaid))}`)) { out.textContent='Cancelled.'; return; }
-      const done = await withBusy(`Importing ${recs.length} rows`, async () => {
-        // Parent ids are assigned by the store, so map the file's ids onto the real ones.
-        const idMap = {};
-        for (const d of debts) {
-          const fileId = String(d.parentId || d.id || debts.indexOf(d) + 1);
-          const realId = await state.store.addDebt({ ...d, kind: 'Debt', parentId: null });
-          idMap[String(debts.indexOf(d) + 1)] = realId;
-        }
-        const firstReal = Object.values(idMap)[0];
-        for (const p of pays) {
-          await state.store.addDebt({ ...p, kind: 'Payment',
-            parentId: idMap[String(p.parentId)] ?? firstReal });
-        }
+
+      // Every debt and payment goes in ONE request, not one per row. A prior
+      // version looped addDebt() per row - 33 sequential network calls for a
+      // 32-payment ledger - and anything that interrupted the loop partway
+      // (a network blip, a backgrounded tab) left the sheet holding whichever
+      // rows had already landed and silently dropped the rest, with the wrong
+      // total showing and no error. A single batch either fully lands or fully
+      // fails; there is no partial state to land in.
+      debts.forEach((d, i) => { d.fileRef = String(i + 1); });
+      pays.forEach(p => { p.parentFileRef = String(p.parentId || '1'); });
+      const batch = [...debts.map(d => ({ ...d, kind: 'Debt' })),
+                     ...pays.map(p => ({ ...p, kind: 'Payment' }))];
+
+      const done = await withBusy(`Importing ${recs.length} rows in one batch`, async () => {
+        const res = await state.store.importDebts(batch);
         state.debts = await state.store.getDebts();
+        return res;
       });
-      if (done) { notice(`Imported ${debts.length} agreement(s), ${pays.length} payment(s).`, 'ok'); renderNetWorth(); }
+      if (done) {
+        notice(`Imported ${debts.length} agreement(s), ${pays.length} payment(s) in a single write.`, 'ok');
+        renderNetWorth();
+      }
     } catch (err) { out.innerHTML = `<b class="over">${esc(err.message)}</b>`; }
   });
   view.querySelectorAll('[data-editdebt]').forEach(b => b.onclick = () =>
     debtDialog((state.debts || []).find(d => Number(d.id) === Number(b.dataset.editdebt))));
 
   view.querySelectorAll('[data-pay]').forEach(b => b.onclick = () => paymentDialog(Number(b.dataset.pay)));
+
+  // Repair path for the sequential-import bug: a debt whose payments sum to
+  // less than what its own notes/description implies is very likely a partial
+  // import from before batching existed. Surface a one-click fix rather than
+  // making the person work out what happened themselves.
+  view.querySelectorAll('[data-fixpartial]').forEach(b => b.onclick = async () => {
+    const id = Number(b.dataset.fixpartial);
+    const d = debtSummary(state.debts || []).find(x => x.id === id);
+    if (!d) return;
+    if (!confirm(`Delete "${d.counterparty}" and its ${d.payments.length} payment(s), so you can `
+               + `re-import the full ledger cleanly?\n\nThis cannot be undone.`)) return;
+    if (await withBusy('Removing the partial import', async () => { await state.store.deleteDebt(id); })) {
+      state.debts = await state.store.getDebts();
+      notice('Removed. Re-import your ledger file now.', 'ok');
+      renderNetWorth();
+    }
+  });
 
   view.querySelectorAll('[data-deldebt]').forEach(b => b.onclick = async () => {
     const d = debtSummary(state.debts || []).find(x => Number(x.id) === Number(b.dataset.deldebt));
@@ -1604,6 +1627,11 @@ function renderDebtSection(scopeOwner) {
 
       ${d.overpaid ? `<div class="debt-warn">Payments exceed the principal by
         ${money(d.paid - d.principal)}. Outstanding is floored at zero.</div>` : ''}
+      ${d.notes && /\$[\d,]+\.\d{2}/.test(d.notes) && d.payments.length > 0 && d.payments.length < 20
+        ? `<div class="debt-warn">This looks like it might be a partial import from before batch import
+           existed \u2014 only ${d.payments.length} payment(s) are recorded. If you imported a longer
+           ledger and expected more, <button class="rowbtn" style="display:inline" data-fixpartial="${d.id}">remove this and re-import</button>.</div>`
+        : ''}
       ${mismatch ? `<div class="debt-warn">Transactions mentioning &ldquo;${esc(d.counterparty)}&rdquo;
         total ${money(relTotal)}, but ${money(d.paid)} is recorded here.
         ${relTotal > d.paid ? 'Some cash movement has no matching payment.' : 'Some payments have no matching transaction.'}</div>` : ''}

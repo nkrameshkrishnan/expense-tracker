@@ -189,6 +189,7 @@ class SheetsStore {
   async addDebt(record) { return (await this._post({ action: 'addDebt', record })).id; }
   async updateDebt(id, record) { await this._post({ action: 'updateDebt', id, record }); }
   async deleteDebt(id) { await this._post({ action: 'deleteDebt', id }); }
+  async importDebts(records) { return this._post({ action: 'importDebts', records }); }
   async setBalances(date, entries) { await this._post({ action: 'setBalances', date, entries }); }
   async deleteBalanceDate(date) { await this._post({ action: 'deleteBalanceDate', date }); }
   async getBudget() {
@@ -278,6 +279,22 @@ class LocalStore {
     await this._wrap(this._tx('meta', 'readwrite').put(
       all.filter(d => Number(d.id) !== Number(id) && Number(d.parentId) !== Number(id)), 'debts'));
   }
+  async importDebts(records) {
+    const all = await this.getDebts();
+    let id = Math.max(0, ...all.map(d => Number(d.id) || 0)) + 1;
+    const fileToReal = {};
+    for (const r of records) if (r.kind !== 'Payment') { fileToReal[String(r.fileRef)] = id++; }
+    const rows = []; let nD = 0, nP = 0, skipped = 0;
+    id = Math.max(0, ...all.map(d => Number(d.id) || 0)) + 1;
+    for (const r of records) {
+      if (r.kind !== 'Payment') { rows.push({ ...r, id, parentId: null }); id++; nD++; continue; }
+      const parentReal = fileToReal[String(r.parentFileRef)];
+      if (!parentReal) { skipped++; continue; }
+      rows.push({ ...r, id, parentId: parentReal }); id++; nP++;
+    }
+    await this._wrap(this._tx('meta', 'readwrite').put([...all, ...rows], 'debts'));
+    return { debts: nD, payments: nP, skipped };
+  }
   async setBalances(date, entries) {
     const all = (await this.getBalances()).filter(b => b.date !== date);
     await this._wrap(this._tx('meta', 'readwrite').put([...all, ...entries.map(e => ({ ...e, date }))], 'balances'));
@@ -314,6 +331,22 @@ class MemoryStore {
   }
   async deleteDebt(id) {
     this.debts = (this.debts || []).filter(d => Number(d.id) !== Number(id) && Number(d.parentId) !== Number(id));
+  }
+  async importDebts(records) {
+    this.debts = this.debts || [];
+    let id = Math.max(0, ...this.debts.map(d => Number(d.id) || 0)) + 1;
+    const fileToReal = {};
+    for (const r of records) if (r.kind !== 'Payment') { fileToReal[String(r.fileRef)] = id++; }
+    const rows = []; let nD = 0, nP = 0, skipped = 0;
+    id = Math.max(0, ...this.debts.map(d => Number(d.id) || 0)) + 1;
+    for (const r of records) {
+      if (r.kind !== 'Payment') { rows.push({ ...r, id, parentId: null }); id++; nD++; continue; }
+      const parentReal = fileToReal[String(r.parentFileRef)];
+      if (!parentReal) { skipped++; continue; }
+      rows.push({ ...r, id, parentId: parentReal }); id++; nP++;
+    }
+    this.debts.push(...rows);
+    return { debts: nD, payments: nP, skipped };
   }
   async setBalances(date, entries) {
     this.balances = [...(this.balances || []).filter(b => b.date !== date),

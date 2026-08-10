@@ -671,6 +671,40 @@ function doPost(e) {
       return ok({ cleared: true });
     }
 
+    if (body.action === 'importDebts') {
+      // Writes every debt and payment in ONE execution instead of one network
+      // round trip per row. The earlier per-row loop made 33 sequential POSTs
+      // for a 32-payment ledger; anything that interrupted the browser mid-loop
+      // (a network blip, a backgrounded tab, Apps Script throttling rapid
+      // requests) left the sheet holding whatever had completed so far and
+      // silently dropped the rest - with no error, just a wrong total. A batch
+      // either fully lands or fully fails; there is no partial state to land in.
+      var ds0 = debtSheet(b.ss);
+      var recs = body.records || [];
+      if (!recs.length) return fail('No records supplied.');
+      if (recs.length > 1000) return fail('Capped at 1000 rows per import.');
+
+      var fileToReal = {};
+      var id = nextDebtId(ds0);
+      for (var i = 0; i < recs.length; i++) {
+        if (recs[i].kind !== 'Payment') { fileToReal[String(recs[i].fileRef)] = id; id++; }
+      }
+      var rows = [], nDebts = 0, nPayments = 0, skipped = 0;
+      id = nextDebtId(ds0);
+      for (var j = 0; j < recs.length; j++) {
+        var r = recs[j];
+        if (r.kind !== 'Payment') { rows.push(debtRow(r, id)); id++; nDebts++; continue; }
+        var parentReal = fileToReal[String(r.parentFileRef)];
+        if (!parentReal) { skipped++; continue; }  // unlinkable payment: skip, don't corrupt
+        rows.push(debtRow(Object.assign({}, r, { parentId: parentReal }), id));
+        id++; nPayments++;
+      }
+      if (rows.length) {
+        ds0.getRange(ds0.getLastRow() + 1, 1, rows.length, DEBT_HEADERS.length).setValues(rows);
+      }
+      return ok({ debts: nDebts, payments: nPayments, skipped: skipped });
+    }
+
     if (body.action === 'addDebt') {
       var ds = debtSheet(b.ss);
       var newId = nextDebtId(ds);
