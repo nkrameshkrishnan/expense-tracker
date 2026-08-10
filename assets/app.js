@@ -16,6 +16,7 @@ const state = {
   store: null, rows: [], budget: emptyBudget(), month: 0, tab: 'dashboard', editing: null,
   person: localStorage.getItem(PERSON_KEY) || '',        // '' = whole family
   balances: [],
+  debts: [],
   filter: { q: '', cat: '', month: '', type: '' },
 };
 
@@ -246,6 +247,7 @@ async function refresh() {
   state.rows = await state.store.list();
   state.budget = await state.store.getBudget();
   state.balances = (await state.store.getBalances?.()) || [];
+  state.debts = (await state.store.getDebts?.()) || [];
   $('#foot-count').textContent = `${state.rows.length} transactions stored`;
   renderPeopleSwitch();
   const c = $('#conn');
@@ -1169,6 +1171,52 @@ function isCustomNwAccount(account) {
   return (loadCustom().nwAccount || []).some(a => a.account === account);
 }
 
+/* ---------------------------------------------------------- debts and loans
+   A debt is an agreement plus its repayment history. Outstanding is always
+   recomputed as principal minus payments, never stored, so the number on
+   screen cannot drift away from the payments that produced it.
+
+   Direction is from your side:
+     Owed  - you owe them  -> a LIABILITY, reduces net worth
+     Lent  - they owe you  -> an ASSET (a receivable), increases net worth
+
+   These sit alongside Transactions, they do not replace them. Sending $200 to
+   Varun is a Transfer in Transactions (cash left an account) AND a payment
+   here (a balance-sheet position changed). Counting it as an expense in
+   Transactions would be the actual error - lending money is not spending it. */
+function debtSummary(debts) {
+  const agreements = debts.filter(d => d.kind !== 'Payment');
+  return agreements.map(a => {
+    const payments = debts
+      .filter(d => d.kind === 'Payment' && Number(d.parentId) === Number(a.id))
+      .sort((x, y) => (x.date < y.date ? 1 : -1));
+    const paid = payments.reduce((s, p) => s + Number(p.amount || 0), 0);
+    const principal = Number(a.amount || 0);
+    const outstanding = Math.max(0, principal - paid);
+    return { ...a, payments, paid, principal, outstanding,
+             settled: outstanding < 0.005,
+             overpaid: paid - principal > 0.005,
+             pct: principal > 0 ? Math.min(paid / principal, 1) : 0 };
+  });
+}
+
+/** Debts feed net worth directly - no manual balance entry needed. */
+function debtNetWorth(debts, owner) {
+  const rows = debtSummary(debts).filter(d => !owner || d.owner === owner);
+  return {
+    liability: rows.filter(d => d.direction === 'Owed').reduce((s, d) => s + d.outstanding, 0),
+    receivable: rows.filter(d => d.direction === 'Lent').reduce((s, d) => s + d.outstanding, 0),
+  };
+}
+
+/** Transactions that look like they involve this counterparty. */
+function relatedTransactions(counterparty) {
+  const needle = String(counterparty || '').toLowerCase().trim();
+  if (needle.length < 3) return [];
+  return state.rows.filter(r =>
+    (r.description + ' ' + r.subcategory + ' ' + r.notes).toLowerCase().includes(needle));
+}
+
 function renderNetWorth() {
   const snaps = state.balances || [];
   const dates = [...new Set(snaps.map(b => b.date))].sort().reverse();
@@ -1181,8 +1229,11 @@ function renderNetWorth() {
     .filter(b => b.kind === kind && (!scopeOwner || b.owner === scopeOwner))
     .reduce((a, b) => a + Number(b.balance || 0), 0);
 
-  const assets = latest ? sumOf(latest, 'Asset') : 0;
-  const liabs  = latest ? sumOf(latest, 'Liability') : 0;
+  // Outstanding debts and loans are part of net worth, computed from their
+  // payment history rather than needing a balance snapshot of their own.
+  const dnw = debtNetWorth(state.debts || [], scopeOwner);
+  const assets = (latest ? sumOf(latest, 'Asset') : 0) + dnw.receivable;
+  const liabs  = (latest ? sumOf(latest, 'Liability') : 0) + dnw.liability;
   const net = assets - liabs;
   const prevNet = prev ? sumOf(prev, 'Asset') - sumOf(prev, 'Liability') : null;
   const delta = prevNet === null ? null : net - prevNet;
@@ -1229,7 +1280,8 @@ function renderNetWorth() {
   </div>` : ''}
 
   ${!latest ? `<div class="empty">No balances recorded yet. Click <b>Record balances</b> to enter what each
-     account is worth today &mdash; separate from your transactions, and never affects income or expense.</div>` : `
+     account is worth today &mdash; separate from your transactions, and never affects income or expense.</div>
+     ${renderDebtSection(scopeOwner)}` : `
 
   <div class="nw-asat">
     <span class="nw-asat-label">Net worth as at</span>
@@ -1284,6 +1336,8 @@ function renderNetWorth() {
     <div class="panel"><h3>Assets by account &mdash; ${esc(latest)}</h3><div class="chartbox"><canvas id="c-nw-split"></canvas></div></div>
   </div>` : `<p class="note">Record a second snapshot to see a trend. Monthly is plenty &mdash; balances move slowly.</p>`}
 
+  ${renderDebtSection(scopeOwner)}
+
   <div class="eyebrow">Snapshots</div>
   <div class="tablewrap"><table><thead><tr><th>Date</th><th class="n">Accounts</th><th class="n">Assets</th><th class="n">Liabilities</th><th class="n">Net worth</th><th></th></tr></thead><tbody>
     ${[...series].reverse().map(x => `<tr>
@@ -1298,6 +1352,7 @@ function renderNetWorth() {
   `}`;
 
   $('#nw-record').onclick = () => renderBalanceForm(latest);
+  wireDebtHandlers();
   view.querySelectorAll('[data-delsnap]').forEach(b => b.onclick = async () => {
     if (!confirm(`Delete the whole snapshot dated ${b.dataset.delsnap}?`)) return;
     const done = await withBusy('Deleting snapshot', async () => {
@@ -1311,6 +1366,247 @@ function renderNetWorth() {
     charts.netWorthTrend(series);
     charts.assetSplit(at(latest).filter(b => b.kind === 'Asset' && (!scopeOwner || b.owner === scopeOwner)));
   }
+}
+
+function wireDebtHandlers() {
+  const reload = async () => { state.debts = await state.store.getDebts(); renderNetWorth(); };
+
+  $('#debt-add')?.addEventListener('click', () => debtDialog(null));
+  view.querySelectorAll('[data-editdebt]').forEach(b => b.onclick = () =>
+    debtDialog((state.debts || []).find(d => Number(d.id) === Number(b.dataset.editdebt))));
+
+  view.querySelectorAll('[data-pay]').forEach(b => b.onclick = () => paymentDialog(Number(b.dataset.pay)));
+
+  view.querySelectorAll('[data-deldebt]').forEach(b => b.onclick = async () => {
+    const d = debtSummary(state.debts || []).find(x => Number(x.id) === Number(b.dataset.deldebt));
+    if (!d) return;
+    const extra = d.payments.length ? `\n\nIts ${d.payments.length} recorded payment(s) will be deleted too.` : '';
+    if (!confirm(`Delete "${d.counterparty}" (${money(d.principal)})?${extra}\n\nTransactions are not affected.`)) return;
+    if (await withBusy('Deleting', async () => { await state.store.deleteDebt(d.id); })) {
+      await reload(); notice('Deleted.', 'ok');
+    }
+  });
+
+  view.querySelectorAll('[data-delpay]').forEach(b => b.onclick = async () => {
+    if (!confirm('Delete this payment? The outstanding balance will go back up.')) return;
+    if (await withBusy('Deleting payment', async () => { await state.store.deleteDebt(Number(b.dataset.delpay)); })) {
+      await reload(); notice('Payment removed.', 'ok');
+    }
+  });
+}
+
+function debtDialog(existing) {
+  const d = existing || {};
+  const today = new Date().toISOString().slice(0, 10);
+  const known = [...new Set((state.debts || []).map(x => x.counterparty).filter(Boolean))];
+  view.innerHTML = `
+  <div class="head">
+    <div><h1>${existing ? 'Edit' : 'Add'} debt or loan</h1>
+      <p class="sub">Records a balance-sheet position. It does not create a transaction.</p></div>
+    <div class="spacer"></div><button class="btn ghost" id="debt-back">&larr; Back</button>
+  </div>
+  <form id="debt-form" class="formgrid" autocomplete="off">
+    <label class="f"><span>Who *</span>
+      <input name="counterparty" value="${esc(d.counterparty || '')}" list="debt-names" placeholder="e.g. Varun" required></label>
+    <datalist id="debt-names">${known.map(k => `<option>${esc(k)}</option>`).join('')}</datalist>
+    <label class="f"><span>Direction *</span>
+      <select name="direction">
+        <option value="Lent"${d.direction === 'Lent' ? ' selected' : ''}>They owe me (I lent money)</option>
+        <option value="Owed"${d.direction === 'Owed' ? ' selected' : ''}>I owe them</option>
+      </select></label>
+    <label class="f"><span>Principal amount *</span>
+      <input type="number" name="amount" step="0.01" min="0.01" value="${d.amount ?? ''}" required placeholder="0.00"></label>
+    <label class="f"><span>Whose *</span>
+      <select name="owner">${PEOPLE.map(p => `<option${(d.owner || 'Ramesh') === p ? ' selected' : ''}>${esc(p)}</option>`).join('')}</select></label>
+    <label class="f"><span>Date opened *</span>
+      <input type="date" name="date" value="${esc(d.date || today)}" required></label>
+    <label class="f wide"><span>Description</span>
+      <input name="description" value="${esc(d.description || '')}" placeholder="What was it for?"></label>
+    <div class="full">
+      <div class="err" id="debt-err"></div>
+      <div class="actions">
+        <button class="btn" type="submit">${existing ? 'Save changes' : 'Add'}</button>
+        <button class="btn ghost" type="button" id="debt-cancel">Cancel</button>
+      </div>
+    </div>
+  </form>
+  <p class="note">Money you <b>lend</b> becomes an asset (they owe you). Money you <b>owe</b> becomes a
+    liability. Either way it updates net worth, and record repayments against it as they happen.</p>`;
+
+  $('#debt-back').onclick = () => renderNetWorth();
+  $('#debt-cancel').onclick = () => renderNetWorth();
+  $('#debt-form').onsubmit = async ev => {
+    ev.preventDefault();
+    const f = Object.fromEntries(new FormData(ev.target));
+    if (!(Number(f.amount) > 0)) return ($('#debt-err').textContent = 'Principal must be greater than zero.');
+    if (!f.counterparty.trim()) return ($('#debt-err').textContent = 'Who is this with?');
+    const rec = { kind: 'Debt', parentId: null, counterparty: f.counterparty.trim(),
+                  direction: f.direction, description: f.description, date: f.date,
+                  amount: Number(f.amount), owner: f.owner, notes: '' };
+    const done = await withBusy(existing ? 'Saving' : 'Adding', async () => {
+      if (existing) await state.store.updateDebt(existing.id, rec);
+      else await state.store.addDebt(rec);
+      state.debts = await state.store.getDebts();
+    });
+    if (done) { notice(existing ? 'Updated.' : `Added ${f.counterparty.trim()}.`, 'ok'); renderNetWorth(); }
+  };
+}
+
+function paymentDialog(debtId) {
+  const d = debtSummary(state.debts || []).find(x => Number(x.id) === Number(debtId));
+  if (!d) return;
+  const today = new Date().toISOString().slice(0, 10);
+  view.innerHTML = `
+  <div class="head">
+    <div><h1>Record payment</h1>
+      <p class="sub">${esc(d.counterparty)} &middot; ${money(d.outstanding)} outstanding of ${money(d.principal)}</p></div>
+    <div class="spacer"></div><button class="btn ghost" id="pay-back">&larr; Back</button>
+  </div>
+  <form id="pay-form" class="formgrid" autocomplete="off">
+    <label class="f"><span>Amount *</span>
+      <input type="number" name="amount" step="0.01" min="0.01" value="" required placeholder="0.00" id="pay-amt"></label>
+    <label class="f"><span>Date *</span><input type="date" name="date" value="${today}" required></label>
+    <label class="f wide"><span>Note</span><input name="description" placeholder="e.g. e-transfer"></label>
+    <div class="full">
+      <div class="actions" style="margin-bottom:10px">
+        <button class="btn ghost" type="button" id="pay-full">Pay full ${money(d.outstanding)}</button>
+        <button class="btn ghost" type="button" id="pay-half">Half</button>
+      </div>
+      <div class="err" id="pay-err"></div>
+      <div class="actions">
+        <button class="btn" type="submit">Record payment</button>
+        <button class="btn ghost" type="button" id="pay-cancel">Cancel</button>
+      </div>
+    </div>
+  </form>
+  <p class="note">This reduces the outstanding balance and appears in the payment history.
+    It does <b>not</b> create a transaction &mdash; if the cash movement also needs recording,
+    add it under <b>Add</b> as a <b>Transfer</b> so it does not count as spending.</p>`;
+
+  $('#pay-back').onclick = () => renderNetWorth();
+  $('#pay-cancel').onclick = () => renderNetWorth();
+  $('#pay-full').onclick = () => { $('#pay-amt').value = d.outstanding.toFixed(2); };
+  $('#pay-half').onclick = () => { $('#pay-amt').value = (d.outstanding / 2).toFixed(2); };
+
+  $('#pay-form').onsubmit = async ev => {
+    ev.preventDefault();
+    const f = Object.fromEntries(new FormData(ev.target));
+    const amt = Number(f.amount);
+    if (!(amt > 0)) return ($('#pay-err').textContent = 'Amount must be greater than zero.');
+    if (amt - d.outstanding > 0.005 &&
+        !confirm(`${money(amt)} is more than the ${money(d.outstanding)} outstanding. Record it anyway?`)) return;
+    const rec = { kind: 'Payment', parentId: d.id, counterparty: d.counterparty,
+                  direction: d.direction, description: f.description, date: f.date,
+                  amount: amt, owner: d.owner, notes: '' };
+    const done = await withBusy('Recording payment', async () => {
+      await state.store.addDebt(rec);
+      state.debts = await state.store.getDebts();
+    });
+    if (done) {
+      const left = Math.max(0, d.outstanding - amt);
+      notice(left < 0.005 ? `${d.counterparty} fully settled.` : `${money(left)} still outstanding.`, 'ok');
+      renderNetWorth();
+    }
+  };
+}
+
+/** Debts & loans section: one card per agreement, with repayment history. */
+function renderDebtSection(scopeOwner) {
+  const rows = debtSummary(state.debts || [])
+    .filter(d => !scopeOwner || d.owner === scopeOwner)
+    .sort((a, b) => (a.settled === b.settled ? (b.outstanding - a.outstanding) : a.settled ? 1 : -1));
+
+  const owedTotal = rows.filter(d => d.direction === 'Owed' && !d.settled)
+    .reduce((s, d) => s + d.outstanding, 0);
+  const lentTotal = rows.filter(d => d.direction === 'Lent' && !d.settled)
+    .reduce((s, d) => s + d.outstanding, 0);
+
+  const card = d => {
+    const rel = relatedTransactions(d.counterparty);
+    const relTotal = rel.reduce((s, r) => s + r.amount, 0);
+    // If cash moved but no payment was recorded (or vice versa), say so rather
+    // than let the two views quietly disagree.
+    const mismatch = rel.length > 0 && Math.abs(relTotal - d.paid) > 0.005;
+    return `
+    <div class="debt-card ${d.settled ? 'settled' : ''}" data-debt="${d.id}">
+      <div class="debt-head">
+        <div>
+          <span class="debt-name">${esc(d.counterparty)}</span>
+          <span class="tag ${d.direction === 'Owed' ? 'tag-liab' : ''}">${d.direction === 'Owed' ? 'You owe' : 'Owed to you'}</span>
+          ${d.settled ? '<span class="tag debt-settled-tag">Settled</span>' : ''}
+          ${d.owner ? `<span class="person-chip" data-p="${esc(d.owner)}">${esc(d.owner)}</span>` : ''}
+          ${d.description ? `<div class="debt-desc">${esc(d.description)}</div>` : ''}
+        </div>
+        <div class="debt-amounts">
+          <span class="debt-outstanding num ${d.direction === 'Owed' ? 'tx-over' : 'tx-income'}">${money(d.outstanding)}</span>
+          <span class="debt-sub">outstanding of ${money(d.principal)}</span>
+        </div>
+      </div>
+
+      <div class="debt-bar-track"><div class="debt-bar-fill ${d.settled ? 'done' : ''}" style="width:${(d.pct*100).toFixed(1)}%"></div></div>
+      <div class="debt-meta">
+        <span class="muted">${money(d.paid)} repaid \u00b7 ${(d.pct*100).toFixed(0)}%</span>
+        <span class="muted">${d.payments.length} payment${d.payments.length===1?'':'s'} \u00b7 opened ${esc(d.date)}</span>
+      </div>
+
+      ${d.overpaid ? `<div class="debt-warn">Payments exceed the principal by
+        ${money(d.paid - d.principal)}. Outstanding is floored at zero.</div>` : ''}
+      ${mismatch ? `<div class="debt-warn">Transactions mentioning &ldquo;${esc(d.counterparty)}&rdquo;
+        total ${money(relTotal)}, but ${money(d.paid)} is recorded here.
+        ${relTotal > d.paid ? 'Some cash movement has no matching payment.' : 'Some payments have no matching transaction.'}</div>` : ''}
+
+      ${d.payments.length ? `<details class="debt-history">
+        <summary>Payment history</summary>
+        <table class="debt-table"><tbody>
+          ${d.payments.map(p => `<tr>
+            <td class="num">${esc(p.date)}</td>
+            <td>${esc(p.description) || '<span class="muted">\u2014</span>'}</td>
+            <td class="n num">${money(p.amount)}</td>
+            <td><button class="rowbtn" data-delpay="${p.id}" title="Delete this payment">\u2715</button></td>
+          </tr>`).join('')}
+        </tbody></table>
+      </details>` : ''}
+
+      ${rel.length ? `<details class="debt-history">
+        <summary>${rel.length} matching transaction${rel.length===1?'':'s'} (${money(relTotal)})</summary>
+        <table class="debt-table"><tbody>
+          ${rel.slice(0,10).map(r => `<tr>
+            <td class="num">${esc(r.date)}</td>
+            <td>${esc(r.description).slice(0,44)}</td>
+            <td><span class="tag">${esc(r.type)}</span></td>
+            <td class="n num">${money(r.amount)}</td>
+          </tr>`).join('')}
+        </tbody></table>
+        <p class="note" style="margin:8px 0 0">These come from your Transactions tab. They are shown for
+          cross-checking only &mdash; recording a payment here does not create or alter a transaction.</p>
+      </details>` : ''}
+
+      <div class="debt-actions">
+        <button class="btn ghost debt-pay" data-pay="${d.id}">Record payment</button>
+        <button class="btn ghost" data-editdebt="${d.id}">Edit</button>
+        <button class="rowbtn" data-deldebt="${d.id}" title="Delete this agreement and its payments">\u2715</button>
+      </div>
+    </div>`;
+  };
+
+  return `
+  <div class="eyebrow">Debts &amp; loans</div>
+  ${rows.length ? `<div class="debt-summary">
+    <div><span class="debt-sum-label">You owe</span><span class="debt-sum-val num tx-over">${money(owedTotal)}</span></div>
+    <div><span class="debt-sum-label">Owed to you</span><span class="debt-sum-val num tx-income">${money(lentTotal)}</span></div>
+    <div><span class="debt-sum-label">Net position</span><span class="debt-sum-val num ${lentTotal-owedTotal<0?'tx-over':'tx-income'}">${money(lentTotal-owedTotal)}</span></div>
+  </div>` : ''}
+
+  <div class="debt-list">
+    ${rows.length ? rows.map(card).join('')
+      : `<div class="empty">No debts or loans recorded. Use <b>Add debt or loan</b> to track money you owe,
+         or money you have lent out.</div>`}
+  </div>
+
+  <div class="actions" style="margin:12px 0 24px">
+    <button class="btn" id="debt-add">Add debt or loan</button>
+    <span class="muted">Outstanding balances flow into the net-worth totals above automatically.</span>
+  </div>`;
 }
 
 /** Enter every account's balance for one date. Grouped, running total, carry-forward. */

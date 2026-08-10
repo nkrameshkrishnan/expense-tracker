@@ -175,7 +175,7 @@ class SheetsStore {
 
   _fill(d) {
     this.cache = { transactions: d.transactions.map(normalise), budget: d.budget,
-                   balances: d.balances || [] };
+                   balances: d.balances || [], debts: d.debts || [] };
     this.sheetName = d.sheetName || '';
     this.user = d.user || null;      // verified by Apps Script, not by the browser
     return this.cache;
@@ -185,6 +185,10 @@ class SheetsStore {
 
   async list() { return (await this._ensure()).transactions; }
   async getBalances() { return (await this._ensure()).balances || []; }
+  async getDebts() { return (await this._ensure()).debts || []; }
+  async addDebt(record) { return (await this._post({ action: 'addDebt', record })).id; }
+  async updateDebt(id, record) { await this._post({ action: 'updateDebt', id, record }); }
+  async deleteDebt(id) { await this._post({ action: 'deleteDebt', id }); }
   async setBalances(date, entries) { await this._post({ action: 'setBalances', date, entries }); }
   async deleteBalanceDate(date) { await this._post({ action: 'deleteBalanceDate', date }); }
   async getBudget() {
@@ -257,6 +261,23 @@ class LocalStore {
   async clear() { await this._wrap(this._tx('transactions', 'readwrite').clear()); await this._wrap(this._tx('meta', 'readwrite').delete('budget')); }
   async getBudget() { return (await this._wrap(this._tx('meta', 'readonly').get('budget'))) || emptyBudget(); }
   async getBalances() { return (await this._wrap(this._tx('meta', 'readonly').get('balances'))) || []; }
+  async getDebts() { return (await this._wrap(this._tx('meta', 'readonly').get('debts'))) || []; }
+  async addDebt(record) {
+    const all = await this.getDebts();
+    const id = Math.max(0, ...all.map(d => Number(d.id) || 0)) + 1;
+    await this._wrap(this._tx('meta', 'readwrite').put([...all, { ...record, id }], 'debts'));
+    return id;
+  }
+  async updateDebt(id, record) {
+    const all = await this.getDebts();
+    await this._wrap(this._tx('meta', 'readwrite').put(
+      all.map(d => (Number(d.id) === Number(id) ? { ...record, id: Number(id) } : d)), 'debts'));
+  }
+  async deleteDebt(id) {
+    const all = await this.getDebts();
+    await this._wrap(this._tx('meta', 'readwrite').put(
+      all.filter(d => Number(d.id) !== Number(id) && Number(d.parentId) !== Number(id)), 'debts'));
+  }
   async setBalances(date, entries) {
     const all = (await this.getBalances()).filter(b => b.date !== date);
     await this._wrap(this._tx('meta', 'readwrite').put([...all, ...entries.map(e => ({ ...e, date }))], 'balances'));
@@ -281,6 +302,19 @@ class MemoryStore {
   async getBudget() { return this.budget; }
   async setBudget(b) { this.budget = b; return b; }
   async getBalances() { return this.balances || (this.balances = []); }
+  async getDebts() { return this.debts || (this.debts = []); }
+  async addDebt(record) {
+    this.debts = this.debts || [];
+    const id = Math.max(0, ...this.debts.map(d => Number(d.id) || 0)) + 1;
+    this.debts.push({ ...record, id });
+    return id;
+  }
+  async updateDebt(id, record) {
+    this.debts = (this.debts || []).map(d => (Number(d.id) === Number(id) ? { ...record, id: Number(id) } : d));
+  }
+  async deleteDebt(id) {
+    this.debts = (this.debts || []).filter(d => Number(d.id) !== Number(id) && Number(d.parentId) !== Number(id));
+  }
   async setBalances(date, entries) {
     this.balances = [...(this.balances || []).filter(b => b.date !== date),
                      ...entries.map(e => ({ ...e, date }))];

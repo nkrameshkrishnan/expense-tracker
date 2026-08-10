@@ -595,3 +595,52 @@ details[open] .add-details-toggle::before{transform:rotate(90deg)}
 .nw-del-acct{opacity:0;transition:opacity .12s;font-size:11px}
 tr:hover .nw-del-acct{opacity:1}
 @media(max-width:640px){.nw-add-row{flex-direction:column;align-items:stretch}.nw-del-acct{opacity:1}}
+
+/* ---------------------------------------------------------- debts and loans */
+.debt-summary{
+  display:grid;grid-template-columns:repeat(3,1fr);
+  border:1px solid var(--rule-2);background:#fff;margin-bottom:14px;
+}
+.debt-summary>div{padding:12px 16px;border-right:1px solid var(--rule)}
+.debt-summary>div:last-child{border-right:0}
+.debt-sum-label{display:block;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.debt-sum-val{font-family:var(--mono);font-size:19px;font-weight:600;letter-spacing:-.02em}
+
+.debt-list{display:flex;flex-direction:column;gap:12px}
+.debt-card{border:1px solid var(--rule-2);background:#fff;padding:14px 16px}
+.debt-card.settled{opacity:.62}
+.debt-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:10px}
+.debt-name{font-weight:700;font-size:14px;margin-right:8px}
+.debt-desc{font-size:12px;color:var(--ink-3);margin-top:4px}
+.debt-amounts{text-align:right;flex-shrink:0}
+.debt-outstanding{display:block;font-family:var(--mono);font-size:20px;font-weight:600;letter-spacing:-.02em}
+.debt-sub{font-size:11px;color:var(--ink-3)}
+.debt-settled-tag{border-color:var(--teal);color:var(--teal)}
+
+.debt-bar-track{height:4px;background:var(--rule);overflow:hidden;margin-bottom:6px}
+.debt-bar-fill{height:100%;background:var(--ink-2);transition:width .3s}
+.debt-bar-fill.done{background:var(--teal)}
+.debt-meta{display:flex;justify-content:space-between;font-size:11.5px;gap:10px;flex-wrap:wrap}
+
+.debt-warn{
+  border-left:3px solid var(--amber);background:#fffdf3;
+  padding:8px 12px;margin-top:10px;font-size:12px;line-height:1.5;color:var(--ink-2);
+}
+.debt-history{margin-top:10px}
+.debt-history summary{
+  font-size:12px;color:var(--ink-3);cursor:pointer;padding:5px 0;
+  list-style:none;display:flex;align-items:center;gap:6px;
+}
+.debt-history summary::-webkit-details-marker{display:none}
+.debt-history summary::before{content:'▸';font-size:10px;transition:transform .2s}
+.debt-history[open] summary::before{transform:rotate(90deg)}
+.debt-history summary:hover{color:var(--ink)}
+.debt-table{border:1px solid var(--rule);margin-top:4px}
+.debt-table td{font-size:12px;padding:5px 9px}
+.debt-actions{display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap}
+.debt-actions .btn{padding:5px 12px;font-size:12px}
+@media(max-width:640px){
+  .debt-summary{grid-template-columns:1fr}
+  .debt-summary>div{border-right:0;border-bottom:1px solid var(--rule)}
+  .debt-head{flex-direction:column}.debt-amounts{text-align:left}
+}

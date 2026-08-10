@@ -105,6 +105,14 @@ var BUDGET_SHEET = 'Budget';
 var BALANCE_SHEET = 'Balances';
 var BAL_HEADERS = ['Date', 'Account', 'Owner', 'Kind', 'Balance', 'Notes'];
 
+/* Debts and loans. One tab holds both the agreement and its repayments:
+   Kind='Debt' rows carry the principal, Kind='Payment' rows point at a debt
+   via ParentID. Outstanding = principal minus payments, computed on read, so
+   the running balance can never drift out of step with its own history. */
+var DEBT_SHEET = 'Debts';
+var DEBT_HEADERS = ['ID', 'Kind', 'ParentID', 'Counterparty', 'Direction',
+                    'Description', 'Date', 'Amount', 'Owner', 'Notes'];
+
 var C_DATE = 1, C_MONTH = 2, C_YEAR = 3, C_TYPE = 4, C_CATEGORY = 5, C_SUBCAT = 6,
     C_DESC = 7, C_AMOUNT = 8, C_PAYMENT = 9, C_ACCOUNT = 10, C_RECUR = 11,
     C_NOTES = 12, C_ID = 13, C_PERSON = 14;
@@ -476,6 +484,69 @@ function writeBalances(bs, date, entries) {
   return rows.length;
 }
 
+/* --------------------------------------------------------------------- debts */
+
+function debtSheet(ss) {
+  var ds = ss.getSheetByName(DEBT_SHEET);
+  if (!ds) {
+    ds = ss.insertSheet(DEBT_SHEET);
+    ds.getRange(1, 1, 1, DEBT_HEADERS.length).setValues([DEBT_HEADERS]).setFontWeight('bold');
+    ds.setFrozenRows(1);
+    ds.getRange('G:G').setNumberFormat('yyyy-mm-dd');
+    ds.getRange('H:H').setNumberFormat('"$"#,##0.00');
+  }
+  return ds;
+}
+
+function readDebts(ds) {
+  var last = ds.getLastRow();
+  if (last < 2) return [];
+  var v = ds.getRange(2, 1, last - 1, DEBT_HEADERS.length).getValues();
+  var out = [];
+  for (var i = 0; i < v.length; i++) {
+    if (v[i][0] === '' || v[i][0] === null) continue;
+    out.push({
+      id: Number(v[i][0]) || 0,
+      kind: String(v[i][1] || 'Debt'),
+      parentId: v[i][2] === '' || v[i][2] === null ? null : Number(v[i][2]),
+      counterparty: String(v[i][3] || ''),
+      direction: String(v[i][4] || 'Owed'),
+      description: String(v[i][5] || ''),
+      date: isoDate(v[i][6]),
+      amount: Number(v[i][7]) || 0,
+      owner: String(v[i][8] || ''),
+      notes: String(v[i][9] || ''),
+    });
+  }
+  return out;
+}
+
+function nextDebtId(ds) {
+  var last = ds.getLastRow();
+  if (last < 2) return 1;
+  var ids = ds.getRange(2, 1, last - 1, 1).getValues();
+  var max = 0;
+  for (var i = 0; i < ids.length; i++) { var n = Number(ids[i][0]); if (n > max) max = n; }
+  return max + 1;
+}
+
+function debtRow(r, id) {
+  return [id, r.kind === 'Payment' ? 'Payment' : 'Debt',
+          r.parentId === null || r.parentId === undefined ? '' : Number(r.parentId),
+          String(r.counterparty || ''), r.direction === 'Lent' ? 'Lent' : 'Owed',
+          String(r.description || ''), toDateObj(r.date),
+          Math.round((Math.abs(Number(r.amount)) || 0) * 100) / 100,
+          String(r.owner || ''), String(r.notes || '')];
+}
+
+function findDebtRow(ds, id) {
+  var last = ds.getLastRow();
+  if (last < 2) return -1;
+  var ids = ds.getRange(2, 1, last - 1, 1).getValues();
+  for (var i = 0; i < ids.length; i++) if (Number(ids[i][0]) === Number(id)) return i + 2;
+  return -1;
+}
+
 /* -------------------------------------------------------------------- budget */
 
 function budgetRowIndex(bg) {
@@ -535,6 +606,7 @@ function doGet(e) {
       transactions: readTransactions(b.tx),
       budget: readBudget(b.bg),
       balances: readBalances(balanceSheet(b.ss)),
+      debts: readDebts(debtSheet(b.ss)),
       sheetName: b.ss.getName(),
       layout: 'tracker',
       user: { email: user.email, name: user.name || '', picture: user.picture || '' },
@@ -597,6 +669,39 @@ function doPost(e) {
     if (body.action === 'clear') {
       clearAllRows(tx);
       return ok({ cleared: true });
+    }
+
+    if (body.action === 'addDebt') {
+      var ds = debtSheet(b.ss);
+      var newId = nextDebtId(ds);
+      ds.appendRow(debtRow(body.record || {}, newId));
+      return ok({ id: newId });
+    }
+
+    if (body.action === 'updateDebt') {
+      var ur = findDebtRow(debtSheet(b.ss), body.id);
+      if (ur === -1) return fail('No debt row with id ' + body.id, 'NOT_FOUND');
+      debtSheet(b.ss).getRange(ur, 1, 1, DEBT_HEADERS.length)
+        .setValues([debtRow(body.record || {}, Number(body.id))]);
+      return ok({ id: Number(body.id) });
+    }
+
+    if (body.action === 'deleteDebt') {
+      var dsx = debtSheet(b.ss);
+      var dr2 = findDebtRow(dsx, body.id);
+      if (dr2 === -1) return fail('No debt row with id ' + body.id, 'NOT_FOUND');
+      // Removing an agreement must remove its repayments too, or they become
+      // orphans that still subtract from a debt that no longer exists.
+      var all = readDebts(dsx);
+      var kids = [];
+      for (var q = 0; q < all.length; q++) if (all[q].parentId === Number(body.id)) kids.push(all[q].id);
+      for (var z = 0; z < kids.length; z++) {
+        var kr = findDebtRow(dsx, kids[z]);
+        if (kr !== -1) dsx.deleteRow(kr);
+      }
+      var again = findDebtRow(dsx, body.id);
+      if (again !== -1) dsx.deleteRow(again);
+      return ok({ deleted: Number(body.id), paymentsRemoved: kids.length });
     }
 
     if (body.action === 'setBalances') {
