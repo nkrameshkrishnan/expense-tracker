@@ -1113,10 +1113,17 @@ function renderBudget() {
 }
 
 /* ================================================================= NET WORTH */
-/* Balances are snapshots, not movements. Nothing on this page feeds Income,
-   Expense or Budget - a TFSA balance already contains the contributions that
-   were recorded as Transfers, so counting both would double them. Unrealised
-   gains are shown here and nowhere else, because they are not money received. */
+/* Balances are snapshots, not movements. Nothing here feeds Income, Expense or
+   Budget - a TFSA balance already contains the contributions recorded as
+   Transfers, so counting both would double them. */
+
+/* No balance seeding from a bundled file, deliberately. An earlier version
+   shipped data/seed-balances.json containing real account balances - in a
+   PUBLIC repo, which is the same mistake that put 687 transactions on
+   raw.githubusercontent.com. Balances arrive one of two ways now: typed into
+   Record balances, or imported from a file you choose at runtime. Neither
+   touches the repository. */
+
 function renderNetWorth() {
   const snaps = state.balances || [];
   const dates = [...new Set(snaps.map(b => b.date))].sort().reverse();
@@ -1124,18 +1131,17 @@ function renderNetWorth() {
   const prev = dates[1] || null;
 
   const at = d => snaps.filter(b => b.date === d);
-  const sumOf = (d, kind, owner) => at(d)
-    .filter(b => b.kind === kind && (!owner || b.owner === owner))
+  const scopeOwner = state.person && state.person !== UNASSIGNED ? state.person : null;
+  const sumOf = (d, kind) => at(d)
+    .filter(b => b.kind === kind && (!scopeOwner || b.owner === scopeOwner))
     .reduce((a, b) => a + Number(b.balance || 0), 0);
 
-  const scopeOwner = state.person && state.person !== UNASSIGNED ? state.person : null;
-  const assets = latest ? sumOf(latest, 'Asset', scopeOwner) : 0;
-  const liabs  = latest ? sumOf(latest, 'Liability', scopeOwner) : 0;
+  const assets = latest ? sumOf(latest, 'Asset') : 0;
+  const liabs  = latest ? sumOf(latest, 'Liability') : 0;
   const net = assets - liabs;
-  const prevNet = prev ? sumOf(prev, 'Asset', scopeOwner) - sumOf(prev, 'Liability', scopeOwner) : null;
+  const prevNet = prev ? sumOf(prev, 'Asset') - sumOf(prev, 'Liability') : null;
   const delta = prevNet === null ? null : net - prevNet;
 
-  // one row per account, newest value plus the change since the prior snapshot
   const accounts = NET_WORTH_ACCOUNTS.filter(a => !scopeOwner || a.owner === scopeOwner);
   const valueAt = (d, acct) => {
     const hit = at(d).find(b => b.account === acct);
@@ -1144,23 +1150,43 @@ function renderNetWorth() {
 
   const series = [...dates].reverse().map(d => ({
     date: d,
-    net: sumOf(d, 'Asset', scopeOwner) - sumOf(d, 'Liability', scopeOwner),
-    assets: sumOf(d, 'Asset', scopeOwner),
-    liabs: sumOf(d, 'Liability', scopeOwner),
+    net: sumOf(d, 'Asset') - sumOf(d, 'Liability'),
+    assets: sumOf(d, 'Asset'),
+    liabs: sumOf(d, 'Liability'),
+    covered: at(d).filter(b => !scopeOwner || b.owner === scopeOwner).length,
   }));
+
+  // Comparing snapshots that cover different numbers of accounts is misleading:
+  // net worth appears to jump when really the coverage changed. Say so.
+  const maxCover = Math.max(0, ...series.map(s => s.covered));
+  const uneven = series.some(s => s.covered !== maxCover);
+  const missing = latest
+    ? accounts.filter(a => valueAt(latest, a.account) === null)
+    : accounts;
+
+  const fmtDate = d => { try {
+    return new Date(d + 'T12:00:00').toLocaleDateString('en-CA', { day:'numeric', month:'long', year:'numeric' });
+  } catch { return d; } };
 
   view.innerHTML = `
   <div class="head">
     <div><h1>Net worth</h1>
-      <p class="sub">${esc(personLabel())} &middot; ${latest ? 'as at ' + esc(latest) : 'no snapshots recorded yet'}
-        ${dates.length > 1 ? ' &middot; ' + dates.length + ' snapshots' : ''}</p>
+      <p class="sub">${esc(personLabel())}${latest ? ' &middot; ' + dates.length + ' snapshot' + (dates.length>1?'s':'') : ''}</p>
     </div>
     <div class="spacer"></div>
     <button class="btn" id="nw-record">Record balances</button>
   </div>
 
   ${!latest ? `<div class="empty">No balances recorded yet. Click <b>Record balances</b> to enter what each
-     account is worth today \u2014 this is separate from your transactions and never affects income or expense.</div>` : `
+     account is worth today &mdash; separate from your transactions, and never affects income or expense.</div>` : `
+
+  <div class="nw-asat">
+    <span class="nw-asat-label">Net worth as at</span>
+    <span class="nw-asat-date">${esc(fmtDate(latest))}</span>
+    <span class="nw-asat-note">${latest === dates[0] && dates.length > 1
+      ? `updates automatically when you record a newer snapshot`
+      : `record a newer snapshot to move this forward`}</span>
+  </div>
 
   <div class="kpis" style="grid-template-columns:repeat(4,1fr)">
     ${kpi('Assets', money(assets), `${at(latest).filter(b=>b.kind==='Asset'&&(!scopeOwner||b.owner===scopeOwner)).length} accounts`)}
@@ -1170,6 +1196,18 @@ function renderNetWorth() {
           prev ? `since ${prev}` : 'need a second snapshot', delta === null ? '' : delta < 0 ? 'neg' : 'pos')}
   </div>
 
+  ${missing.length ? `<div class="nw-warn">
+    <b>${missing.length} account${missing.length>1?'s have':' has'} no balance in this snapshot</b> &mdash;
+    ${esc(missing.slice(0,4).map(a=>a.account).join(', '))}${missing.length>4 ? ` and ${missing.length-4} more` : ''}.
+    They are excluded from the totals above rather than counted as zero.
+  </div>` : ''}
+
+  ${uneven ? `<div class="nw-warn">
+    Snapshots cover different numbers of accounts (${Math.min(...series.map(s=>s.covered))}\u2013${maxCover}),
+    so the trend below partly reflects <b>changing coverage, not changing wealth</b>.
+    Record every account on the same date for a comparable line.
+  </div>` : ''}
+
   <div class="eyebrow">By account &mdash; ${esc(latest)}</div>
   <div class="tablewrap"><table><thead><tr>
     <th>Account</th><th>Owner</th><th>Kind</th><th class="n">Balance</th>
@@ -1178,12 +1216,11 @@ function renderNetWorth() {
       const v = valueAt(latest, a.account);
       const p = prev ? valueAt(prev, a.account) : null;
       const ch = (v !== null && p !== null) ? v - p : null;
-      if (v === null) return '';
-      return `<tr>
+      return `<tr class="${v === null ? 'nw-blank' : ''}">
         <td>${esc(a.account)}</td>
         <td><span class="person-chip" data-p="${esc(a.owner)}">${esc(a.owner)}</span></td>
         <td><span class="tag">${a.kind}</span></td>
-        <td class="n num">${money(v)}</td>
+        <td class="n num">${v === null ? '<span class="muted">not recorded</span>' : money(v)}</td>
         <td class="n num ${ch === null ? 'muted' : ch < 0 ? 'tx-over' : 'tx-income'}">${
           ch === null ? '\u2014' : (ch >= 0 ? '+' : '') + money(ch)}</td></tr>`;
     }).join('')}
@@ -1194,18 +1231,19 @@ function renderNetWorth() {
   <div class="grid2">
     <div class="panel"><h3>Net worth trend</h3><div class="chartbox"><canvas id="c-nw-trend"></canvas></div></div>
     <div class="panel"><h3>Assets by account &mdash; ${esc(latest)}</h3><div class="chartbox"><canvas id="c-nw-split"></canvas></div></div>
-  </div>` : `<p class="note">Record a second snapshot to see a trend. Monthly is plenty \u2014 balances move slowly.</p>`}
+  </div>` : `<p class="note">Record a second snapshot to see a trend. Monthly is plenty &mdash; balances move slowly.</p>`}
 
-  ${dates.length ? `<div class="eyebrow">Snapshots</div>
-  <div class="tablewrap"><table><thead><tr><th>Date</th><th class="n">Assets</th><th class="n">Liabilities</th><th class="n">Net worth</th><th></th></tr></thead><tbody>
+  <div class="eyebrow">Snapshots</div>
+  <div class="tablewrap"><table><thead><tr><th>Date</th><th class="n">Accounts</th><th class="n">Assets</th><th class="n">Liabilities</th><th class="n">Net worth</th><th></th></tr></thead><tbody>
     ${[...series].reverse().map(x => `<tr>
       <td class="num">${esc(x.date)}</td>
+      <td class="n num ${x.covered < maxCover ? 'muted' : ''}">${x.covered}${x.covered < maxCover ? ' of ' + maxCover : ''}</td>
       <td class="n num">${money(x.assets)}</td>
       <td class="n num">${money(x.liabs)}</td>
       <td class="n num"><b>${money(x.net)}</b></td>
       <td><button class="rowbtn" data-delsnap="${esc(x.date)}" title="Delete this snapshot">\u2715</button></td>
     </tr>`).join('')}
-  </tbody></table></div>` : ''}
+  </tbody></table></div>
   `}`;
 
   $('#nw-record').onclick = () => renderBalanceForm(latest);
@@ -1224,46 +1262,147 @@ function renderNetWorth() {
   }
 }
 
-/** Enter every account's balance for one date in a single form. */
+/** Enter every account's balance for one date. Grouped, running total, carry-forward. */
 function renderBalanceForm(copyFrom) {
   const today = new Date().toISOString().slice(0, 10);
-  const existing = (state.balances || []).filter(b => b.date === copyFrom);
+  const snaps = state.balances || [];
+  const dates = [...new Set(snaps.map(b => b.date))].sort().reverse();
+  const source = copyFrom || dates[0] || null;
+  const existing = snaps.filter(b => b.date === source);
   const prefill = a => {
     const hit = existing.find(x => x.account === a.account);
     return hit ? Number(hit.balance) : '';
   };
 
+  const groupRows = owner => NET_WORTH_ACCOUNTS.filter(a => a.owner === owner).map(a => `
+    <tr>
+      <td>${esc(a.account)}</td>
+      <td><span class="tag ${a.kind === 'Liability' ? 'tag-liab' : ''}">${a.kind}</span></td>
+      <td class="n">
+        <div class="nw-input-wrap">
+          <span class="nw-currency">$</span>
+          <input class="num nw-input" type="number" step="0.01" inputmode="decimal"
+            data-account="${esc(a.account)}" data-owner="${esc(a.owner)}" data-kind="${a.kind}"
+            value="${prefill(a)}" placeholder="0.00">
+        </div>
+      </td>
+    </tr>`).join('');
+
   view.innerHTML = `
   <div class="head">
     <div><h1>Record balances</h1>
-      <p class="sub">One snapshot per date. Saving the same date again overwrites it rather than duplicating.</p></div>
-    <div class="spacer"></div><button class="btn ghost" id="nw-back">\u2190 Back</button>
+      <p class="sub">One snapshot per date. Saving the same date again replaces it rather than duplicating.</p></div>
+    <div class="spacer"></div><button class="btn ghost" id="nw-back">&larr; Back</button>
   </div>
 
-  <div class="panel stack" style="max-width:260px">
+  <div class="nw-form-bar">
     <label class="f"><span>Snapshot date</span><input type="date" id="nw-date" value="${today}"></label>
+    ${source ? `<button class="btn ghost" id="nw-copy" type="button">Copy from ${esc(source)}</button>` : ''}
+    <button class="btn ghost" id="nw-clear" type="button">Clear all</button>
+    <div class="spacer"></div>
+    <div class="nw-running">
+      <span class="nw-running-label">Running net worth</span>
+      <span class="nw-running-val num" id="nw-total">$0.00</span>
+      <span class="nw-running-sub" id="nw-breakdown">&mdash;</span>
+    </div>
   </div>
 
   ${['Ramesh','Surya'].map(owner => `
-    <div class="eyebrow">${owner}</div>
-    <div class="tablewrap"><table><thead><tr><th>Account</th><th>Kind</th><th class="n">Balance (CAD)</th></tr></thead><tbody>
-      ${NET_WORTH_ACCOUNTS.filter(a => a.owner === owner).map(a => `
-        <tr><td>${esc(a.account)}</td>
-          <td><span class="tag">${a.kind}</span></td>
-          <td class="n"><input class="num nw-input" type="number" step="0.01"
-              style="width:130px;text-align:right"
-              data-account="${esc(a.account)}" data-owner="${esc(a.owner)}" data-kind="${a.kind}"
-              value="${prefill(a)}" placeholder="\u2014"></td></tr>`).join('')}
-    </tbody></table></div>`).join('')}
+    <div class="eyebrow">${owner} <span class="muted" style="text-transform:none;letter-spacing:0" id="nw-sub-${owner}"></span></div>
+    <div class="tablewrap"><table><thead><tr><th>Account</th><th>Kind</th><th class="n" style="width:190px">Balance (CAD)</th></tr></thead>
+      <tbody>${groupRows(owner)}</tbody></table></div>`).join('')}
 
-  <div class="actions" style="margin-top:16px">
+  <div class="actions" style="margin-top:18px">
     <button class="btn" id="nw-save">Save snapshot</button>
-    <span class="muted" id="nw-hint">Leave an account blank to omit it from this snapshot.</span>
+    <span class="muted" id="nw-hint">Blank accounts are omitted from the snapshot, not recorded as zero.</span>
   </div>
-  <p class="note">Liabilities are entered as positive numbers \u2014 a $500 card balance is <code>500</code>,
-     and it is subtracted from net worth automatically.</p>`;
+
+  <div class="eyebrow">Bulk import</div>
+  <div class="panel stack">
+    <p class="note" style="margin:0">Have balances prepared already? Load a <code>.json</code> or <code>.csv</code>
+      from your own machine. It is read in the browser and written straight to your sheet &mdash;
+      the file is never uploaded anywhere and never enters the repository.</p>
+    <input type="file" id="nw-import" accept=".json,.csv">
+    <div id="nw-import-out" class="note"></div>
+    <p class="note">Expected columns: <code>date, account, owner, kind, balance</code>.
+      <code>kind</code> is <code>Asset</code> or <code>Liability</code>.</p>
+  </div>
+  <p class="note">Enter liabilities as positive numbers &mdash; a $500 card balance is <code>500</code>, and it is
+    subtracted from net worth automatically. Balances never affect your income, expense or budget figures.</p>`;
+
+  const recalc = () => {
+    let A = 0, L = 0, filled = 0;
+    const perOwner = { Ramesh: 0, Surya: 0 };
+    view.querySelectorAll('.nw-input').forEach(i => {
+      if (i.value === '') return;
+      filled++;
+      const v = Math.abs(Number(i.value) || 0);
+      if (i.dataset.kind === 'Liability') { L += v; perOwner[i.dataset.owner] -= v; }
+      else { A += v; perOwner[i.dataset.owner] += v; }
+    });
+    $('#nw-total').textContent = money(A - L);
+    $('#nw-total').className = 'nw-running-val num ' + (A - L < 0 ? 'tx-over' : 'tx-income');
+    $('#nw-breakdown').textContent = filled
+      ? `${money(A)} assets \u2212 ${money(L)} liabilities \u00b7 ${filled} account${filled>1?'s':''}`
+      : 'nothing entered yet';
+    for (const o of ['Ramesh','Surya']) {
+      const el = $('#nw-sub-' + o);
+      if (el) el.textContent = perOwner[o] ? `\u00b7 ${money(perOwner[o])}` : '';
+    }
+  };
+  view.querySelectorAll('.nw-input').forEach(i => i.addEventListener('input', recalc));
+  recalc();
 
   $('#nw-back').onclick = () => renderNetWorth();
+  $('#nw-clear').onclick = () => { view.querySelectorAll('.nw-input').forEach(i => { i.value = ''; }); recalc(); };
+  $('#nw-copy')?.addEventListener('click', () => {
+    view.querySelectorAll('.nw-input').forEach(i => {
+      const hit = existing.find(x => x.account === i.dataset.account);
+      i.value = hit ? Number(hit.balance) : '';
+    });
+    recalc();
+    notice(`Copied ${existing.length} balances from ${source} \u2014 edit what changed, then save.`, 'ok');
+  });
+
+  $('#nw-import').onchange = async ev => {
+    const file = ev.target.files[0];
+    if (!file) return;
+    const out = $('#nw-import-out');
+    try {
+      const text = await file.text();
+      let rows;
+      if (file.name.toLowerCase().endsWith('.json')) {
+        rows = JSON.parse(text);
+      } else {
+        const lines = text.trim().split(/\r?\n/);
+        const head = lines[0].split(',').map(h => h.trim().toLowerCase());
+        rows = lines.slice(1).filter(Boolean).map(l => {
+          const c = l.split(',');
+          const g = k => (head.indexOf(k) === -1 ? '' : String(c[head.indexOf(k)] ?? '').trim());
+          return { date: g('date'), account: g('account'), owner: g('owner'),
+                   kind: g('kind'), balance: Number(String(g('balance')).replace(/[$,\s]/g, '')) };
+        });
+      }
+      rows = rows.filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.date) && r.account && isFinite(r.balance));
+      if (!rows.length) { out.innerHTML = '<b class="over">No usable rows. Need date, account and balance.</b>'; return; }
+      const byDate = {};
+      for (const r of rows) (byDate[r.date] ||= []).push({
+        account: r.account, owner: r.owner || 'Ramesh',
+        kind: r.kind === 'Liability' ? 'Liability' : 'Asset',
+        balance: Math.abs(Number(r.balance) || 0), notes: r.notes || 'imported',
+      });
+      const dateList = Object.keys(byDate).sort();
+      if (!confirm(`Import ${rows.length} balances across ${dateList.length} date(s)?\n\n${dateList.join(', ')}\n\nAny existing snapshot on these dates is replaced.`)) return;
+      const done = await withBusy(`Importing ${rows.length} balances`, async () => {
+        for (const [date, entries] of Object.entries(byDate)) await state.store.setBalances(date, entries);
+        state.balances = await state.store.getBalances();
+      });
+      if (done) { notice(`Imported ${rows.length} balances.`, 'ok'); renderNetWorth(); }
+    } catch (err) {
+      out.innerHTML = `<b class="over">${esc(err.message)}</b>`;
+    }
+  };
+
   $('#nw-save').onclick = async () => {
     const date = $('#nw-date').value;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return notice('Pick a valid date.', 'bad');
@@ -1272,6 +1411,7 @@ function renderBalanceForm(copyFrom) {
       .map(i => ({ account: i.dataset.account, owner: i.dataset.owner,
                    kind: i.dataset.kind, balance: Math.abs(Number(i.value) || 0), notes: '' }));
     if (!entries.length) return notice('Enter at least one balance.', 'bad');
+    if (dates.includes(date) && !confirm(`A snapshot for ${date} already exists. Replace it?`)) return;
     const done = await withBusy(`Saving ${entries.length} balances`, async () => {
       await state.store.setBalances(date, entries);
       state.balances = await state.store.getBalances();

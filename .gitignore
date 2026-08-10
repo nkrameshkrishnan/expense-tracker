@@ -5,6 +5,8 @@ __pycache__/
 # Never commit real financial data to a public repo
 data/seed.json
 data/seed-budget.json
+data/seed-balances.json
+data/*.json
 *_Consolidated_*.xlsx
 Expense*.xlsx
 *.csv
