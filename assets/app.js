@@ -1124,6 +1124,51 @@ function renderBudget() {
    Record balances, or imported from a file you choose at runtime. Neither
    touches the repository. */
 
+/** Every account available on the Net worth tab.
+    Built-ins + anything already in your saved balances + anything you add here.
+    Deriving from saved balances matters: an account imported from a CSV shows
+    up without needing to be registered anywhere. */
+function nwAccounts() {
+  const custom = loadCustom().nwAccount || [];
+  const seen = new Map();
+  for (const a of NET_WORTH_ACCOUNTS) seen.set(a.account, a);
+  for (const b of (state.balances || [])) {
+    if (!seen.has(b.account)) {
+      seen.set(b.account, { account: b.account, owner: b.owner || 'Ramesh',
+                            kind: b.kind === 'Liability' ? 'Liability' : 'Asset' });
+    }
+  }
+  for (const c of custom) if (!seen.has(c.account)) seen.set(c.account, c);
+  return [...seen.values()];
+}
+
+/** Owners that actually have accounts, so a Joint account gets its own group. */
+function nwOwners() {
+  const set = new Set(nwAccounts().map(a => a.owner));
+  return [...PEOPLE.filter(p => set.has(p)), ...[...set].filter(o => !PEOPLE.includes(o))];
+}
+
+function addNwAccount(account, owner, kind) {
+  const name = String(account || '').trim();
+  if (!name) return false;
+  if (nwAccounts().some(a => a.account.toLowerCase() === name.toLowerCase())) return false;
+  const c = loadCustom();
+  c.nwAccount = [...(c.nwAccount || []), { account: name, owner, kind }];
+  localStorage.setItem(CUSTOM_KEY, JSON.stringify(c));
+  return true;
+}
+
+function removeNwAccount(account) {
+  const c = loadCustom();
+  c.nwAccount = (c.nwAccount || []).filter(a => a.account !== account);
+  localStorage.setItem(CUSTOM_KEY, JSON.stringify(c));
+}
+
+/** Only custom accounts can be removed, and only while they hold no balances. */
+function isCustomNwAccount(account) {
+  return (loadCustom().nwAccount || []).some(a => a.account === account);
+}
+
 function renderNetWorth() {
   const snaps = state.balances || [];
   const dates = [...new Set(snaps.map(b => b.date))].sort().reverse();
