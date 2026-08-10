@@ -54,7 +54,10 @@ export function aggregate(rows, budget, month) {
   const expense = sum(r => r.type === 'Expense');
 
   const byCat = {};
-  for (const c of CAT_NAMES) byCat[c] = sum(r => r.type !== 'Transfer' && r.category === c);
+  // Expense only. `!== 'Transfer'` would also let Income rows into an expense
+  // category's total — harmless today because refunds land in Other Income, but
+  // it inflates the bars the moment a refund keeps its original category.
+  for (const c of CAT_NAMES) byCat[c] = sum(r => r.type === 'Expense' && r.category === c);
 
   const budgetFor = c => {
     if (!budget[c]) return 0;

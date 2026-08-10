@@ -2,7 +2,7 @@ import {
   openStore, CAT_NAMES, EXPENSE_CATS, CAT_TYPE, TYPES, PAYMENTS, ACCOUNTS,
   MONTHS, YEAR, ENDPOINT_KEY, TOKEN_KEY, endpointSource, getEndpoint, emptyBudget,
   PEOPLE, UNASSIGNED, PERSON_KEY, CUSTOM_KEY,
-  getClientId, getIdToken, setIdToken,
+  getClientId, getIdToken, setIdToken, NET_WORTH_ACCOUNTS,
 } from './store.js';
 import { aggregate, money, pct, monthOf, exportWorkbook, importFile,
          byPersonFilter, personBreakdown, personSeries } from './xlsxio.js';
@@ -15,6 +15,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const state = {
   store: null, rows: [], budget: emptyBudget(), month: 0, tab: 'dashboard', editing: null,
   person: localStorage.getItem(PERSON_KEY) || '',        // '' = whole family
+  balances: [],
   filter: { q: '', cat: '', month: '', type: '' },
 };
 
@@ -244,6 +245,7 @@ function notice(msg, kind = '') {
 async function refresh() {
   state.rows = await state.store.list();
   state.budget = await state.store.getBudget();
+  state.balances = (await state.store.getBalances?.()) || [];
   $('#foot-count').textContent = `${state.rows.length} transactions stored`;
   renderPeopleSwitch();
   const c = $('#conn');
@@ -373,7 +375,9 @@ function renderAdd() {
 
   const curMonth = new Date().getMonth() + 1;
   const ctxActual = scoped()
-    .filter(r => r.category === selCat && monthOf(r) === curMonth && Number(String(r.date).slice(0,4)) === YEAR)
+    // Expense only - a transfer into this category is not spending against budget
+    .filter(r => r.type === 'Expense' && r.category === selCat && monthOf(r) === curMonth
+                 && Number(String(r.date).slice(0, 4)) === YEAR)
     .reduce((a, r) => a + r.amount, 0);
   const ctxBudget = Number(state.budget[selCat]?.[curMonth]) || 0;
   const ctxOver = ctxBudget > 0 && ctxActual > ctxBudget;
@@ -564,7 +568,8 @@ function renderAdd() {
   $('#f-cat').addEventListener('change', () => {
     const cat = $('#f-cat').value;
     if (cat === '__new__') return;
-    const act = scoped().filter(r => r.category === cat && monthOf(r) === curMonth && Number(String(r.date).slice(0,4)) === YEAR).reduce((a,r)=>a+r.amount,0);
+    const act = scoped().filter(r => r.type === 'Expense' && r.category === cat && monthOf(r) === curMonth
+                                     && Number(String(r.date).slice(0, 4)) === YEAR).reduce((a,r)=>a+r.amount,0);
     const bud = Number(state.budget[cat]?.[curMonth]) || 0;
     const over = bud > 0 && act > bud;
     const hint = $('#cat-hint');
@@ -905,7 +910,13 @@ function renderBudget() {
     actuals[c] = {};
     for (let m = 1; m <= 12; m++) {
       actuals[c][m] = state.rows
-        .filter(r => r.category === c && monthOf(r) === m && Number(String(r.date).slice(0,4)) === YEAR)
+        // type === 'Expense' is essential, not cosmetic. Without it a credit-card
+        // payment, a CIBC->Wealthsimple move, or a transfer between Ramesh and
+        // Surya all counted as spending. That inflated "spent so far" from
+        // $69,317 to $480,533 - it was adding $411,216 of money that only ever
+        // moved between the household's own accounts.
+        .filter(r => r.type === 'Expense' && r.category === c && monthOf(r) === m
+                     && Number(String(r.date).slice(0, 4)) === YEAR)
         .reduce((a, r) => a + r.amount, 0);
     }
   }
@@ -1101,6 +1112,174 @@ function renderBudget() {
   };
 }
 
+/* ================================================================= NET WORTH */
+/* Balances are snapshots, not movements. Nothing on this page feeds Income,
+   Expense or Budget - a TFSA balance already contains the contributions that
+   were recorded as Transfers, so counting both would double them. Unrealised
+   gains are shown here and nowhere else, because they are not money received. */
+function renderNetWorth() {
+  const snaps = state.balances || [];
+  const dates = [...new Set(snaps.map(b => b.date))].sort().reverse();
+  const latest = dates[0] || null;
+  const prev = dates[1] || null;
+
+  const at = d => snaps.filter(b => b.date === d);
+  const sumOf = (d, kind, owner) => at(d)
+    .filter(b => b.kind === kind && (!owner || b.owner === owner))
+    .reduce((a, b) => a + Number(b.balance || 0), 0);
+
+  const scopeOwner = state.person && state.person !== UNASSIGNED ? state.person : null;
+  const assets = latest ? sumOf(latest, 'Asset', scopeOwner) : 0;
+  const liabs  = latest ? sumOf(latest, 'Liability', scopeOwner) : 0;
+  const net = assets - liabs;
+  const prevNet = prev ? sumOf(prev, 'Asset', scopeOwner) - sumOf(prev, 'Liability', scopeOwner) : null;
+  const delta = prevNet === null ? null : net - prevNet;
+
+  // one row per account, newest value plus the change since the prior snapshot
+  const accounts = NET_WORTH_ACCOUNTS.filter(a => !scopeOwner || a.owner === scopeOwner);
+  const valueAt = (d, acct) => {
+    const hit = at(d).find(b => b.account === acct);
+    return hit ? Number(hit.balance || 0) : null;
+  };
+
+  const series = [...dates].reverse().map(d => ({
+    date: d,
+    net: sumOf(d, 'Asset', scopeOwner) - sumOf(d, 'Liability', scopeOwner),
+    assets: sumOf(d, 'Asset', scopeOwner),
+    liabs: sumOf(d, 'Liability', scopeOwner),
+  }));
+
+  view.innerHTML = `
+  <div class="head">
+    <div><h1>Net worth</h1>
+      <p class="sub">${esc(personLabel())} &middot; ${latest ? 'as at ' + esc(latest) : 'no snapshots recorded yet'}
+        ${dates.length > 1 ? ' &middot; ' + dates.length + ' snapshots' : ''}</p>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn" id="nw-record">Record balances</button>
+  </div>
+
+  ${!latest ? `<div class="empty">No balances recorded yet. Click <b>Record balances</b> to enter what each
+     account is worth today \u2014 this is separate from your transactions and never affects income or expense.</div>` : `
+
+  <div class="kpis" style="grid-template-columns:repeat(4,1fr)">
+    ${kpi('Assets', money(assets), `${at(latest).filter(b=>b.kind==='Asset'&&(!scopeOwner||b.owner===scopeOwner)).length} accounts`)}
+    ${kpi('Liabilities', money(liabs), liabs > 0 ? 'owed' : 'nothing owed')}
+    ${kpi('Net worth', money(net), '', net < 0 ? 'neg' : 'pos')}
+    ${kpi('Change', delta === null ? '\u2014' : (delta >= 0 ? '+' : '') + money(delta),
+          prev ? `since ${prev}` : 'need a second snapshot', delta === null ? '' : delta < 0 ? 'neg' : 'pos')}
+  </div>
+
+  <div class="eyebrow">By account &mdash; ${esc(latest)}</div>
+  <div class="tablewrap"><table><thead><tr>
+    <th>Account</th><th>Owner</th><th>Kind</th><th class="n">Balance</th>
+    <th class="n">${prev ? 'Change' : ''}</th></tr></thead><tbody>
+    ${accounts.map(a => {
+      const v = valueAt(latest, a.account);
+      const p = prev ? valueAt(prev, a.account) : null;
+      const ch = (v !== null && p !== null) ? v - p : null;
+      if (v === null) return '';
+      return `<tr>
+        <td>${esc(a.account)}</td>
+        <td><span class="person-chip" data-p="${esc(a.owner)}">${esc(a.owner)}</span></td>
+        <td><span class="tag">${a.kind}</span></td>
+        <td class="n num">${money(v)}</td>
+        <td class="n num ${ch === null ? 'muted' : ch < 0 ? 'tx-over' : 'tx-income'}">${
+          ch === null ? '\u2014' : (ch >= 0 ? '+' : '') + money(ch)}</td></tr>`;
+    }).join('')}
+  </tbody></table></div>
+
+  ${series.length > 1 ? `
+  <div class="eyebrow">Over time</div>
+  <div class="grid2">
+    <div class="panel"><h3>Net worth trend</h3><div class="chartbox"><canvas id="c-nw-trend"></canvas></div></div>
+    <div class="panel"><h3>Assets by account &mdash; ${esc(latest)}</h3><div class="chartbox"><canvas id="c-nw-split"></canvas></div></div>
+  </div>` : `<p class="note">Record a second snapshot to see a trend. Monthly is plenty \u2014 balances move slowly.</p>`}
+
+  ${dates.length ? `<div class="eyebrow">Snapshots</div>
+  <div class="tablewrap"><table><thead><tr><th>Date</th><th class="n">Assets</th><th class="n">Liabilities</th><th class="n">Net worth</th><th></th></tr></thead><tbody>
+    ${[...series].reverse().map(x => `<tr>
+      <td class="num">${esc(x.date)}</td>
+      <td class="n num">${money(x.assets)}</td>
+      <td class="n num">${money(x.liabs)}</td>
+      <td class="n num"><b>${money(x.net)}</b></td>
+      <td><button class="rowbtn" data-delsnap="${esc(x.date)}" title="Delete this snapshot">\u2715</button></td>
+    </tr>`).join('')}
+  </tbody></table></div>` : ''}
+  `}`;
+
+  $('#nw-record').onclick = () => renderBalanceForm(latest);
+  view.querySelectorAll('[data-delsnap]').forEach(b => b.onclick = async () => {
+    if (!confirm(`Delete the whole snapshot dated ${b.dataset.delsnap}?`)) return;
+    const done = await withBusy('Deleting snapshot', async () => {
+      await state.store.deleteBalanceDate(b.dataset.delsnap);
+      state.balances = await state.store.getBalances();
+    });
+    if (done) { renderNetWorth(); notice('Snapshot deleted.', 'ok'); }
+  });
+
+  if (typeof Chart !== 'undefined' && series.length > 1) {
+    charts.netWorthTrend(series);
+    charts.assetSplit(at(latest).filter(b => b.kind === 'Asset' && (!scopeOwner || b.owner === scopeOwner)));
+  }
+}
+
+/** Enter every account's balance for one date in a single form. */
+function renderBalanceForm(copyFrom) {
+  const today = new Date().toISOString().slice(0, 10);
+  const existing = (state.balances || []).filter(b => b.date === copyFrom);
+  const prefill = a => {
+    const hit = existing.find(x => x.account === a.account);
+    return hit ? Number(hit.balance) : '';
+  };
+
+  view.innerHTML = `
+  <div class="head">
+    <div><h1>Record balances</h1>
+      <p class="sub">One snapshot per date. Saving the same date again overwrites it rather than duplicating.</p></div>
+    <div class="spacer"></div><button class="btn ghost" id="nw-back">\u2190 Back</button>
+  </div>
+
+  <div class="panel stack" style="max-width:260px">
+    <label class="f"><span>Snapshot date</span><input type="date" id="nw-date" value="${today}"></label>
+  </div>
+
+  ${['Ramesh','Surya'].map(owner => `
+    <div class="eyebrow">${owner}</div>
+    <div class="tablewrap"><table><thead><tr><th>Account</th><th>Kind</th><th class="n">Balance (CAD)</th></tr></thead><tbody>
+      ${NET_WORTH_ACCOUNTS.filter(a => a.owner === owner).map(a => `
+        <tr><td>${esc(a.account)}</td>
+          <td><span class="tag">${a.kind}</span></td>
+          <td class="n"><input class="num nw-input" type="number" step="0.01"
+              style="width:130px;text-align:right"
+              data-account="${esc(a.account)}" data-owner="${esc(a.owner)}" data-kind="${a.kind}"
+              value="${prefill(a)}" placeholder="\u2014"></td></tr>`).join('')}
+    </tbody></table></div>`).join('')}
+
+  <div class="actions" style="margin-top:16px">
+    <button class="btn" id="nw-save">Save snapshot</button>
+    <span class="muted" id="nw-hint">Leave an account blank to omit it from this snapshot.</span>
+  </div>
+  <p class="note">Liabilities are entered as positive numbers \u2014 a $500 card balance is <code>500</code>,
+     and it is subtracted from net worth automatically.</p>`;
+
+  $('#nw-back').onclick = () => renderNetWorth();
+  $('#nw-save').onclick = async () => {
+    const date = $('#nw-date').value;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return notice('Pick a valid date.', 'bad');
+    const entries = [...view.querySelectorAll('.nw-input')]
+      .filter(i => i.value !== '')
+      .map(i => ({ account: i.dataset.account, owner: i.dataset.owner,
+                   kind: i.dataset.kind, balance: Math.abs(Number(i.value) || 0), notes: '' }));
+    if (!entries.length) return notice('Enter at least one balance.', 'bad');
+    const done = await withBusy(`Saving ${entries.length} balances`, async () => {
+      await state.store.setBalances(date, entries);
+      state.balances = await state.store.getBalances();
+    });
+    if (done) { notice(`Snapshot saved for ${date}.`, 'ok'); renderNetWorth(); }
+  };
+}
+
 /* ====================================================================== DATA */
 function renderData() {
   const src = endpointSource();
@@ -1259,7 +1438,7 @@ function renderData() {
 }
 
 /* ==================================================================== router */
-const VIEWS = { dashboard: renderDashboard, add: renderAdd, transactions: renderTransactions, budget: renderBudget, data: renderData };
+const VIEWS = { dashboard: renderDashboard, add: renderAdd, transactions: renderTransactions, budget: renderBudget, networth: renderNetWorth, data: renderData };
 
 function go(tab) {
   state.tab = tab;
