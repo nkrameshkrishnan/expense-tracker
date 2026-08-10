@@ -88,8 +88,14 @@ th,td{padding:6px 9px;text-align:left;border-bottom:1px solid var(--rule);font-s
 thead th{
   font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3);
   font-weight:600;border-bottom:1.5px solid var(--ink);background:var(--paper-2);
-  position:sticky;top:52px;z-index:5;
+  position:sticky;top:0;z-index:5;
 }
+/* `top` must be 0, not the 52px nav height. These headers live inside
+   .tablewrap, which has overflow:auto and is therefore its own scroll
+   container - sticky resolves against that box, not the viewport. With
+   top:52px the header floated 52px down and rendered on top of the first
+   data row instead of above it. Verified in Chromium: header bottom sat at
+   81px while row one began at 29px. */
 td.n,th.n{text-align:right}
 tbody tr:nth-child(even){background:#fdfcfa}
 tbody tr:hover{background:#fff8e8}
@@ -569,3 +575,18 @@ details[open] .add-details-toggle::before{transform:rotate(90deg)}
   font-family:var(--mono);font-size:14px;text-align:right;padding:7px 9px 7px 2px;color:var(--ink);
 }
 @media(max-width:700px){.nw-form-bar{flex-direction:column;align-items:stretch}.nw-running{text-align:left}.nw-input-wrap{width:100%}}
+
+/* Currency fields should not carry number spinners. The tiny up/down arrows
+   are useless for a balance (nobody nudges $3,844.83 by 1) and they crowd the
+   right edge exactly where the digits sit. Keeping type=number for the mobile
+   numeric keypad and browser validation, but hiding the control. */
+.nw-input::-webkit-outer-spin-button,
+.nw-input::-webkit-inner-spin-button,
+.add-amount::-webkit-outer-spin-button,
+.add-amount::-webkit-inner-spin-button,
+.bmonth-input::-webkit-outer-spin-button,
+.bmonth-input::-webkit-inner-spin-button,
+.bcard-flat-input::-webkit-outer-spin-button,
+.bcard-flat-input::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0 }
+.nw-input, .add-amount, .bmonth-input, .bcard-flat-input{ -moz-appearance:textfield; appearance:textfield }
+.nw-import-btn{cursor:pointer;display:inline-flex;align-items:center;white-space:nowrap}

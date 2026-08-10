@@ -1299,6 +1299,8 @@ function renderBalanceForm(copyFrom) {
     <label class="f"><span>Snapshot date</span><input type="date" id="nw-date" value="${today}"></label>
     ${source ? `<button class="btn ghost" id="nw-copy" type="button">Copy from ${esc(source)}</button>` : ''}
     <button class="btn ghost" id="nw-clear" type="button">Clear all</button>
+    <label class="btn ghost nw-import-btn" for="nw-import">Import file\u2026</label>
+    <input type="file" id="nw-import" accept=".json,.csv" hidden>
     <div class="spacer"></div>
     <div class="nw-running">
       <span class="nw-running-label">Running net worth</span>
@@ -1306,6 +1308,8 @@ function renderBalanceForm(copyFrom) {
       <span class="nw-running-sub" id="nw-breakdown">&mdash;</span>
     </div>
   </div>
+
+  <div id="nw-import-out" class="note" style="margin:0 0 10px"></div>
 
   ${['Ramesh','Surya'].map(owner => `
     <div class="eyebrow">${owner} <span class="muted" style="text-transform:none;letter-spacing:0" id="nw-sub-${owner}"></span></div>
@@ -1317,16 +1321,9 @@ function renderBalanceForm(copyFrom) {
     <span class="muted" id="nw-hint">Blank accounts are omitted from the snapshot, not recorded as zero.</span>
   </div>
 
-  <div class="eyebrow">Bulk import</div>
-  <div class="panel stack">
-    <p class="note" style="margin:0">Have balances prepared already? Load a <code>.json</code> or <code>.csv</code>
-      from your own machine. It is read in the browser and written straight to your sheet &mdash;
-      the file is never uploaded anywhere and never enters the repository.</p>
-    <input type="file" id="nw-import" accept=".json,.csv">
-    <div id="nw-import-out" class="note"></div>
-    <p class="note">Expected columns: <code>date, account, owner, kind, balance</code>.
-      <code>kind</code> is <code>Asset</code> or <code>Liability</code>.</p>
-  </div>
+  <p class="note"><b>Import file\u2026</b> loads a <code>.json</code> or <code>.csv</code> from your machine
+    (columns <code>date, account, owner, kind, balance</code>). It is read in the browser and written straight
+    to your sheet &mdash; never uploaded, never stored in the repository.</p>
   <p class="note">Enter liabilities as positive numbers &mdash; a $500 card balance is <code>500</code>, and it is
     subtracted from net worth automatically. Balances never affect your income, expense or budget figures.</p>`;
 
