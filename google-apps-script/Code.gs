@@ -98,6 +98,13 @@ function requireUser(idToken) {
 var TX_SHEET = 'Transactions';
 var BUDGET_SHEET = 'Budget';
 
+/* Net-worth snapshots live on their own tab, deliberately separate from
+   Transactions. A balance answers "what is this account worth today"; a
+   transaction answers "where did money move". Mixing them double-counts:
+   a TFSA balance already contains the contributions recorded as transfers. */
+var BALANCE_SHEET = 'Balances';
+var BAL_HEADERS = ['Date', 'Account', 'Owner', 'Kind', 'Balance', 'Notes'];
+
 var C_DATE = 1, C_MONTH = 2, C_YEAR = 3, C_TYPE = 4, C_CATEGORY = 5, C_SUBCAT = 6,
     C_DESC = 7, C_AMOUNT = 8, C_PAYMENT = 9, C_ACCOUNT = 10, C_RECUR = 11,
     C_NOTES = 12, C_ID = 13, C_PERSON = 14;
@@ -407,6 +414,68 @@ function clearAllRows(tx) {
   }
 }
 
+/* ------------------------------------------------------------------ balances */
+
+function balanceSheet(ss) {
+  var bs = ss.getSheetByName(BALANCE_SHEET);
+  if (!bs) {
+    bs = ss.insertSheet(BALANCE_SHEET);
+    bs.getRange(1, 1, 1, BAL_HEADERS.length).setValues([BAL_HEADERS]).setFontWeight('bold');
+    bs.setFrozenRows(1);
+    bs.getRange('A:A').setNumberFormat('yyyy-mm-dd');
+    bs.getRange('E:E').setNumberFormat('"$"#,##0.00');
+  }
+  return bs;
+}
+
+function readBalances(bs) {
+  var last = bs.getLastRow();
+  if (last < 2) return [];
+  var v = bs.getRange(2, 1, last - 1, BAL_HEADERS.length).getValues();
+  var out = [];
+  for (var i = 0; i < v.length; i++) {
+    if (v[i][0] === '' || v[i][0] === null) continue;
+    out.push({
+      date: isoDate(v[i][0]),
+      account: String(v[i][1] || ''),
+      owner: String(v[i][2] || ''),
+      kind: String(v[i][3] || 'Asset'),
+      balance: Number(v[i][4]) || 0,
+      notes: String(v[i][5] || ''),
+    });
+  }
+  out.sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; });
+  return out;
+}
+
+/**
+ * Replace every snapshot for a given date in one pass. Recording balances is
+ * naturally "here is where everything stood on this day", so a re-save of the
+ * same date should overwrite rather than pile up duplicate rows.
+ */
+function writeBalances(bs, date, entries) {
+  var last = bs.getLastRow();
+  if (last >= 2) {
+    var col = bs.getRange(2, 1, last - 1, 1).getValues();
+    for (var i = col.length - 1; i >= 0; i--) {
+      if (isoDate(col[i][0]) === date) bs.deleteRow(i + 2);
+    }
+  }
+  if (!entries.length) return 0;
+  var rows = [];
+  for (var j = 0; j < entries.length; j++) {
+    var e = entries[j];
+    rows.push([toDateObj(date), String(e.account || ''), String(e.owner || ''),
+               e.kind === 'Liability' ? 'Liability' : 'Asset',
+               Math.round((Number(e.balance) || 0) * 100) / 100, String(e.notes || '')]);
+  }
+  var start = bs.getLastRow() + 1;
+  bs.getRange(start, 1, rows.length, BAL_HEADERS.length).setValues(rows);
+  bs.getRange(start, 1, rows.length, 1).setNumberFormat('yyyy-mm-dd');
+  bs.getRange(start, 5, rows.length, 1).setNumberFormat('"$"#,##0.00');
+  return rows.length;
+}
+
 /* -------------------------------------------------------------------- budget */
 
 function budgetRowIndex(bg) {
@@ -465,6 +534,7 @@ function doGet(e) {
     return ok({
       transactions: readTransactions(b.tx),
       budget: readBudget(b.bg),
+      balances: readBalances(balanceSheet(b.ss)),
       sheetName: b.ss.getName(),
       layout: 'tracker',
       user: { email: user.email, name: user.name || '', picture: user.picture || '' },
@@ -527,6 +597,19 @@ function doPost(e) {
     if (body.action === 'clear') {
       clearAllRows(tx);
       return ok({ cleared: true });
+    }
+
+    if (body.action === 'setBalances') {
+      var d = isoDate(body.date);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return fail('Balance date must be YYYY-MM-DD.');
+      var n = writeBalances(balanceSheet(b.ss), d, body.entries || []);
+      return ok({ written: n, date: d });
+    }
+
+    if (body.action === 'deleteBalanceDate') {
+      var dd = isoDate(body.date);
+      writeBalances(balanceSheet(b.ss), dd, []);
+      return ok({ deleted: dd });
     }
 
     if (body.action === 'setBudget') {

@@ -154,3 +154,35 @@ export function personVsBudget(rows) {
     },
   });
 }
+
+/* ---- net worth ------------------------------------------------------------ */
+export function netWorthTrend(series) {
+  mount('c-nw-trend', {
+    type: 'line',
+    data: {
+      labels: series.map(s => s.date),
+      datasets: [
+        { label: 'Net worth', data: series.map(s => s.net), borderColor: INK, backgroundColor: INK, tension: 0.25, pointRadius: 4 },
+        { label: 'Assets', data: series.map(s => s.assets), borderColor: TEAL, borderDash: [5, 4], pointRadius: 0 },
+        { label: 'Liabilities', data: series.map(s => s.liabs), borderColor: RED, borderDash: [5, 4], pointRadius: 0 },
+      ],
+    },
+    options: { maintainAspectRatio: false, responsive: true, plugins: legendTop, scales: { x: gridX, y: gridY } },
+  });
+}
+
+export function assetSplit(assets) {
+  const rows = assets.filter(a => Number(a.balance) > 0)
+    .sort((a, b) => b.balance - a.balance);
+  mount('c-nw-split', {
+    type: 'doughnut',
+    data: {
+      labels: rows.map(a => a.account),
+      datasets: [{ data: rows.map(a => Number(a.balance)), backgroundColor: PIE, borderColor: '#fff', borderWidth: 2 }],
+    },
+    options: {
+      maintainAspectRatio: false, responsive: true, cutout: '55%',
+      plugins: { legend: { position: 'right', labels: { boxWidth: 10, boxHeight: 10, padding: 8, font: { size: 10 } } } },
+    },
+  });
+}

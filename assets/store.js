@@ -42,6 +42,30 @@ export const PEOPLE = ['Ramesh', 'Surya', 'Joint'];
 export const UNASSIGNED = 'Unassigned';
 export const PERSON_KEY = 'ledger.person';
 
+/* Accounts tracked for net worth. Some exist only as balances and never appear
+   in transactions (a GIC, a savings account that sat at zero all year), so this
+   is deliberately a superset of ACCOUNTS rather than derived from it. */
+export const NET_WORTH_ACCOUNTS = [
+  { account: 'CIBC Chequing',                owner: 'Ramesh', kind: 'Asset' },
+  { account: 'CIBC TFSA (Investment)',       owner: 'Ramesh', kind: 'Asset' },
+  { account: 'WealthSimple Chequing',        owner: 'Ramesh', kind: 'Asset' },
+  { account: 'WealthSimple TFSA',            owner: 'Ramesh', kind: 'Asset' },
+  { account: 'WealthSimple RRSP',            owner: 'Ramesh', kind: 'Asset' },
+  { account: 'WealthSimple Non-registered',  owner: 'Ramesh', kind: 'Asset' },
+  { account: 'CIBC Visa',                    owner: 'Ramesh', kind: 'Liability' },
+  { account: 'CIBC Mastercard',              owner: 'Ramesh', kind: 'Liability' },
+  { account: 'Amex (Ramesh)',                owner: 'Ramesh', kind: 'Liability' },
+  { account: 'CIBC Chequing (Surya)',        owner: 'Surya',  kind: 'Asset' },
+  { account: 'CIBC Savings (Surya)',         owner: 'Surya',  kind: 'Asset' },
+  { account: 'CIBC TFSA (Surya)',            owner: 'Surya',  kind: 'Asset' },
+  { account: 'CIBC TFSA GIC (Surya)',        owner: 'Surya',  kind: 'Asset' },
+  { account: 'WealthSimple Chequing (Surya)',owner: 'Surya',  kind: 'Asset' },
+  { account: 'WealthSimple TFSA (Surya)',    owner: 'Surya',  kind: 'Asset' },
+  { account: 'WealthSimple RRSP (Surya)',    owner: 'Surya',  kind: 'Asset' },
+  { account: 'WealthSimple Non-registered (Surya)', owner: 'Surya', kind: 'Asset' },
+  { account: 'Amex (Surya)',                 owner: 'Surya',  kind: 'Liability' },
+];
+
 export const CUSTOM_KEY = 'ledger.customLists';
 export const ENDPOINT_KEY = 'ledger.sheetsEndpoint';
 export const TOKEN_KEY = 'ledger.sheetsToken';
@@ -150,7 +174,8 @@ class SheetsStore {
   }
 
   _fill(d) {
-    this.cache = { transactions: d.transactions.map(normalise), budget: d.budget };
+    this.cache = { transactions: d.transactions.map(normalise), budget: d.budget,
+                   balances: d.balances || [] };
     this.sheetName = d.sheetName || '';
     this.user = d.user || null;      // verified by Apps Script, not by the browser
     return this.cache;
@@ -159,6 +184,9 @@ class SheetsStore {
   async _ensure() { return this.cache || this._fill(await this._get()); }
 
   async list() { return (await this._ensure()).transactions; }
+  async getBalances() { return (await this._ensure()).balances || []; }
+  async setBalances(date, entries) { await this._post({ action: 'setBalances', date, entries }); }
+  async deleteBalanceDate(date) { await this._post({ action: 'deleteBalanceDate', date }); }
   async getBudget() {
     const b = (await this._ensure()).budget;
     const full = emptyBudget();
@@ -228,6 +256,15 @@ class LocalStore {
   async remove(id) { await this._wrap(this._tx('transactions', 'readwrite').delete(Number(id))); }
   async clear() { await this._wrap(this._tx('transactions', 'readwrite').clear()); await this._wrap(this._tx('meta', 'readwrite').delete('budget')); }
   async getBudget() { return (await this._wrap(this._tx('meta', 'readonly').get('budget'))) || emptyBudget(); }
+  async getBalances() { return (await this._wrap(this._tx('meta', 'readonly').get('balances'))) || []; }
+  async setBalances(date, entries) {
+    const all = (await this.getBalances()).filter(b => b.date !== date);
+    await this._wrap(this._tx('meta', 'readwrite').put([...all, ...entries.map(e => ({ ...e, date }))], 'balances'));
+  }
+  async deleteBalanceDate(date) {
+    const all = (await this.getBalances()).filter(b => b.date !== date);
+    await this._wrap(this._tx('meta', 'readwrite').put(all, 'balances'));
+  }
   async setBudget(b) { await this._wrap(this._tx('meta', 'readwrite').put(b, 'budget')); return b; }
   async isEmpty() { return (await this._wrap(this._tx('transactions', 'readonly').count())) === 0; }
 }
@@ -243,6 +280,12 @@ class MemoryStore {
   async clear() { this.rows = []; this.budget = emptyBudget(); }
   async getBudget() { return this.budget; }
   async setBudget(b) { this.budget = b; return b; }
+  async getBalances() { return this.balances || (this.balances = []); }
+  async setBalances(date, entries) {
+    this.balances = [...(this.balances || []).filter(b => b.date !== date),
+                     ...entries.map(e => ({ ...e, date }))];
+  }
+  async deleteBalanceDate(date) { this.balances = (this.balances || []).filter(b => b.date !== date); }
   async isEmpty() { return this.rows.length === 0; }
 }
 
