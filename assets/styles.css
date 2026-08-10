@@ -590,3 +590,8 @@ details[open] .add-details-toggle::before{transform:rotate(90deg)}
 .bcard-flat-input::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0 }
 .nw-input, .add-amount, .bmonth-input, .bcard-flat-input{ -moz-appearance:textfield; appearance:textfield }
 .nw-import-btn{cursor:pointer;display:inline-flex;align-items:center;white-space:nowrap}
+.nw-add-row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+.nw-add-row .btn{white-space:nowrap}
+.nw-del-acct{opacity:0;transition:opacity .12s;font-size:11px}
+tr:hover .nw-del-acct{opacity:1}
+@media(max-width:640px){.nw-add-row{flex-direction:column;align-items:stretch}.nw-del-acct{opacity:1}}

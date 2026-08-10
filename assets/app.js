@@ -1142,7 +1142,7 @@ function renderNetWorth() {
   const prevNet = prev ? sumOf(prev, 'Asset') - sumOf(prev, 'Liability') : null;
   const delta = prevNet === null ? null : net - prevNet;
 
-  const accounts = NET_WORTH_ACCOUNTS.filter(a => !scopeOwner || a.owner === scopeOwner);
+  const accounts = nwAccounts().filter(a => !scopeOwner || a.owner === scopeOwner);
   const valueAt = (d, acct) => {
     const hit = at(d).find(b => b.account === acct);
     return hit ? Number(hit.balance || 0) : null;
@@ -1176,6 +1176,12 @@ function renderNetWorth() {
     <div class="spacer"></div>
     <button class="btn" id="nw-record">Record balances</button>
   </div>
+
+  ${state.store.kind !== 'sheets' ? `<div class="nw-warn" style="border-left-color:var(--red)">
+    <b>Not connected to a Google Sheet.</b> Everything on this page is saved to
+    ${state.store.kind === 'memory' ? 'this session only \u2014 it will be lost on reload' : 'this browser only'}.
+    Connect under <b>Data \u2192 Google Sheet</b> if you want balances to persist in your actual spreadsheet.
+  </div>` : ''}
 
   ${!latest ? `<div class="empty">No balances recorded yet. Click <b>Record balances</b> to enter what each
      account is worth today &mdash; separate from your transactions, and never affects income or expense.</div>` : `
@@ -1274,9 +1280,12 @@ function renderBalanceForm(copyFrom) {
     return hit ? Number(hit.balance) : '';
   };
 
-  const groupRows = owner => NET_WORTH_ACCOUNTS.filter(a => a.owner === owner).map(a => `
+  const groupRows = owner => nwAccounts().filter(a => a.owner === owner).map(a => `
     <tr>
-      <td>${esc(a.account)}</td>
+      <td>${esc(a.account)}
+        ${isCustomNwAccount(a.account)
+          ? `<button class="rowbtn nw-del-acct" data-delacct="${esc(a.account)}"
+               title="Remove this account">\u2715</button>` : ''}</td>
       <td><span class="tag ${a.kind === 'Liability' ? 'tag-liab' : ''}">${a.kind}</span></td>
       <td class="n">
         <div class="nw-input-wrap">
@@ -1311,7 +1320,7 @@ function renderBalanceForm(copyFrom) {
 
   <div id="nw-import-out" class="note" style="margin:0 0 10px"></div>
 
-  ${['Ramesh','Surya'].map(owner => `
+  ${nwOwners().map(owner => `
     <div class="eyebrow">${owner} <span class="muted" style="text-transform:none;letter-spacing:0" id="nw-sub-${owner}"></span></div>
     <div class="tablewrap"><table><thead><tr><th>Account</th><th>Kind</th><th class="n" style="width:190px">Balance (CAD)</th></tr></thead>
       <tbody>${groupRows(owner)}</tbody></table></div>`).join('')}
@@ -1319,6 +1328,22 @@ function renderBalanceForm(copyFrom) {
   <div class="actions" style="margin-top:18px">
     <button class="btn" id="nw-save">Save snapshot</button>
     <span class="muted" id="nw-hint">Blank accounts are omitted from the snapshot, not recorded as zero.</span>
+  </div>
+
+  <div class="eyebrow">Add an account</div>
+  <div class="panel">
+    <div class="nw-add-row">
+      <label class="f" style="flex:2;min-width:180px"><span>Account name</span>
+        <input id="nw-new-name" placeholder="e.g. Car loan, RESP, Condo" autocomplete="off"></label>
+      <label class="f"><span>Owner</span>
+        <select id="nw-new-owner">${PEOPLE.map(p => `<option${p==='Ramesh'?' selected':''}>${esc(p)}</option>`).join('')}</select></label>
+      <label class="f"><span>Kind</span>
+        <select id="nw-new-kind"><option>Asset</option><option>Liability</option></select></label>
+      <button class="btn" id="nw-add-acct" type="button">Add</button>
+    </div>
+    <p class="note" style="margin:10px 0 0">Anything with a value counts: a car, a property, an RESP,
+      a loan, money owed to family. <b>Asset</b> adds to net worth, <b>Liability</b> subtracts.
+      Accounts you add can be removed with the \u2715 beside their name, as long as no snapshot uses them.</p>
   </div>
 
   <p class="note"><b>Import file\u2026</b> loads a <code>.json</code> or <code>.csv</code> from your machine
@@ -1329,7 +1354,7 @@ function renderBalanceForm(copyFrom) {
 
   const recalc = () => {
     let A = 0, L = 0, filled = 0;
-    const perOwner = { Ramesh: 0, Surya: 0 };
+    const perOwner = Object.fromEntries(nwOwners().map(o => [o, 0]));
     view.querySelectorAll('.nw-input').forEach(i => {
       if (i.value === '') return;
       filled++;
@@ -1342,13 +1367,39 @@ function renderBalanceForm(copyFrom) {
     $('#nw-breakdown').textContent = filled
       ? `${money(A)} assets \u2212 ${money(L)} liabilities \u00b7 ${filled} account${filled>1?'s':''}`
       : 'nothing entered yet';
-    for (const o of ['Ramesh','Surya']) {
+    for (const o of nwOwners()) {
       const el = $('#nw-sub-' + o);
       if (el) el.textContent = perOwner[o] ? `\u00b7 ${money(perOwner[o])}` : '';
     }
   };
   view.querySelectorAll('.nw-input').forEach(i => i.addEventListener('input', recalc));
   recalc();
+
+  $('#nw-add-acct').onclick = () => {
+    const name = $('#nw-new-name').value.trim();
+    if (!name) return notice('Give the account a name.', 'bad');
+    if (!addNwAccount(name, $('#nw-new-owner').value, $('#nw-new-kind').value)) {
+      return notice(`"${name}" already exists.`, 'bad');
+    }
+    notice(`Added "${name}". Enter its balance above, then save the snapshot.`, 'ok');
+    renderBalanceForm(copyFrom);
+  };
+  $('#nw-new-name').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); $('#nw-add-acct').click(); }
+  });
+
+  view.querySelectorAll('[data-delacct]').forEach(b => b.onclick = () => {
+    const name = b.dataset.delacct;
+    const used = (state.balances || []).filter(x => x.account === name);
+    if (used.length) {
+      return notice(`"${name}" appears in ${used.length} saved snapshot${used.length>1?'s':''}. `
+        + `Delete those snapshots first, or leave the account in place.`, 'bad');
+    }
+    if (!confirm(`Remove "${name}" from the account list?`)) return;
+    removeNwAccount(name);
+    renderBalanceForm(copyFrom);
+    notice(`Removed "${name}".`, 'ok');
+  });
 
   $('#nw-back').onclick = () => renderNetWorth();
   $('#nw-clear').onclick = () => { view.querySelectorAll('.nw-input').forEach(i => { i.value = ''; }); recalc(); };
@@ -1390,11 +1441,25 @@ function renderBalanceForm(copyFrom) {
       });
       const dateList = Object.keys(byDate).sort();
       if (!confirm(`Import ${rows.length} balances across ${dateList.length} date(s)?\n\n${dateList.join(', ')}\n\nAny existing snapshot on these dates is replaced.`)) return;
+      const target = state.store.kind === 'sheets' ? 'your Google Sheet'
+                   : state.store.kind === 'memory' ? 'this session only (nothing will be saved after reload)'
+                   : 'this browser only \u2014 NOT your Google Sheet';
+      if (state.store.kind !== 'sheets'
+          && !confirm(`Not connected to a Google Sheet right now. This import will go to ${target}.\n\n`
+                     + `Connect first under Data \u2192 Google Sheet if you want it saved there instead. Continue anyway?`)) {
+        out.textContent = 'Cancelled.'; return;
+      }
       const done = await withBusy(`Importing ${rows.length} balances`, async () => {
         for (const [date, entries] of Object.entries(byDate)) await state.store.setBalances(date, entries);
         state.balances = await state.store.getBalances();
       });
-      if (done) { notice(`Imported ${rows.length} balances.`, 'ok'); renderNetWorth(); }
+      // State can flip mid-import (a token can expire between click and completion),
+      // so report where the data actually landed, not where it was aimed.
+      if (done) {
+        notice(`Imported ${rows.length} balances to ${target}.`,
+               state.store.kind === 'sheets' ? 'ok' : 'bad');
+        renderNetWorth();
+      }
     } catch (err) {
       out.innerHTML = `<b class="over">${esc(err.message)}</b>`;
     }
@@ -1409,11 +1474,20 @@ function renderBalanceForm(copyFrom) {
                    kind: i.dataset.kind, balance: Math.abs(Number(i.value) || 0), notes: '' }));
     if (!entries.length) return notice('Enter at least one balance.', 'bad');
     if (dates.includes(date) && !confirm(`A snapshot for ${date} already exists. Replace it?`)) return;
+    const target = state.store.kind === 'sheets' ? 'your Google Sheet'
+                 : state.store.kind === 'memory' ? 'this session only (nothing will be saved after reload)'
+                 : 'this browser only \u2014 NOT your Google Sheet';
+    if (state.store.kind !== 'sheets'
+        && !confirm(`Not connected to a Google Sheet right now. This will save to ${target}.\n\n`
+                   + `Connect first under Data \u2192 Google Sheet if you want it saved there instead. Continue anyway?`)) return;
     const done = await withBusy(`Saving ${entries.length} balances`, async () => {
       await state.store.setBalances(date, entries);
       state.balances = await state.store.getBalances();
     });
-    if (done) { notice(`Snapshot saved for ${date}.`, 'ok'); renderNetWorth(); }
+    if (done) {
+      notice(`Snapshot saved for ${date} to ${target}.`, state.store.kind === 'sheets' ? 'ok' : 'bad');
+      renderNetWorth();
+    }
   };
 }
 
