@@ -1372,6 +1372,59 @@ function wireDebtHandlers() {
   const reload = async () => { state.debts = await state.store.getDebts(); renderNetWorth(); };
 
   $('#debt-add')?.addEventListener('click', () => debtDialog(null));
+
+  $('#debt-import')?.addEventListener('change', async ev => {
+    const file = ev.target.files[0];
+    if (!file) return;
+    const out = $('#debt-import-out');
+    try {
+      const text = await file.text();
+      let recs;
+      if (file.name.toLowerCase().endsWith('.json')) recs = JSON.parse(text);
+      else {
+        const lines = text.trim().split(/\r?\n/);
+        // quoted fields matter here: notes carry commas
+        const split = l => { const o=[]; let cur='', q=false;
+          for (const ch of l) {
+            if (ch === '"') q = !q;
+            else if (ch === ',' && !q) { o.push(cur); cur=''; }
+            else cur += ch;
+          } o.push(cur); return o.map(x=>x.trim()); };
+        const head = split(lines[0]).map(h=>h.toLowerCase());
+        recs = lines.slice(1).filter(Boolean).map(l => {
+          const c = split(l);
+          const g = k => (head.indexOf(k) === -1 ? '' : (c[head.indexOf(k)] ?? '').trim());
+          return { kind: g('kind'), parentId: g('parentid'), counterparty: g('counterparty'),
+                   direction: g('direction'), description: g('description'), date: g('date'),
+                   amount: Number(String(g('amount')).replace(/[$,\s]/g,'')), owner: g('owner'),
+                   notes: g('notes') };
+        });
+      }
+      const debts = recs.filter(r => r.kind !== 'Payment' && /^\d{4}-\d{2}-\d{2}$/.test(r.date) && r.amount > 0);
+      const pays  = recs.filter(r => r.kind === 'Payment' && /^\d{4}-\d{2}-\d{2}$/.test(r.date) && r.amount > 0);
+      if (!debts.length) { out.innerHTML = '<b class="over">No debt rows found. Need a row with kind=Debt.</b>'; return; }
+      const principal = debts.reduce((a,r)=>a+r.amount,0), repaid = pays.reduce((a,r)=>a+r.amount,0);
+      if (!confirm(`Import ${debts.length} agreement(s) and ${pays.length} payment(s)?\n\n`
+                 + `Principal ${money(principal)}\nRepaid ${money(repaid)}\n`
+                 + `Outstanding ${money(Math.max(0, principal-repaid))}`)) { out.textContent='Cancelled.'; return; }
+      const done = await withBusy(`Importing ${recs.length} rows`, async () => {
+        // Parent ids are assigned by the store, so map the file's ids onto the real ones.
+        const idMap = {};
+        for (const d of debts) {
+          const fileId = String(d.parentId || d.id || debts.indexOf(d) + 1);
+          const realId = await state.store.addDebt({ ...d, kind: 'Debt', parentId: null });
+          idMap[String(debts.indexOf(d) + 1)] = realId;
+        }
+        const firstReal = Object.values(idMap)[0];
+        for (const p of pays) {
+          await state.store.addDebt({ ...p, kind: 'Payment',
+            parentId: idMap[String(p.parentId)] ?? firstReal });
+        }
+        state.debts = await state.store.getDebts();
+      });
+      if (done) { notice(`Imported ${debts.length} agreement(s), ${pays.length} payment(s).`, 'ok'); renderNetWorth(); }
+    } catch (err) { out.innerHTML = `<b class="over">${esc(err.message)}</b>`; }
+  });
   view.querySelectorAll('[data-editdebt]').forEach(b => b.onclick = () =>
     debtDialog((state.debts || []).find(d => Number(d.id) === Number(b.dataset.editdebt))));
 
@@ -1603,10 +1656,13 @@ function renderDebtSection(scopeOwner) {
          or money you have lent out.</div>`}
   </div>
 
-  <div class="actions" style="margin:12px 0 24px">
+  <div class="actions" style="margin:12px 0 8px">
     <button class="btn" id="debt-add">Add debt or loan</button>
+    <label class="btn ghost nw-import-btn" for="debt-import">Import ledger\u2026</label>
+    <input type="file" id="debt-import" accept=".csv,.json" hidden>
     <span class="muted">Outstanding balances flow into the net-worth totals above automatically.</span>
-  </div>`;
+  </div>
+  <div id="debt-import-out" class="note" style="margin:0 0 24px"></div>`;
 }
 
 /** Enter every account's balance for one date. Grouped, running total, carry-forward. */
