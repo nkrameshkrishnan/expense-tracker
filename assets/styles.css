@@ -644,3 +644,15 @@ tr:hover .nw-del-acct{opacity:1}
   .debt-summary>div{border-right:0;border-bottom:1px solid var(--rule)}
   .debt-head{flex-direction:column}.debt-amounts{text-align:left}
 }
+
+/* -------------------------------------------------------------- dividends */
+.div-panel{
+  display:grid;grid-template-columns:220px 1fr;gap:20px;
+  border:1px solid var(--rule-2);background:#fff;padding:16px;margin-bottom:8px;
+}
+.div-kpi{display:flex;flex-direction:column;justify-content:center;border-right:1px solid var(--rule);padding-right:20px}
+.div-kpi-label{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.div-kpi-val{font-family:var(--mono);font-size:26px;font-weight:600;letter-spacing:-.02em;color:var(--amber);margin:4px 0}
+.div-kpi-note{font-size:11px;color:var(--ink-3);line-height:1.5}
+.div-chart{height:180px;position:relative}
+@media(max-width:640px){.div-panel{grid-template-columns:1fr}.div-kpi{border-right:0;border-bottom:1px solid var(--rule);padding:0 0 14px}}
