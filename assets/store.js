@@ -13,7 +13,7 @@ import { SHEETS_ENDPOINT, SHEETS_TOKEN, GOOGLE_CLIENT_ID } from './config.js';
 export const YEAR = 2026;
 
 export const CATEGORIES = [
-  ['Salary', 'Income'], ['Other Income', 'Income'],
+  ['Salary', 'Income'], ['Dividends', 'Income'], ['Other Income', 'Income'],
   ['Rent / Housing', 'Expense'], ['Groceries', 'Expense'], ['Utilities', 'Expense'],
   ['Internet & Phone', 'Expense'], ['Transport', 'Expense'], ['Gas', 'Expense'], ['Dining Out', 'Expense'],
   ['Health & Fitness', 'Expense'], ['Insurance', 'Expense'], ['Shopping', 'Expense'],
