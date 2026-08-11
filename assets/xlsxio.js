@@ -52,6 +52,12 @@ export function aggregate(rows, budget, month) {
 
   const income = sum(r => r.type === 'Income');
   const expense = sum(r => r.type === 'Expense');
+  // Its own accounting bucket, not Income and not a Transfer: dividends are
+  // tracked and totalled, but deliberately excluded from Income, Savings Rate
+  // and every Income-derived figure. That exclusion is automatic here - every
+  // check above is an exact `type === 'Income'` match, so a 'Dividends' row
+  // was never going to satisfy it even before this line existed.
+  const dividends = sum(r => r.type === 'Dividends');
 
   const byCat = {};
   // Expense only. `!== 'Transfer'` would also let Income rows into an expense
@@ -83,14 +89,15 @@ export function aggregate(rows, budget, month) {
     const inM = rows.filter(r => Number(String(r.date).slice(0, 4)) === YEAR && monthOf(r) === m);
     const inc = inM.filter(r => r.type === 'Income').reduce((a, r) => a + r.amount, 0);
     const exp = inM.filter(r => r.type === 'Expense').reduce((a, r) => a + r.amount, 0);
+    const div = inM.filter(r => r.type === 'Dividends').reduce((a, r) => a + r.amount, 0);
     const bud = EXPENSE_CATS.reduce((a, c) => a + (Number(budget[c]?.[m]) || 0), 0);
-    return { month: MONTHS[i], income: inc, expense: exp, net: inc - exp, budget: bud, hasData: inM.length > 0 };
+    return { month: MONTHS[i], income: inc, expense: exp, dividends: div, net: inc - exp, budget: bud, hasData: inM.length > 0 };
   });
 
   const days = month === 0 ? 365 : new Date(YEAR, month, 0).getDate();
 
   return {
-    count: inScope.length, income, expense, net: income - expense,
+    count: inScope.length, income, expense, dividends, net: income - expense,
     savingsRate: income > 0 ? (income - expense) / income : 0,
     expenseBudget, budgetUsed: expenseBudget > 0 ? expense / expenseBudget : 0,
     avgDaily: expense / days,
