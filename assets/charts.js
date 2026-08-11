@@ -186,3 +186,14 @@ export function assetSplit(assets) {
     },
   });
 }
+
+export function dividendsTrend(series) {
+  mount('c-dividends', {
+    type: 'bar',
+    data: {
+      labels: series.map(s => s.month),
+      datasets: [{ label: 'Dividends', data: series.map(s => s.dividends || 0), backgroundColor: AMBER }],
+    },
+    options: { maintainAspectRatio: false, responsive: true, plugins: { legend: { display: false } }, scales: { x: gridX, y: gridY } },
+  });
+}
