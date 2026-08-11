@@ -25,7 +25,7 @@ export const CAT_NAMES = CATEGORIES.map(c => c[0]);
 export const EXPENSE_CATS = CATEGORIES.filter(c => c[1] === 'Expense').map(c => c[0]);
 export const CAT_TYPE = Object.fromEntries(CATEGORIES);
 
-export const TYPES = ['Expense', 'Income', 'Transfer'];
+export const TYPES = ['Expense', 'Income', 'Transfer', 'Dividends'];
 export const PAYMENTS = ['Credit Card', 'Debit Card', 'Cash', 'e-Transfer', 'Pre-authorized Debit', 'Other'];
 export const ACCOUNTS = [
   'CIBC Chequing', 'WealthSimple Chequing', 'Savings',
