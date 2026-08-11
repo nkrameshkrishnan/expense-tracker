@@ -296,6 +296,17 @@ function renderDashboard() {
     ${kpi('Avg / day', money(a.avgDaily), state.month === 0 ? 'over 365 days' : `over ${new Date(YEAR, state.month, 0).getDate()} days`)}
   </div>
 
+  ${a.dividends > 0 ? `
+  <div class="eyebrow">Dividends &mdash; ${label}</div>
+  <div class="div-panel">
+    <div class="div-kpi">
+      <span class="div-kpi-label">Total this period</span>
+      <span class="div-kpi-val num">${money(a.dividends)}</span>
+      <span class="div-kpi-note">Tracked separately &mdash; not counted as Income, not counted as spending.</span>
+    </div>
+    <div class="div-chart"><canvas id="c-dividends"></canvas></div>
+  </div>` : ''}
+
   ${a.overBudget.length ? `<div class="eyebrow">Over budget &mdash; ${label}</div>
   <div class="tablewrap"><table><thead><tr><th>Category</th><th class="n">Actual</th><th class="n">Budget</th><th class="n">Over by</th><th class="n">Used</th></tr></thead><tbody>
     ${a.overBudget.map(r => `<tr><td>${esc(r.category)}</td><td class="n num">${money(r.actual)}</td><td class="n num">${money(r.budget)}</td><td class="n num over">${money(-r.variance)}</td><td class="n num over">${pct(r.used)}</td></tr>`).join('')}
@@ -361,6 +372,7 @@ function renderDashboard() {
   charts.paymentSplit(a.byPayment);
   charts.actualVsBudget(a.catRows);
   charts.topFive(a.top5);
+  if (a.dividends > 0) charts.dividendsTrend(a.series);
 }
 
 const kpi = (k, v, m = '', cls = '') => `<div class="kpi ${cls}"><div class="k">${k}</div><div class="v">${v}</div><div class="m">${esc(m)}</div></div>`;
