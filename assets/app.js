@@ -70,6 +70,13 @@ function showGate(message) {
       callback: async res => {
         setIdToken(res.credential);
         gate.hidden = true;
+        // boot() below makes a real network fetch that can take several
+        // seconds on a cold start. Hiding the gate here without showing
+        // anything else left a genuinely blank #view for that whole window -
+        // the boot-loading overlay only ever covered the FIRST page load,
+        // never this second wait after a successful sign-in.
+        const bootOverlay = $('#boot-loading');
+        if (bootOverlay) bootOverlay.hidden = false;
         await boot();
       },
       // auto_select removed on purpose. Google's own docs: on ITP browsers
@@ -2184,23 +2191,22 @@ function revealApp() {
   if (header) header.style.visibility = '';
 }
 
-const VISITED_KEY = 'ledger.hasVisited';
-
 async function boot() {
   state.store = await openStore(notice);
   await seedIfEmpty();
   await refresh();
   revealApp();
-  // Only the GENUINELY first visit ever on this device (tracked by a
-  // one-time flag, not "no endpoint right now") lands on Data instead of
-  // Dashboard. The earlier version re-checked "is a sheet connected" on
-  // EVERY boot, which meant anyone intentionally staying in browser-only
-  // mode long-term got bounced to Data on every single visit, and a direct
-  // link or bookmark to a specific tab got silently overridden every time -
-  // neither of which is "first run" behaviour, both are just "no sheet".
-  const isFirstEverVisit = !localStorage.getItem(VISITED_KEY);
-  localStorage.setItem(VISITED_KEY, '1');
-  const firstRun = isFirstEverVisit && !getEndpoint() && state.store.kind !== 'sheets';
+  // Tied to the ACTUAL current state - no sheet connected AND no local data
+  // either - not to a one-time "have you ever visited" flag. That flag lived
+  // in localStorage, which never expires: the very first page load after
+  // this feature shipped set it permanently, so it correctly fired once and
+  // then silently never fired again for that browser - including for
+  // someone who still has nothing connected and nothing recorded, which is
+  // exactly the case this was supposed to keep helping with. Checking real
+  // state instead means it naturally stops nagging the moment there is
+  // either a real sheet connection OR real local data worth not disrupting
+  // with a redirect - and keeps helping for as long as neither exists yet.
+  const firstRun = !getEndpoint() && state.store.kind !== 'sheets' && state.rows.length === 0;
   // Was: `(location.hash || '#dashboard').slice(1) in VIEWS ? location.hash.slice(1) : 'dashboard'`
   // - the '#dashboard' fallback was only used for the membership CHECK, then
   // the true branch re-read the original (still-empty) location.hash a
