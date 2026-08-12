@@ -19,7 +19,7 @@
 </head>
 <body>
 
-<header class="rail">
+<header class="rail" id="app-header" style="visibility:hidden">
   <div class="rail-in">
     <div class="brand">
       <span class="brand-mark">&#8214;</span>
@@ -39,6 +39,14 @@
 </header>
 
 <div id="banner" class="banner" hidden></div>
+
+<!-- Shown by inline HTML, not by script - so there is no blank-page gap while
+     the JS bundle parses and starts running. app.js hides it once it knows
+     whether to show the sign-in gate or real content, whichever comes first. -->
+<div id="boot-loading">
+  <div class="boot-mark">&#8214;</div>
+  <div class="boot-spin"></div>
+</div>
 
 <div id="gate" hidden></div>
 <main id="view"></main>
