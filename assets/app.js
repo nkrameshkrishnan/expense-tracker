@@ -38,6 +38,13 @@ const state = {
    opaque, high-z-index layer means showing it can never result in stale
    content bleeding through, no matter which code path triggered it. */
 function showGate(message) {
+  // Named bootOverlay, not boot - a local `const boot` here would shadow the
+  // outer async function boot() inside this function's own nested sign-in
+  // callback below, which calls the REAL boot(). That exact collision
+  // happened once already: "boot is not a function", caught by testing the
+  // actual sign-in flow rather than just reading the diff.
+  const bootOverlay = $('#boot-loading');
+  if (bootOverlay) bootOverlay.hidden = true;   // was z-index above the gate - would otherwise hide it entirely
   const gate = $('#gate');
   gate.hidden = false;
   gate.innerHTML = `
@@ -2167,21 +2174,62 @@ async function seedIfEmpty() {
   }
 }
 
+/** Reveal the real app - hide the boot overlay, show the header/nav that was
+    deliberately kept invisible (not un-rendered, just visibility:hidden) so
+    there is zero layout shift the instant it appears. */
+function revealApp() {
+  const bootOverlay = $('#boot-loading');
+  if (bootOverlay) bootOverlay.hidden = true;
+  const header = $('#app-header');
+  if (header) header.style.visibility = '';
+}
+
+const VISITED_KEY = 'ledger.hasVisited';
+
 async function boot() {
   state.store = await openStore(notice);
   await seedIfEmpty();
   await refresh();
-  go((location.hash || '#dashboard').slice(1) in VIEWS ? location.hash.slice(1) : 'dashboard');
+  revealApp();
+  // Only the GENUINELY first visit ever on this device (tracked by a
+  // one-time flag, not "no endpoint right now") lands on Data instead of
+  // Dashboard. The earlier version re-checked "is a sheet connected" on
+  // EVERY boot, which meant anyone intentionally staying in browser-only
+  // mode long-term got bounced to Data on every single visit, and a direct
+  // link or bookmark to a specific tab got silently overridden every time -
+  // neither of which is "first run" behaviour, both are just "no sheet".
+  const isFirstEverVisit = !localStorage.getItem(VISITED_KEY);
+  localStorage.setItem(VISITED_KEY, '1');
+  const firstRun = isFirstEverVisit && !getEndpoint() && state.store.kind !== 'sheets';
+  // Was: `(location.hash || '#dashboard').slice(1) in VIEWS ? location.hash.slice(1) : 'dashboard'`
+  // - the '#dashboard' fallback was only used for the membership CHECK, then
+  // the true branch re-read the original (still-empty) location.hash a
+  // second time, producing startTab = '' whenever there was no hash at all.
+  // The dashboard still rendered (VIEWS[''] falls back to renderDashboard
+  // elsewhere), so this was invisible by luck - but the URL bar itself never
+  // actually got '#dashboard' written into it. Compute the effective tab
+  // once and reuse it, rather than deriving it twice from two different
+  // values.
+  const hashTab = (location.hash || '#dashboard').slice(1);
+  const startTab = firstRun ? 'data' : (hashTab in VIEWS ? hashTab : 'dashboard');
+  go(startTab);
 }
 
 (async function main() {
   const ready = () => (typeof Chart !== 'undefined' && typeof XLSX !== 'undefined');
   if (!ready()) await new Promise(r => window.addEventListener('load', r, { once: true }));
 
-  // Only gate when a sheet is actually configured. Without an endpoint the app
-  // runs on browser storage alone and there is nothing of yours to protect.
-  const needsAuth = !!getEndpoint() && !!getClientId();
+  // Sign-in is required whenever this deployment has Google auth configured
+  // AT ALL - a site-wide setting - regardless of whether THIS particular
+  // browser happens to already have a sheet endpoint saved. It used to also
+  // require an endpoint on this device, which meant a brand new browser
+  // skipped authentication entirely and landed straight on an empty,
+  // unexplained Dashboard instead of ever being asked to sign in.
+  const needsAuth = !!getClientId();
   if (needsAuth && !getIdToken()) { showGate(); return; }
+  // No Google auth configured at all: nothing to protect, go straight in -
+  // but still clear the loading overlay once real content is ready, same as
+  // the authenticated path.
 
   try {
     await boot();
@@ -2190,6 +2238,7 @@ async function boot() {
       setIdToken('');
       showGate(e.message);
     } else {
+      revealApp();
       throw e;
     }
   }
