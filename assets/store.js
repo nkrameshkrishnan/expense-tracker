@@ -10,6 +10,8 @@
 
 import { SHEETS_ENDPOINT, SHEETS_TOKEN, GOOGLE_CLIENT_ID } from './config.js';
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
 /** The actual current calendar year, not a value baked in at build time.
     Was `export const YEAR = 2026;` - fine for exactly one year, silently
     wrong for every year after. Anything needing "the current year" as a
@@ -140,11 +142,29 @@ class SheetsStore {
     this.sheetName = '';
   }
 
-  async _get(year) {
+  async _get(year, attempt = 1) {
     const yq = year ? `&year=${encodeURIComponent(year)}` : '';
     const url = `${this.endpoint}?idToken=${encodeURIComponent(getIdToken())}${yq}&t=${Date.now()}`;
-    const res = await fetch(url, { method: 'GET', redirect: 'follow' });
-    if (!res.ok) throw new Error(`Sheet responded ${res.status}. Check the deployment is set to "Anyone".`);
+    let res;
+    try {
+      res = await fetch(url, { method: 'GET', redirect: 'follow' });
+    } catch (networkErr) {
+      // A dropped connection is exactly the kind of transient blip retrying
+      // absorbs - fetch() throws for this rather than returning a status.
+      if (attempt < 3) { await sleep(400 * attempt); return this._get(year, attempt + 1); }
+      throw new Error(`Could not reach the sheet (${networkErr.message}). Check your connection.`);
+    }
+    if (!res.ok) {
+      // Apps Script /exec endpoints are known to intermittently 404 for a
+      // few seconds right after a redeploy, and occasionally under Google's
+      // own infrastructure hiccups even with no redeploy involved - neither
+      // means the deployment is actually misconfigured. Retry a couple of
+      // times with backoff before concluding that, since a GET is read-only
+      // and always safe to retry - unlike a write, there is no risk of
+      // duplicating anything by trying again.
+      if (res.status === 404 && attempt < 3) { await sleep(500 * attempt); return this._get(year, attempt + 1); }
+      throw new Error(`Sheet responded ${res.status}${attempt > 1 ? ` (after ${attempt} attempts)` : ''}. Check the deployment is set to "Anyone".`);
+    }
     const text = await res.text();
     let data;
     try {
@@ -162,14 +182,35 @@ class SheetsStore {
   }
 
   /* text/plain dodges the CORS preflight that Apps Script cannot answer. */
-  async _post(payload) {
-    const res = await fetch(this.endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ ...payload, idToken: getIdToken() }),
-      redirect: 'follow',
-    });
-    if (!res.ok) throw new Error(`Sheet responded ${res.status}.`);
+  async _post(payload, attempt = 1) {
+    // Retrying a write is only safe when re-applying it produces the same
+    // end state either way. 'update'/'delete'/'setBudget'/'setBalances' all
+    // overwrite by design, so replaying one changes nothing if it actually
+    // landed the first time. 'create'/'bulk'/'addDebt'/'importDebts' APPEND
+    // rows - retrying one of those after an ambiguous failure could leave a
+    // duplicate row behind, so those are never auto-retried here.
+    const idempotent = ['update', 'delete', 'clear', 'setBudget', 'setBalances',
+                        'deleteBalanceDate', 'deleteDebt', 'updateDebt'].includes(payload.action);
+    let res;
+    try {
+      res = await fetch(this.endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ ...payload, idToken: getIdToken() }),
+        redirect: 'follow',
+      });
+    } catch (networkErr) {
+      // fetch() throwing (not a bad status, a genuinely failed request) means
+      // it is unclear whether the server ever saw it. Retrying is not risk-free
+      // even for idempotent actions - but leaving the person stuck on a dropped
+      // connection is worse, so retry once for those specifically.
+      if (idempotent && attempt < 2) { await sleep(600); return this._post(payload, attempt + 1); }
+      throw new Error(`Could not reach the sheet (${networkErr.message}). Check your connection and try again.`);
+    }
+    if (!res.ok) {
+      if (idempotent && res.status === 404 && attempt < 2) { await sleep(600); return this._post(payload, attempt + 1); }
+      throw new Error(`Sheet responded ${res.status}.`);
+    }
     const data = JSON.parse(await res.text());
     if (!data.ok) {
       const err = new Error(data.error || 'Write rejected by the sheet.');
