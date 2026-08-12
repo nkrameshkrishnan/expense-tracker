@@ -268,12 +268,17 @@ async function withBusy(label, fn) {
   }
 }
 
-function notice(msg, kind = '') {
+/** action, when given, is {label, onClick} - rendered as a real button after
+    the (still escaped, still safe) message text. Not exposed to raw HTML
+    injection from msg itself; the button only ever comes from a caller
+    passing a hardcoded label/callback, never from untrusted data. */
+function notice(msg, kind = '', action = null) {
   const b = $('#banner');
   b.className = 'banner ' + kind;
-  b.innerHTML = esc(msg);
+  b.innerHTML = esc(msg) + (action ? ` <button class="banner-action" id="banner-action-btn">${esc(action.label)}</button>` : '');
   b.hidden = false;
-  if (kind === 'ok') setTimeout(() => { b.hidden = true; }, 4000);
+  if (action) $('#banner-action-btn').onclick = action.onClick;
+  if (kind === 'ok' && !action) setTimeout(() => { b.hidden = true; }, 4000);
 }
 
 async function refresh() {
@@ -2210,6 +2215,24 @@ async function boot() {
   await seedIfEmpty();
   await refresh();
   revealApp();
+  // A configured endpoint that still failed to connect (as opposed to no
+  // endpoint being saved at all, which is a normal, expected state) is the
+  // one case worth a real recovery action, not just informational text. The
+  // retry window in store.js now covers several seconds of genuine cold
+  // starts, but no window is infinite - when it does exhaust, the only
+  // previous recovery path was "go to Data, click Connect & test", which
+  // nothing on screen actually pointed you toward.
+  if (getEndpoint() && state.store.kind !== 'sheets') {
+    notice('Could not reach your Google Sheet just now \u2014 working from this browser\u2019s storage instead.', 'bad',
+      { label: 'Retry connecting', onClick: async () => {
+        const done = await withBusy('Reconnecting', async () => {
+          state.store = await openStore(notice);
+          if (state.store.kind !== 'sheets') throw new Error('still could not reach the sheet');
+          await refresh();
+        });
+        if (done) { notice(`Connected to "${state.store.sheetName}" \u2014 ${state.rows.length} rows loaded.`, 'ok'); (VIEWS[state.tab] || renderDashboard)(); }
+      }});
+  }
   // Tied to the ACTUAL current state - no sheet connected AND no local data
   // either - not to a one-time "have you ever visited" flag. That flag lived
   // in localStorage, which never expires: the very first page load after
