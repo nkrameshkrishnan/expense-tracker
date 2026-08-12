@@ -2046,9 +2046,24 @@ function renderData() {
     }
     localStorage.setItem(ENDPOINT_KEY, url);
     if (getClientId() && !getIdToken()) { showGate(); return; }
+    // openStore() already knows the SPECIFIC reason a connection failed - a
+    // retried-and-still-404, a rejected sign-in, a network drop - and reports
+    // it via onNotice. Passing () => {} here threw that reason away and
+    // replaced it with one generic message no matter what actually happened,
+    // which is exactly why "try again" looked like it fixed something
+    // mysterious: the real cause was never shown, so retrying was the only
+    // available diagnostic.
+    let reason = '';
     await withBusy('Testing the connection', async () => {
-      state.store = await openStore(() => {});
-      if (state.store.kind !== 'sheets') throw new Error('could not reach the sheet with that URL \u2014 check it is deployed and you are signed in with an allowed account');
+      // openStore() can call onNotice twice - once for why the sheet itself
+      // failed, and again if the LocalStore fallback also fails for an
+      // unrelated reason (IndexedDB disabled, private browsing, etc). Only
+      // the FIRST message is the one this button is actually testing; a
+      // second, unrelated failure overwriting it would show the wrong reason.
+      state.store = await openStore(msg => { if (!reason) reason = msg; });
+      if (state.store.kind !== 'sheets') {
+        throw new Error(reason || 'could not reach the sheet with that URL \u2014 check it is deployed and you are signed in with an allowed account');
+      }
       await refresh();
     });
     if (state.store.kind === 'sheets') notice(`Connected to "${state.store.sheetName}" \u2014 ${state.rows.length} rows loaded.`, 'ok');
