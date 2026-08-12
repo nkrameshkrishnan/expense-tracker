@@ -77,7 +77,21 @@ function showGate(message) {
         // never this second wait after a successful sign-in.
         const bootOverlay = $('#boot-loading');
         if (bootOverlay) bootOverlay.hidden = false;
-        await boot();
+        // Unlike the top-level main() IIFE, this callback had no try/catch of
+        // its own - if boot() threw here for ANY reason, the failure became
+        // an unhandled rejection and the page was left exactly in the state
+        // being reported: gate hidden, boot-loading uncertain, #view empty,
+        // nothing to click, nothing explaining why. Whatever the underlying
+        // cause turns out to be, the page must never be able to end up with
+        // no visible UI at all - so on any failure here, fall back to
+        // showing the gate again with the real error message, the same
+        // recovery path used everywhere else auth-related failures surface.
+        try {
+          await boot();
+        } catch (e) {
+          setIdToken('');
+          showGate(e?.message || 'Something went wrong loading your data. Please sign in again.');
+        }
       },
       // auto_select removed on purpose. Google's own docs: on ITP browsers
       // (Safari, Firefox) the automatic One Tap prompt opens a pop-up, and
