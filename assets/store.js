@@ -10,7 +10,13 @@
 
 import { SHEETS_ENDPOINT, SHEETS_TOKEN, GOOGLE_CLIENT_ID } from './config.js';
 
-export const YEAR = 2026;
+/** The actual current calendar year, not a value baked in at build time.
+    Was `export const YEAR = 2026;` - fine for exactly one year, silently
+    wrong for every year after. Anything needing "the current year" as a
+    UI default should call this; anything needing "the year the person is
+    currently viewing" should use state.year in app.js instead, since those
+    are genuinely different things (today's date vs. a chosen Dashboard year). */
+export function currentYear() { return new Date().getFullYear(); }
 
 export const CATEGORIES = [
   ['Salary', 'Income'], ['Dividends', 'Income'], ['Other Income', 'Income'],
@@ -134,8 +140,9 @@ class SheetsStore {
     this.sheetName = '';
   }
 
-  async _get() {
-    const url = `${this.endpoint}?idToken=${encodeURIComponent(getIdToken())}&t=${Date.now()}`;
+  async _get(year) {
+    const yq = year ? `&year=${encodeURIComponent(year)}` : '';
+    const url = `${this.endpoint}?idToken=${encodeURIComponent(getIdToken())}${yq}&t=${Date.now()}`;
     const res = await fetch(url, { method: 'GET', redirect: 'follow' });
     if (!res.ok) throw new Error(`Sheet responded ${res.status}. Check the deployment is set to "Anyone".`);
     const text = await res.text();
@@ -175,6 +182,7 @@ class SheetsStore {
 
   _fill(d) {
     this.cache = { transactions: d.transactions.map(normalise), budget: d.budget,
+                   budgetYear: d.budgetYear || currentYear(),
                    balances: d.balances || [], debts: d.debts || [] };
     this.sheetName = d.sheetName || '';
     this.user = d.user || null;      // verified by Apps Script, not by the browser
@@ -192,13 +200,15 @@ class SheetsStore {
   async importDebts(records) { return this._post({ action: 'importDebts', records }); }
   async setBalances(date, entries) { await this._post({ action: 'setBalances', date, entries }); }
   async deleteBalanceDate(date) { await this._post({ action: 'deleteBalanceDate', date }); }
-  async getBudget() {
-    const b = (await this._ensure()).budget;
+  async getBudget(year) {
+    const cached = await this._ensure();
+    const wantsCachedYear = !year || year === cached.budgetYear;
+    const b = wantsCachedYear ? cached.budget : (await this._get(year)).budget;
     const full = emptyBudget();
     if (b) for (const c of Object.keys(b)) if (full[c]) for (let m = 1; m <= 12; m++) full[c][m] = Number(b[c][m]) || 0;
     return full;
   }
-  async setBudget(budget) { await this._post({ action: 'setBudget', budget }); return budget; }
+  async setBudget(budget, year) { await this._post({ action: 'setBudget', budget, year }); return budget; }
 
   async add(rec) {
     const r = normalise(rec); delete r.id;
@@ -260,7 +270,11 @@ class LocalStore {
   async update(id, rec) { const r = normalise({ ...rec, id }); await this._wrap(this._tx('transactions', 'readwrite').put(r)); return r; }
   async remove(id) { await this._wrap(this._tx('transactions', 'readwrite').delete(Number(id))); }
   async clear() { await this._wrap(this._tx('transactions', 'readwrite').clear()); await this._wrap(this._tx('meta', 'readwrite').delete('budget')); }
-  async getBudget() { return (await this._wrap(this._tx('meta', 'readonly').get('budget'))) || emptyBudget(); }
+  async getBudget(year) {
+    const y = year || currentYear();
+    const all = (await this._wrap(this._tx('meta', 'readonly').get('budgetsByYear'))) || {};
+    return all[y] || emptyBudget();
+  }
   async getBalances() { return (await this._wrap(this._tx('meta', 'readonly').get('balances'))) || []; }
   async getDebts() { return (await this._wrap(this._tx('meta', 'readonly').get('debts'))) || []; }
   async addDebt(record) {
@@ -303,7 +317,13 @@ class LocalStore {
     const all = (await this.getBalances()).filter(b => b.date !== date);
     await this._wrap(this._tx('meta', 'readwrite').put(all, 'balances'));
   }
-  async setBudget(b) { await this._wrap(this._tx('meta', 'readwrite').put(b, 'budget')); return b; }
+  async setBudget(b, year) {
+    const y = year || currentYear();
+    const all = (await this._wrap(this._tx('meta', 'readonly').get('budgetsByYear'))) || {};
+    all[y] = b;
+    await this._wrap(this._tx('meta', 'readwrite').put(all, 'budgetsByYear'));
+    return b;
+  }
   async isEmpty() { return (await this._wrap(this._tx('transactions', 'readonly').count())) === 0; }
 }
 
@@ -316,8 +336,17 @@ class MemoryStore {
   async update(id, rec) { const r = normalise({ ...rec, id: Number(id) }); this.rows = this.rows.map(x => (x.id === r.id ? r : x)); return r; }
   async remove(id) { this.rows = this.rows.filter(x => x.id !== Number(id)); }
   async clear() { this.rows = []; this.budget = emptyBudget(); }
-  async getBudget() { return this.budget; }
-  async setBudget(b) { this.budget = b; return b; }
+  async getBudget(year) {
+    const y = year || currentYear();
+    this.budgetsByYear = this.budgetsByYear || {};
+    return this.budgetsByYear[y] || this.budget || emptyBudget();
+  }
+  async setBudget(b, year) {
+    const y = year || currentYear();
+    this.budgetsByYear = this.budgetsByYear || {};
+    this.budgetsByYear[y] = b;
+    return b;
+  }
   async getBalances() { return this.balances || (this.balances = []); }
   async getDebts() { return this.debts || (this.debts = []); }
   async addDebt(record) {

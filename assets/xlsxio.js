@@ -1,5 +1,5 @@
 /* Spreadsheet in / spreadsheet out, plus the aggregation the dashboard runs on. */
-import { CAT_NAMES, EXPENSE_CATS, CAT_TYPE, MONTHS, PAYMENTS, PEOPLE, UNASSIGNED, YEAR, normalise } from './store.js';
+import { CAT_NAMES, EXPENSE_CATS, CAT_TYPE, MONTHS, PAYMENTS, PEOPLE, UNASSIGNED, currentYear, normalise } from './store.js';
 
 export const money = n => (n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export const pct = n => (n * 100).toFixed(1) + '%';
@@ -14,8 +14,8 @@ export function byPersonFilter(rows, person) {
 
 /** Per-person totals for a period. Always computed across everyone, so the
     comparison stays meaningful even while the page is filtered to one person. */
-export function personBreakdown(rows, month) {
-  const inScope = rows.filter(r => Number(String(r.date).slice(0, 4)) === YEAR && (month === 0 || monthOf(r) === month));
+export function personBreakdown(rows, month, year = currentYear()) {
+  const inScope = rows.filter(r => Number(String(r.date).slice(0, 4)) === year && (month === 0 || monthOf(r) === month));
   const buckets = [...PEOPLE, UNASSIGNED].map(p => {
     const mine = p === UNASSIGNED ? inScope.filter(r => !r.person) : inScope.filter(r => r.person === p);
     return {
@@ -31,14 +31,14 @@ export function personBreakdown(rows, month) {
 }
 
 /** Monthly expense series split by person — feeds the comparison chart. */
-export function personSeries(rows) {
+export function personSeries(rows, year = currentYear()) {
   const people = [...PEOPLE, UNASSIGNED];
   return people.map(p => ({
     person: p,
     data: MONTHS.map((_, i) => {
       const m = i + 1;
       return rows.filter(r =>
-        Number(String(r.date).slice(0, 4)) === YEAR && monthOf(r) === m && r.type === 'Expense' &&
+        Number(String(r.date).slice(0, 4)) === year && monthOf(r) === m && r.type === 'Expense' &&
         (p === UNASSIGNED ? !r.person : r.person === p)
       ).reduce((a, r) => a + r.amount, 0);
     }),
@@ -46,8 +46,8 @@ export function personSeries(rows) {
 }
 
 /** All dashboard numbers come from here. month = 0 means the whole year. */
-export function aggregate(rows, budget, month) {
-  const inScope = rows.filter(r => Number(String(r.date).slice(0, 4)) === YEAR && (month === 0 || monthOf(r) === month));
+export function aggregate(rows, budget, month, year = currentYear()) {
+  const inScope = rows.filter(r => Number(String(r.date).slice(0, 4)) === year && (month === 0 || monthOf(r) === month));
   const sum = f => inScope.filter(f).reduce((a, r) => a + r.amount, 0);
 
   const income = sum(r => r.type === 'Income');
@@ -86,7 +86,7 @@ export function aggregate(rows, budget, month) {
 
   const series = MONTHS.map((_, i) => {
     const m = i + 1;
-    const inM = rows.filter(r => Number(String(r.date).slice(0, 4)) === YEAR && monthOf(r) === m);
+    const inM = rows.filter(r => Number(String(r.date).slice(0, 4)) === year && monthOf(r) === m);
     const inc = inM.filter(r => r.type === 'Income').reduce((a, r) => a + r.amount, 0);
     const exp = inM.filter(r => r.type === 'Expense').reduce((a, r) => a + r.amount, 0);
     const div = inM.filter(r => r.type === 'Dividends').reduce((a, r) => a + r.amount, 0);
@@ -94,7 +94,11 @@ export function aggregate(rows, budget, month) {
     return { month: MONTHS[i], income: inc, expense: exp, dividends: div, net: inc - exp, budget: bud, hasData: inM.length > 0 };
   });
 
-  const days = month === 0 ? 365 : new Date(YEAR, month, 0).getDate();
+  // Was a fixed 365 for "full year" - silently wrong on a leap year (2028,
+  // 2032, ...). Deriving it from the actual year fixes both the leap-year
+  // gap and the year-2026 hardcoding in one line.
+  const isLeap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = month === 0 ? (isLeap ? 366 : 365) : new Date(year, month, 0).getDate();
 
   return {
     count: inScope.length, income, expense, dividends, net: income - expense,
@@ -150,7 +154,9 @@ export function exportWorkbook(rows, budget) {
   }), { f: `SUM(C${tr}:N${tr})` }]);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(pvAoa), 'Pivot');
 
-  XLSX.writeFile(wb, `Expense_Tracker_${YEAR}_export.xlsx`);
+  const years = [...new Set(rows.map(r => String(r.date).slice(0,4)))].sort();
+  const label = years.length <= 1 ? (years[0] || currentYear()) : `${years[0]}-${years[years.length-1]}`;
+  XLSX.writeFile(wb, `Expense_Tracker_${label}_export.xlsx`);
 }
 
 /* ------------------------------------------------------------------ import */

@@ -1,6 +1,6 @@
 import {
   openStore, CAT_NAMES, EXPENSE_CATS, CAT_TYPE, TYPES, PAYMENTS, ACCOUNTS,
-  MONTHS, YEAR, ENDPOINT_KEY, TOKEN_KEY, endpointSource, getEndpoint, emptyBudget,
+  MONTHS, currentYear, ENDPOINT_KEY, TOKEN_KEY, endpointSource, getEndpoint, emptyBudget,
   PEOPLE, UNASSIGNED, PERSON_KEY, CUSTOM_KEY,
   getClientId, getIdToken, setIdToken, NET_WORTH_ACCOUNTS,
 } from './store.js';
@@ -12,9 +12,14 @@ const $ = s => document.querySelector(s);
 const view = $('#view');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+const YEAR_KEY = 'ledger.year';
 const state = {
   store: null, rows: [], budget: emptyBudget(), month: 0, tab: 'dashboard', editing: null,
   person: localStorage.getItem(PERSON_KEY) || '',        // '' = whole family
+  // Which year's Dashboard/Budget you're viewing - independent of what
+  // calendar year it actually is right now, so past years stay browsable.
+  // Defaults to the real current year, not a value fixed at build time.
+  year: Number(localStorage.getItem(YEAR_KEY)) || currentYear(),
   balances: [],
   debts: [],
   filter: { q: '', cat: '', month: '', type: '' },
@@ -245,7 +250,7 @@ function notice(msg, kind = '') {
 
 async function refresh() {
   state.rows = await state.store.list();
-  state.budget = await state.store.getBudget();
+  state.budget = await state.store.getBudget(state.year);
   state.balances = (await state.store.getBalances?.()) || [];
   state.debts = (await state.store.getDebts?.()) || [];
   $('#foot-count').textContent = `${state.rows.length} transactions stored`;
@@ -263,26 +268,39 @@ async function refresh() {
 }
 
 /* ================================================================= DASHBOARD */
-function monthSelect(id, value) {
-  return `<label class="f"><span>Period</span><select id="${id}">
-    <option value="0"${value === 0 ? ' selected' : ''}>Full year ${YEAR}</option>
-    ${MONTHS.map((m, i) => `<option value="${i + 1}"${value === i + 1 ? ' selected' : ''}>${m} ${YEAR}</option>`).join('')}
+/** Years to offer: every year actually present in the data, plus the real
+    current year even if it has nothing yet (so Jan 1 of a new year isn't
+    stuck picking a year with zero transactions to select from). */
+function availableYears() {
+  const fromData = new Set(state.rows.map(r => Number(String(r.date).slice(0, 4))).filter(Boolean));
+  fromData.add(currentYear());
+  return [...fromData].sort((a, b) => b - a);
+}
+
+function periodSelect(value, year) {
+  return `
+  <label class="f"><span>Year</span><select id="y-sel">
+    ${availableYears().map(y => `<option value="${y}"${y === year ? ' selected' : ''}>${y}</option>`).join('')}
+  </select></label>
+  <label class="f"><span>Period</span><select id="m-sel">
+    <option value="0"${value === 0 ? ' selected' : ''}>Full year</option>
+    ${MONTHS.map((m, i) => `<option value="${i + 1}"${value === i + 1 ? ' selected' : ''}>${m}</option>`).join('')}
   </select></label>`;
 }
 
 function renderDashboard() {
-  const a = aggregate(scoped(), state.budget, state.month);
-  const label = state.month === 0 ? `Full year ${YEAR}` : `${MONTHS[state.month - 1]} ${YEAR}`;
+  const a = aggregate(scoped(), state.budget, state.month, state.year);
+  const label = state.month === 0 ? `Full year ${state.year}` : `${MONTHS[state.month - 1]} ${state.year}`;
   // Comparison is always computed across everyone, so it stays meaningful
   // even while the rest of the page is filtered to one person.
-  const people = personBreakdown(state.rows, state.month);
-  const pSeries = personSeries(state.rows);
+  const people = personBreakdown(state.rows, state.month, state.year);
+  const pSeries = personSeries(state.rows, state.year);
   const showCompare = people.length > 1;
 
   view.innerHTML = `
   <div class="head">
     <div><h1>Dashboard</h1><p class="sub">${esc(personLabel())} &middot; ${esc(label)} &middot; ${a.count} transactions</p></div>
-    <div class="spacer"></div>${monthSelect('m-sel', state.month)}
+    <div class="spacer"></div>${periodSelect(state.month, state.year)}
   </div>
 
   <div class="kpis">
@@ -293,7 +311,7 @@ function renderDashboard() {
     ${kpi('Budget used', a.expenseBudget > 0 ? pct(a.budgetUsed) : '\u2014',
         a.expenseBudget > 0 ? (state.person ? `of ${money(a.expenseBudget)} household` : `of ${money(a.expenseBudget)}`) : 'no budget set',
         a.budgetUsed > 1 ? 'neg' : '')}
-    ${kpi('Avg / day', money(a.avgDaily), state.month === 0 ? 'over 365 days' : `over ${new Date(YEAR, state.month, 0).getDate()} days`)}
+    ${kpi('Avg / day', money(a.avgDaily), state.month === 0 ? `over ${(state.year % 4 === 0 && (state.year % 100 !== 0 || state.year % 400 === 0)) ? 366 : 365} days` : `over ${new Date(state.year, state.month, 0).getDate()} days`)}
   </div>
 
   ${a.dividends > 0 ? `
@@ -354,6 +372,16 @@ function renderDashboard() {
   </tbody></table></div>`;
 
   $('#m-sel').onchange = e => { state.month = Number(e.target.value); renderDashboard(); };
+  $('#y-sel').onchange = async e => {
+    state.year = Number(e.target.value);
+    localStorage.setItem(YEAR_KEY, state.year);
+    state.month = 0;  // switching years resets to "full year" - a specific
+                       // month carried over from a different year is confusing
+    // Budget is per-year on the sheet, so changing year needs a fresh fetch,
+    // not just a re-render of already-cached data.
+    state.budget = await state.store.getBudget(state.year);
+    renderDashboard();
+  };
 
   if (typeof Chart === 'undefined') { notice('Chart.js did not load, so charts are unavailable. Everything else works.', 'bad'); return; }
   if (showCompare) {
@@ -391,7 +419,7 @@ function renderAdd() {
   const ctxActual = scoped()
     // Expense only - a transfer into this category is not spending against budget
     .filter(r => r.type === 'Expense' && r.category === selCat && monthOf(r) === curMonth
-                 && Number(String(r.date).slice(0, 4)) === YEAR)
+                 && Number(String(r.date).slice(0, 4)) === currentYear())
     .reduce((a, r) => a + r.amount, 0);
   const ctxBudget = Number(state.budget[selCat]?.[curMonth]) || 0;
   const ctxOver = ctxBudget > 0 && ctxActual > ctxBudget;
@@ -583,7 +611,7 @@ function renderAdd() {
     const cat = $('#f-cat').value;
     if (cat === '__new__') return;
     const act = scoped().filter(r => r.type === 'Expense' && r.category === cat && monthOf(r) === curMonth
-                                     && Number(String(r.date).slice(0, 4)) === YEAR).reduce((a,r)=>a+r.amount,0);
+                                     && Number(String(r.date).slice(0, 4)) === currentYear()).reduce((a,r)=>a+r.amount,0);
     const bud = Number(state.budget[cat]?.[curMonth]) || 0;
     const over = bud > 0 && act > bud;
     const hint = $('#cat-hint');
@@ -625,8 +653,15 @@ function renderAdd() {
     if (!d.date)       { errEl.textContent = 'Pick a date.'; return; }
     if (!(amount > 0)) { errEl.textContent = 'Amount must be greater than zero.'; $('#amount-input').focus(); return; }
 
-    if (Number(d.date.slice(0,4)) !== YEAR)
-      errEl.textContent = `${d.date} is outside ${YEAR} \u2014 it will save but won\u2019t appear on the dashboard.`;
+    // Every year works correctly now - this is purely an FYI, not a warning,
+    // for the one case where it might be surprising: adding a date that
+    // falls under a DIFFERENT year than whatever the Dashboard currently has
+    // selected means it will not show up on THIS screen without switching
+    // the year selector - which was never a bug, that is what "per year"
+    // scoping means, but worth a nudge rather than a silent surprise.
+    const entryYear = Number(d.date.slice(0, 4));
+    const yearNote = entryYear !== state.year
+      ? ` Switch the year selector to ${entryYear} to see it on the Dashboard.` : '';
 
     const btn = $('#sub-btn');
     btn.disabled = true;
@@ -638,7 +673,7 @@ function renderAdd() {
         await refresh();
       });
       btn.disabled = false;
-      if (done) { notice('Entry updated.', 'ok'); go('transactions'); }
+      if (done) { notice('Entry updated.' + yearNote, 'ok'); go('transactions'); }
     } else {
       const done = await withBusy('Saving', async () => {
         await state.store.add({ ...d, amount });
@@ -646,7 +681,7 @@ function renderAdd() {
       });
       btn.disabled = false;
       if (done) {
-        notice(`${money(amount)} saved.`, 'ok');
+        notice(`${money(amount)} saved.` + yearNote, 'ok');
         $('#hint').textContent = `${state.rows.length} total`;
         ev.target.reset();
         $('#type-hidden').value = d.type;
@@ -930,7 +965,7 @@ function renderBudget() {
         // $69,317 to $480,533 - it was adding $411,216 of money that only ever
         // moved between the household's own accounts.
         .filter(r => r.type === 'Expense' && r.category === c && monthOf(r) === m
-                     && Number(String(r.date).slice(0, 4)) === YEAR)
+                     && Number(String(r.date).slice(0, 4)) === state.year)
         .reduce((a, r) => a + r.amount, 0);
     }
   }
@@ -1025,7 +1060,7 @@ function renderBudget() {
     </div>
     <div class="b-sum-item">
       <span class="b-sum-val num ${totalSpent > totalBudget && totalBudget > 0 ? 'over' : ''}">${money(totalSpent)}</span>
-      <span class="b-sum-key">spent so far ${YEAR}</span>
+      <span class="b-sum-key">spent so far ${state.year}</span>
     </div>
     <div class="b-sum-item">
       <span class="b-sum-val num">${budgetedCats}</span>
@@ -1112,7 +1147,7 @@ function renderBudget() {
         card.querySelectorAll('[data-m]').forEach(i => { b[c][Number(i.dataset.m)] = Number(i.value) || 0; });
       }
     });
-    const done = await withBusy('Saving the budget', async () => { await state.store.setBudget(b); await refresh(); });
+    const done = await withBusy('Saving the budget', async () => { await state.store.setBudget(b, state.year); await refresh(); });
     if (done) { notice('Budget saved.', 'ok'); renderBudget(); }
   };
 
@@ -2047,7 +2082,7 @@ function renderData() {
 
   $('#xlsx').onclick = () => { try { exportWorkbook(state.rows, state.budget); notice('Workbook downloaded.', 'ok'); } catch (e) { notice(e.message, 'bad'); } };
   $('#json').onclick = () => {
-    const blob = new Blob([JSON.stringify({ year: YEAR, transactions: state.rows, budget: state.budget }, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify({ year: state.year, transactions: state.rows, budget: state.budget }, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = `ledger-backup-${new Date().toISOString().slice(0, 10)}.json`; a.click();
     URL.revokeObjectURL(a.href);
@@ -2110,7 +2145,7 @@ async function seedIfEmpty() {
       fetch('./data/seed-budget.json').then(r => r.json()).catch(() => null),
     ]);
     await state.store.bulkAdd(rows);
-    if (budget) await state.store.setBudget(budget);
+    if (budget) await state.store.setBudget(budget, currentYear());
     notice(`Loaded ${rows.length} rows from your Expense.xlsx into browser storage. Connect your Google Sheet under Data to make it the source of truth.`);
   } catch {
     notice('No seed data loaded — add your first entry under "Add".');
