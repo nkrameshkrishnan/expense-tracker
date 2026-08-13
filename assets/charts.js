@@ -10,7 +10,23 @@ const money0 = v => '$' + Number(v).toLocaleString('en-CA', { maximumFractionDig
 function mount(id, config) {
   const el = document.getElementById(id);
   if (!el) return;
-  registry.get(id)?.destroy();
+  const existing = registry.get(id);
+  // If the canvas element is the SAME DOM node as last time, Chart.js can
+  // update its data/options in place - much cheaper than tearing down and
+  // rebuilding the whole chart (no re-layout, no new WebGL/2D context, no
+  // visual flash). This only ever fires when a caller has deliberately kept
+  // the canvas alive across a re-render; if the canvas was recreated (the
+  // normal case today, since most pages rebuild via innerHTML), `existing`
+  // will be bound to a DETACHED node and this falls through to the original
+  // destroy+recreate path, unchanged.
+  if (existing && existing.canvas === el) {
+    existing.data = config.data;
+    existing.options = config.options;
+    if (existing.config.type !== config.type) existing.config.type = config.type;
+    existing.update();
+    return;
+  }
+  existing?.destroy();
   Chart.defaults.font.family = "'JetBrains Mono', ui-monospace, monospace";
   Chart.defaults.font.size = 11;
   Chart.defaults.color = INK3;
