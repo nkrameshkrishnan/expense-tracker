@@ -96,7 +96,69 @@ function requireUser(idToken) {
 }
 
 var TX_SHEET = 'Transactions';
-var BUDGET_SHEET = 'Budget';
+/* Budget is per-year: each year gets its own tab ("Budget 2027", "Budget
+   2028", ...) rather than one tab with 12 fixed month columns re-used every
+   January - that fixed-column design has no way to represent "January 2027"
+   distinctly from "January 2026", so setting next year's budget would
+   silently overwrite this year's numbers in the same cells.
+
+   The ORIGINAL tracker's tab is named plain "Budget" with no year suffix,
+   holding 2026's data specifically - that is a one-time historical fact
+   about this specific workbook, not an ongoing pattern. LEGACY_BUDGET_YEAR
+   records it so the migration below only ever fires for 2026. */
+var LEGACY_BUDGET_YEAR = 2026;
+
+function budgetSheetName(year) { return 'Budget ' + year; }
+
+/**
+ * Resolve (or create) the Budget tab for a specific year.
+ *
+ * First call for the legacy year renames the original unsuffixed "Budget"
+ * tab in place rather than duplicating its data into a second tab - a
+ * rename is a single, safe, non-destructive operation, and it only ever
+ * fires once (the plain "Budget" name stops existing right after).
+ * Every other year gets a freshly created tab with the same structure.
+ */
+function budgetSheet(ss, year) {
+  var name = budgetSheetName(year);
+  var bg = ss.getSheetByName(name);
+  if (bg) return bg;
+
+  if (year === LEGACY_BUDGET_YEAR) {
+    var legacy = ss.getSheetByName('Budget');
+    if (legacy) { legacy.setName(name); return legacy; }
+  }
+
+  return createBudgetSheet(ss, name);
+}
+
+/** Build a fresh Budget tab matching the tracker's existing layout: a
+ *  Category/Type pair in A:B, twelve month columns C:N, an Annual Total
+ *  formula in O, one row per known category. */
+function createBudgetSheet(ss, name) {
+  var bg = ss.insertSheet(name);
+  var header = ['Category', 'Type', 'Jan','Feb','Mar','Apr','May','Jun',
+                 'Jul','Aug','Sep','Oct','Nov','Dec', 'Annual Total'];
+  bg.getRange(3, 1, 1, header.length).setValues([header]).setFontWeight('bold');
+  var cats = [
+    ['Salary','Income'], ['Dividends','Income'], ['Other Income','Income'],
+    ['Rent / Housing','Expense'], ['Groceries','Expense'], ['Utilities','Expense'],
+    ['Internet & Phone','Expense'], ['Transport','Expense'], ['Gas','Expense'],
+    ['Dining Out','Expense'], ['Health & Fitness','Expense'], ['Insurance','Expense'],
+    ['Shopping','Expense'], ['Entertainment','Expense'], ['Subscriptions','Expense'],
+    ['Travel','Expense'], ['Education','Expense'], ['Gifts & Donations','Expense'],
+    ['Personal Care','Expense'], ['Savings & Investments','Expense'], ['Miscellaneous','Expense'],
+  ];
+  for (var i = 0; i < cats.length; i++) {
+    var r = 4 + i;
+    bg.getRange(r, 1, 1, 2).setValues([cats[i]]);
+    bg.getRange(r, 15).setFormula('=SUM(C' + r + ':N' + r + ')');
+  }
+  bg.getRange(4, 3, cats.length, 12).setNumberFormat('"$"#,##0.00');
+  bg.getRange(4, 15, cats.length, 1).setNumberFormat('"$"#,##0.00');
+  bg.setFrozenRows(3);
+  return bg;
+}
 
 /* Net-worth snapshots live on their own tab, deliberately separate from
    Transactions. A balance answers "what is this account worth today"; a
@@ -140,6 +202,7 @@ function fail(m, c) { return json({ ok: false, error: String(m), code: c || 'ERR
 function book() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!ss) throw new Error('No bound spreadsheet — create this script from Extensions > Apps Script inside the Sheet.');
+  SHEET_TZ = ss.getSpreadsheetTimeZone();
 
   var tx = ss.getSheetByName(TX_SHEET);
   if (!tx) throw new Error('No "' + TX_SHEET + '" tab. Open the tracker workbook and run this script from there.');
@@ -153,11 +216,8 @@ function book() {
     }
   }
 
-  var bg = ss.getSheetByName(BUDGET_SHEET);
-  if (!bg) throw new Error('No "' + BUDGET_SHEET + '" tab.');
-
   ensureIdColumn(tx);
-  return { ss: ss, tx: tx, bg: bg };
+  return { ss: ss, tx: tx };
 }
 
 /** Adds the ID and Person columns and back-fills ids for pre-existing rows. */
@@ -188,15 +248,35 @@ function ensureIdColumn(tx) {
   tx.getRange(2, C_ID, ids.length, 1).setValues(ids);
 }
 
+/* Cached per request in book(). Session.getScriptTimeZone() reads the Apps
+   Script PROJECT's timezone (Project Settings), which is a separate setting
+   from the SPREADSHEET's own timezone (File > Settings in Sheets) and very
+   commonly does not match it - new Apps Script projects often default to
+   America/Los_Angeles regardless of where the sheet itself is configured.
+   Formatting or constructing a date through the wrong one of these two clocks
+   shifts it by a day whenever write and read happen to straddle midnight in
+   the mismatched zone. Using the spreadsheet's own declared timezone for BOTH
+   the write and read side removes the mismatch entirely. */
+var SHEET_TZ = null;
+
 function isoDate(v) {
-  if (v instanceof Date) return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  if (v instanceof Date) {
+    var tz = SHEET_TZ || Session.getScriptTimeZone();
+    return Utilities.formatDate(v, tz, 'yyyy-MM-dd');
+  }
   return String(v || '').slice(0, 10);
 }
 
 function toDateObj(s) {
-  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || '').slice(0, 10));
-  if (!m) throw new Error('Date must be YYYY-MM-DD, got: ' + s);
-  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  var str = String(s || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(str)) throw new Error('Date must be YYYY-MM-DD, got: ' + s);
+  // Utilities.parseDate takes an EXPLICIT timezone, unlike `new Date(y,m,d)`,
+  // which is silently anchored to the Apps Script project's own timezone -
+  // exactly the setting that can disagree with the spreadsheet's. Parsing
+  // against the spreadsheet's declared timezone keeps write and read
+  // symmetric, whatever the script project's own setting happens to be.
+  var tz = SHEET_TZ || Session.getScriptTimeZone();
+  return Utilities.parseDate(str, tz, 'yyyy-MM-dd');
 }
 
 /* -------------------------------------------------------------- transactions */
@@ -338,7 +418,7 @@ function validate(rec) {
   var amount = Math.abs(Number(rec.amount) || 0);
   if (!(amount > 0)) throw new Error('Amount must be greater than zero.');
   var type = rec.type;
-  if (['Expense', 'Income', 'Transfer'].indexOf(type) === -1) type = 'Expense';
+  if (['Expense', 'Income', 'Transfer', 'Dividends'].indexOf(type) === -1) type = 'Expense';
   return {
     date: toDateObj(rec.date),
     type: type,
@@ -354,23 +434,42 @@ function validate(rec) {
   };
 }
 
+// The original tracker pre-filled rows 2-501 with =TEXT($A,"mmm")/=YEAR($A)
+// formulas in Month/Year; every row past that was always written as plain
+// values. At current size (1000+ rows) essentially every add/edit today is
+// past this boundary, so checking for a formula is unnecessary work for the
+// overwhelming majority of calls - the row number alone already answers it.
+var FORMULA_BLOCK_LAST_ROW = 501;
+
 function writeRow(tx, row, v, id) {
-  tx.getRange(row, C_DATE).setValue(v.date).setNumberFormat('yyyy-mm-dd');
+  // Was up to 9 separate Range API calls per row (2 formula reads, 5+ writes,
+  // 2 format calls) for what is structurally one row of data. Google's own
+  // guidance is that batching getValues/setValues is the single biggest
+  // lever for Apps Script execution time - this collapses the write to one
+  // call in the common case (past the formula block) and two in the rare
+  // case (an edit inside the original tracker's formula rows), instead of
+  // writing each column as its own round trip.
+  var hasFormula = row <= FORMULA_BLOCK_LAST_ROW
+    && String(tx.getRange(row, C_MONTH).getFormula() || '') !== '';
 
-  // Leave B and C alone where the tracker's own formulas already live.
-  if (String(tx.getRange(row, C_MONTH).getFormula() || '') === '') {
-    tx.getRange(row, C_MONTH).setValue(MONTHS[v.date.getMonth()]);
+  if (hasFormula) {
+    // Preserve the existing Month/Year formula: write Date alone, then
+    // Type-through-Person as one contiguous block, skipping columns B-C.
+    tx.getRange(row, C_DATE).setValue(v.date).setNumberFormat('yyyy-mm-dd');
+    tx.getRange(row, C_TYPE, 1, LAST_COL - C_TYPE + 1).setValues([[
+      v.type, v.category, v.subcategory, v.description, v.amount,
+      v.payment, v.account, v.recurring, v.notes, id, v.person]]);
+    tx.getRange(row, C_AMOUNT).setNumberFormat('"$"#,##0.00');
+  } else {
+    // No formula to protect: the entire row (Date through Person) is one
+    // contiguous range, so it is one setValues call.
+    tx.getRange(row, C_DATE, 1, LAST_COL).setValues([[
+      v.date, MONTHS[v.date.getMonth()], v.date.getFullYear(),
+      v.type, v.category, v.subcategory, v.description, v.amount,
+      v.payment, v.account, v.recurring, v.notes, id, v.person]]);
+    tx.getRange(row, C_DATE).setNumberFormat('yyyy-mm-dd');
+    tx.getRange(row, C_AMOUNT).setNumberFormat('"$"#,##0.00');
   }
-  if (String(tx.getRange(row, C_YEAR).getFormula() || '') === '') {
-    tx.getRange(row, C_YEAR).setValue(v.date.getFullYear());
-  }
-
-  tx.getRange(row, C_TYPE, 1, C_NOTES - C_TYPE + 1).setValues([[
-    v.type, v.category, v.subcategory, v.description, v.amount,
-    v.payment, v.account, v.recurring, v.notes]]);
-  tx.getRange(row, C_AMOUNT).setNumberFormat('"$"#,##0.00');
-  tx.getRange(row, C_ID).setValue(id);
-  tx.getRange(row, C_PERSON).setValue(v.person);
 }
 
 function recOf(v, id) {
@@ -602,9 +701,16 @@ function doGet(e) {
     var p = (e && e.parameter) || {};
     var user = requireUser(p.idToken);
     var b = book();
+    // Year defaults to the CALENDAR year at request time (the server's own
+    // clock), not any client-supplied default - so a brand new session on
+    // Jan 1 2027 correctly asks for 2027's budget without the client having
+    // to know to send it. A specific year can still be requested explicitly
+    // (used when viewing a past year's Dashboard).
+    var year = p.year ? Number(p.year) : new Date().getFullYear();
     return ok({
       transactions: readTransactions(b.tx),
-      budget: readBudget(b.bg),
+      budget: readBudget(budgetSheet(b.ss, year)),
+      budgetYear: year,
       balances: readBalances(balanceSheet(b.ss)),
       debts: readDebts(debtSheet(b.ss)),
       sheetName: b.ss.getName(),
@@ -617,13 +723,22 @@ function doGet(e) {
 }
 
 function doPost(e) {
+  // Auth verification (requireUser, below) makes an EXTERNAL call to Google's
+  // tokeninfo endpoint - real network latency, sometimes a second or more,
+  // entirely outside this script's control. The lock used to be acquired
+  // BEFORE that call, meaning a second, unrelated, perfectly valid request
+  // (Surya adding an entry while Ramesh is also adding one) sat blocked
+  // waiting out someone else's auth round trip, before either request's
+  // actual sheet work had even started. The lock is scoped to what it
+  // actually needs to protect - the sheet mutation itself - not the auth
+  // check that happens to run first.
   var lock = LockService.getScriptLock();
   try {
-    if (!lock.tryLock(25000)) return fail('Sheet is busy, try again.', 'LOCKED');
-
     var body = {};
     if (e && e.postData && e.postData.contents) body = JSON.parse(e.postData.contents);
     var user = requireUser(body.idToken);
+
+    if (!lock.tryLock(25000)) return fail('Sheet is busy, try again.', 'LOCKED');
 
     var b = book();
     var tx = b.tx;
@@ -752,7 +867,8 @@ function doPost(e) {
     }
 
     if (body.action === 'setBudget') {
-      var res = writeBudget(b.bg, body.budget || {});
+      var byear = body.year ? Number(body.year) : new Date().getFullYear();
+      var res = writeBudget(budgetSheet(b.ss, byear), body.budget || {});
       if (!res.written) return fail('No matching categories found on the Budget tab.');
       return ok(res);
     }
@@ -769,6 +885,7 @@ function doPost(e) {
 function setup() {
   var b = book();
   var rows = readTransactions(b.tx);
-  Logger.log('OK. %s transactions, %s budget categories, sheet "%s".',
-    rows.length, Object.keys(readBudget(b.bg)).length, b.ss.getName());
+  var year = new Date().getFullYear();
+  Logger.log('OK. %s transactions, %s budget categories for %s, sheet "%s".',
+    rows.length, Object.keys(readBudget(budgetSheet(b.ss, year))).length, year, b.ss.getName());
 }
