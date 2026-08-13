@@ -15,7 +15,10 @@
 <link rel="stylesheet" href="./assets/styles.css">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
-<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js" defer></script>
+<!-- SheetJS (930KB, ~5x this app's own code) is no longer loaded here. It is
+     only ever used by Export/Import on the Data tab, so xlsxio.js injects it
+     on first actual use instead of blocking every page load for a feature
+     most sessions never touch. -->
 </head>
 <body>
 
@@ -23,7 +26,8 @@
   <div class="rail-in">
     <div class="brand">
       <span class="brand-mark">&#8214;</span>
-      <span class="brand-name">LEDGER &middot; CAD</span>
+      <span class="brand-name">LEDGER</span>
+      <span class="brand-year">2026 &middot; CAD</span>
     </div>
     <nav class="tabs" id="tabs">
       <button data-tab="dashboard" class="on">Dashboard</button>
@@ -46,6 +50,7 @@
 <div id="boot-loading">
   <div class="boot-mark">&#8214;</div>
   <div class="boot-spin"></div>
+  <div class="boot-msg" id="boot-msg"></div>
 </div>
 
 <div id="gate" hidden></div>

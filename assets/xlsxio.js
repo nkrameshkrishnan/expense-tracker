@@ -1,6 +1,25 @@
 /* Spreadsheet in / spreadsheet out, plus the aggregation the dashboard runs on. */
 import { CAT_NAMES, EXPENSE_CATS, CAT_TYPE, MONTHS, PAYMENTS, PEOPLE, UNASSIGNED, currentYear, normalise } from './store.js';
 
+/** SheetJS is 930KB - roughly 5x this app's own code - and was previously
+    loaded unconditionally via a <script> tag in index.html, blocking every
+    page load for a library only exportWorkbook()/importFile() ever touch.
+    Injected on first actual use instead, and cached so a second Export or
+    Import click doesn't refetch it. */
+let xlsxReady = null;
+function loadXLSX() {
+  if (typeof XLSX !== 'undefined') return Promise.resolve();
+  if (xlsxReady) return xlsxReady;
+  xlsxReady = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+    s.onload = resolve;
+    s.onerror = () => { xlsxReady = null; reject(new Error('Could not load the spreadsheet library. Check your connection and try again.')); };
+    document.head.appendChild(s);
+  });
+  return xlsxReady;
+}
+
 export const money = n => (n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export const pct = n => (n * 100).toFixed(1) + '%';
 export const monthOf = r => Number(String(r.date).slice(5, 7)) || 0;
@@ -114,8 +133,8 @@ export function aggregate(rows, budget, month, year = currentYear()) {
 }
 
 /* ------------------------------------------------------------------ export */
-export function exportWorkbook(rows, budget) {
-  if (typeof XLSX === 'undefined') throw new Error('SheetJS failed to load — check your connection.');
+export async function exportWorkbook(rows, budget) {
+  await loadXLSX();
   const wb = XLSX.utils.book_new();
   const sorted = [...rows].sort((a, b) => (a.date < b.date ? -1 : 1));
 
@@ -182,7 +201,7 @@ function excelSerialToISO(v) {
 /** Parses a file exported from this app or the tracker workbook.
     Returns {rows, skipped, reasons} — it never silently drops data. */
 export async function importFile(file) {
-  if (typeof XLSX === 'undefined') throw new Error('SheetJS failed to load — check your connection.');
+  await loadXLSX();
   const buf = await file.arrayBuffer();
   const wb = XLSX.read(buf, { cellDates: false });
 

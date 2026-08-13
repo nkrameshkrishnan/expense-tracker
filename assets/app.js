@@ -77,6 +77,7 @@ function showGate(message) {
         // never this second wait after a successful sign-in.
         const bootOverlay = $('#boot-loading');
         if (bootOverlay) bootOverlay.hidden = false;
+        startBootMessages();
         // Unlike the top-level main() IIFE, this callback had no try/catch of
         // its own - if boot() threw here for ANY reason, the failure became
         // an unhandled rejection and the page was left exactly in the state
@@ -2128,7 +2129,10 @@ function renderData() {
     if (done) { notice(`${todo.length} entries assigned to ${who}.`, 'ok'); renderData(); }
   });
 
-  $('#xlsx').onclick = () => { try { exportWorkbook(state.rows, state.budget); notice('Workbook downloaded.', 'ok'); } catch (e) { notice(e.message, 'bad'); } };
+  $('#xlsx').onclick = async () => {
+    const done = await withBusy('Preparing your workbook', async () => { await exportWorkbook(state.rows, state.budget); });
+    if (done) notice('Workbook downloaded.', 'ok');
+  };
   $('#json').onclick = () => {
     const blob = new Blob([JSON.stringify({ year: state.year, transactions: state.rows, budget: state.budget }, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
@@ -2200,10 +2204,37 @@ async function seedIfEmpty() {
   }
 }
 
+/* Staged, time-based messages for the boot-loading overlay - independent of
+   store.js's actual retry count, so this needs no wiring through several
+   layers to know "which attempt" is in flight. A cold sign-in can
+   legitimately take up to ~13 seconds (7 retries against a cold Apps Script
+   deployment, worst case), and a silent unlabeled spinner for that whole
+   window is indistinguishable from a frozen page to a real person watching
+   it - a direct report confirmed exactly that impression. */
+let _bootMsgTimers = [];
+function startBootMessages() {
+  stopBootMessages();
+  const el = $('#boot-msg');
+  if (!el) return;
+  const stages = [
+    [0, ''],
+    [1800, 'Connecting\u2026'],
+    [4500, 'Still connecting \u2014 first sign-in can take a little longer'],
+    [8000, 'Waking up the sheet \u2014 almost there'],
+  ];
+  _bootMsgTimers = stages.map(([delay, text]) =>
+    setTimeout(() => { if (el) el.textContent = text; }, delay));
+}
+function stopBootMessages() {
+  _bootMsgTimers.forEach(clearTimeout);
+  _bootMsgTimers = [];
+}
+
 /** Reveal the real app - hide the boot overlay, show the header/nav that was
     deliberately kept invisible (not un-rendered, just visibility:hidden) so
     there is zero layout shift the instant it appears. */
 function revealApp() {
+  stopBootMessages();
   const bootOverlay = $('#boot-loading');
   if (bootOverlay) bootOverlay.hidden = true;
   const header = $('#app-header');
@@ -2211,6 +2242,7 @@ function revealApp() {
 }
 
 async function boot() {
+  startBootMessages();
   state.store = await openStore(notice);
   await seedIfEmpty();
   await refresh();
@@ -2259,7 +2291,10 @@ async function boot() {
 }
 
 (async function main() {
-  const ready = () => (typeof Chart !== 'undefined' && typeof XLSX !== 'undefined');
+  // XLSX is deliberately excluded - it's loaded on demand by xlsxio.js when
+  // Export/Import is actually clicked, not before. Waiting for it here would
+  // reintroduce the exact 930KB blocking cost this change removes.
+  const ready = () => typeof Chart !== 'undefined';
   if (!ready()) await new Promise(r => window.addEventListener('load', r, { once: true }));
 
   // Sign-in is required whenever this deployment has Google auth configured
