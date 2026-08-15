@@ -142,27 +142,53 @@ class SheetsStore {
     this.sheetName = '';
   }
 
-  async _get(year, attempt = 1) {
+  async _get(opts = {}, attempt = 1) {
+    const { year, txYear } = opts;
     const yq = year ? `&year=${encodeURIComponent(year)}` : '';
-    const url = `${this.endpoint}?idToken=${encodeURIComponent(getIdToken())}${yq}&t=${Date.now()}`;
+    // txYear is independent of Budget's `year` - omitting it means "return
+    // every year's transactions", exactly like before this existed. -1 is
+    // used deliberately by the metadata-only refresh below: no real
+    // transaction can ever be dated year -1, so it is a cheap way to ask for
+    // "everything except transactions" without needing a second server-side
+    // flag.
+    const tq = txYear !== undefined && txYear !== null ? `&txYear=${encodeURIComponent(txYear)}` : '';
+    const url = `${this.endpoint}?idToken=${encodeURIComponent(getIdToken())}${yq}${tq}&t=${Date.now()}`;
     let res;
     try {
-      res = await fetch(url, { method: 'GET', redirect: 'follow' });
+      // cache:'no-store' matters specifically for redirect-following requests
+      // like this one: Apps Script /exec URLs 302-redirect to a
+      // script.googleusercontent.com/macros/echo?...&lib=... target, and
+      // after a Code.gs redeploy that target changes. Without an explicit
+      // no-store, the browser can keep resolving to the OLD cached redirect
+      // target, which now 404s - and since every retry hits the SAME stale
+      // cache entry, retrying alone never recovers. That is exactly the
+      // "several retries, then gives up, but manually re-testing the
+      // connection works" pattern: the manual retry happened long enough
+      // after, or through a different code path, to escape the same cache
+      // hit. The query-string cache-buster on the /exec URL itself does not
+      // help here - it only affects that first URL, not the redirect target.
+      res = await fetch(url, { method: 'GET', redirect: 'follow', cache: 'no-store' });
     } catch (networkErr) {
       // A dropped connection is exactly the kind of transient blip retrying
       // absorbs - fetch() throws for this rather than returning a status.
-      if (attempt < 3) { await sleep(400 * attempt); return this._get(year, attempt + 1); }
+      if (attempt < 6) { await sleep(500 * attempt); return this._get(opts, attempt + 1); }
       throw new Error(`Could not reach the sheet (${networkErr.message}). Check your connection.`);
     }
     if (!res.ok) {
-      // Apps Script /exec endpoints are known to intermittently 404 for a
-      // few seconds right after a redeploy, and occasionally under Google's
-      // own infrastructure hiccups even with no redeploy involved - neither
-      // means the deployment is actually misconfigured. Retry a couple of
-      // times with backoff before concluding that, since a GET is read-only
-      // and always safe to retry - unlike a write, there is no risk of
-      // duplicating anything by trying again.
-      if (res.status === 404 && attempt < 3) { await sleep(500 * attempt); return this._get(year, attempt + 1); }
+      // Apps Script /exec endpoints are known to intermittently 404 for
+      // several seconds right after a redeploy, and after any real idle
+      // period a "cold" deployment can take a few seconds to spin back up -
+      // neither means the deployment is actually misconfigured. The FIRST
+      // ping right after a fresh sign-in is the worst case specifically: it
+      // can stack a cold Apps Script start together with the extra latency
+      // of Code.gs's own requireUser() making an OUTBOUND call to Google's
+      // tokeninfo endpoint to verify the just-issued JWT, on top of the
+      // normal cold-start delay. Was 5 attempts over ~6s, and a direct
+      // report confirmed that still was not always enough; 7 attempts over
+      // ~12.6s of sleep (plus each attempt's own round trip) gives real
+      // headroom for that compounded case without hanging a truly broken
+      // deployment forever.
+      if (res.status === 404 && attempt < 7) { await sleep(600 * attempt); return this._get(opts, attempt + 1); }
       throw new Error(`Sheet responded ${res.status}${attempt > 1 ? ` (after ${attempt} attempts)` : ''}. Check the deployment is set to "Anyone".`);
     }
     const text = await res.text();
@@ -198,6 +224,7 @@ class SheetsStore {
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({ ...payload, idToken: getIdToken() }),
         redirect: 'follow',
+        cache: 'no-store',
       });
     } catch (networkErr) {
       // fetch() throwing (not a bad status, a genuinely failed request) means
@@ -217,43 +244,144 @@ class SheetsStore {
       if (/sign in|sign-in|not permitted|rejected that sign/i.test(err.message)) err.auth = true;
       throw err;
     }
-    this.cache = null;                       // the sheet is the truth; reread next time
+    // No blanket cache invalidation here anymore. That used to mean EVERY
+    // write - adding one transaction, editing one, changing the budget -
+    // wiped the entire cache and forced a full re-download of the whole
+    // transaction history on the next read, regardless of how large that
+    // history had grown. Each caller (add/update/remove/setBudget/etc) now
+    // patches exactly the slice it changed, using the record the server just
+    // handed back - which it already has, for free, in this response.
     return data;
   }
 
   _fill(d) {
-    this.cache = { transactions: d.transactions.map(normalise), budget: d.budget,
-                   budgetYear: d.budgetYear || currentYear(),
-                   balances: d.balances || [], debts: d.debts || [] };
+    const rows = d.transactions.map(normalise);
+    // Safety is the DEFAULT, not something a caller has to remember to ask
+    // for. The signal that matters is simply whether this.cache already
+    // exists - if it does, there is potentially real, locally-known data
+    // (a write patched in directly, ahead of any server round trip) that a
+    // wholesale replace could silently erase. A caller explicitly passing
+    // `merge: false` used to be required to get this right; getting it wrong
+    // by omission was the actual failure mode a deterministic test caught -
+    // calling _fill() with a stale, pre-write snapshot and no merge flag
+    // erased a real transaction. Basing the decision on cache presence
+    // instead of a flag means there is no unsafe default left to forget.
+    if (this.cache) {
+      const seen = new Set(this.cache.transactions.map(r => r.id));
+      this.cache.transactions.push(...rows.filter(r => !seen.has(r.id)));
+    } else {
+      this.cache = { transactions: rows };
+    }
+    this.cache.budget = d.budget;
+    this.cache.budgetYear = d.budgetYear || currentYear();
+    this.cache.balances = d.balances || [];
+    this.cache.debts = d.debts || [];
+    this.cache.allTxYears = d.transactionYearsAvailable || [];
+    this.cache.loadedTxYears = this.cache.loadedTxYears || new Set();
     this.sheetName = d.sheetName || '';
     this.user = d.user || null;      // verified by Apps Script, not by the browser
     return this.cache;
   }
-  async ping() { return this._fill(await this._get()); }
-  async _ensure() { return this.cache || this._fill(await this._get()); }
+  // Was an UNSCOPED fetch - ping() runs first, inside openStore(), before
+  // _ensure() ever gets called. Since _ensure() only does the fast scoped
+  // fetch when the cache is still empty, an unscoped ping() here silently
+  // defeated the entire point of year-scoping: by the time _ensure() ran,
+  // the cache was already fully populated, so its "first call this session"
+  // branch never actually fired on the real boot path. Caught by tracing
+  // the real call sequence end to end, not from reading either function in
+  // isolation - each looked correct on its own.
+  async ping() { return this._ensure(); }
+
+  /** First call this session: fetch only the CURRENT year, so the very
+      first paint does not wait on however many years of history exist -
+      that download only grows over time otherwise. Every later call just
+      returns what is already cached; use ensureYearLoaded/ensureAllYearsLoaded
+      to bring in more. */
+  async _ensure() {
+    if (this.cache) return this.cache;
+    const y = currentYear();
+    const d = await this._get({ txYear: y });
+    this._fill(d);
+    this.cache.loadedTxYears = new Set([y]);
+    this.cache.allYearsLoaded = (this.cache.allTxYears.length <= 1);
+    return this.cache;
+  }
+
+  /** Bring in one specific year not yet loaded (e.g. the Dashboard's year
+      selector jumping to a year outside the fast initial fetch). A no-op if
+      that year - or everything - is already cached. */
+  async ensureYearLoaded(year) {
+    await this._ensure();
+    if (this.cache.allYearsLoaded || this.cache.loadedTxYears.has(year)) return;
+    const d = await this._get({ txYear: year });
+    this._fill(d);  // merge is now automatic whenever this.cache already exists
+    this.cache.loadedTxYears.add(year);
+  }
+
+  /** Silently bring in every remaining year in the background. Meant to be
+      called right after the fast initial paint, not awaited by anything
+      that blocks the UI - by the time a person actually reaches for a
+      different year or searches Transactions, this has usually already
+      finished, so cross-year features still feel instant in practice. */
+  async ensureAllYearsLoaded() {
+    await this._ensure();
+    if (this.cache.allYearsLoaded) return;
+    const d = await this._get({});   // no txYear = every year, in one call
+    // _fill() merges automatically whenever this.cache already exists - this
+    // fetch can take a real network round trip, and a transaction added
+    // WHILE it was in flight is already sitting in the cache by the time
+    // this response lands. Verified directly: a deterministic test forces a
+    // stale, pre-write snapshot to land via _fill() and confirms the write
+    // survives rather than getting silently erased.
+    this._fill(d);
+    this.cache.loadedTxYears = new Set(this.cache.allTxYears);
+    this.cache.allYearsLoaded = true;
+  }
 
   async list() { return (await this._ensure()).transactions; }
   async getBalances() { return (await this._ensure()).balances || []; }
   async getDebts() { return (await this._ensure()).debts || []; }
-  async addDebt(record) { return (await this._post({ action: 'addDebt', record })).id; }
-  async updateDebt(id, record) { await this._post({ action: 'updateDebt', id, record }); }
-  async deleteDebt(id) { await this._post({ action: 'deleteDebt', id }); }
-  async importDebts(records) { return this._post({ action: 'importDebts', records }); }
-  async setBalances(date, entries) { await this._post({ action: 'setBalances', date, entries }); }
-  async deleteBalanceDate(date) { await this._post({ action: 'deleteBalanceDate', date }); }
+  async addDebt(record) { const r = await this._post({ action: 'addDebt', record }); await this._refreshMeta(); return r.id; }
+  async updateDebt(id, record) { await this._post({ action: 'updateDebt', id, record }); await this._refreshMeta(); }
+  async deleteDebt(id) { await this._post({ action: 'deleteDebt', id }); await this._refreshMeta(); }
+  async importDebts(records) { const r = await this._post({ action: 'importDebts', records }); await this._refreshMeta(); return r; }
+  async setBalances(date, entries) { await this._post({ action: 'setBalances', date, entries }); await this._refreshMeta(); }
+  async deleteBalanceDate(date) { await this._post({ action: 'deleteBalanceDate', date }); await this._refreshMeta(); }
   async getBudget(year) {
     const cached = await this._ensure();
     const wantsCachedYear = !year || year === cached.budgetYear;
-    const b = wantsCachedYear ? cached.budget : (await this._get(year)).budget;
+    const b = wantsCachedYear ? cached.budget : (await this._get({ year })).budget;
     const full = emptyBudget();
     if (b) for (const c of Object.keys(b)) if (full[c]) for (let m = 1; m <= 12; m++) full[c][m] = Number(b[c][m]) || 0;
     return full;
   }
-  async setBudget(budget, year) { await this._post({ action: 'setBudget', budget, year }); return budget; }
+  async setBudget(budget, year) { await this._post({ action: 'setBudget', budget, year }); await this._refreshMeta(); return budget; }
+
+  /** Refreshes budget/balances/debts without touching the transactions
+      cache at all. txYear:-1 can never match a real row (no transaction is
+      ever dated year -1), so the server returns an empty transactions array
+      - this is a cheap way to pick up changes to the OTHER three tabs after
+      a write to one of them, without re-downloading transaction history or
+      disturbing whatever years are already accumulated client-side. */
+  async _refreshMeta() {
+    if (!this.cache) return;
+    const d = await this._get({ txYear: -1 });
+    this.cache.budget = d.budget;
+    this.cache.budgetYear = d.budgetYear || currentYear();
+    this.cache.balances = d.balances || [];
+    this.cache.debts = d.debts || [];
+  }
 
   async add(rec) {
     const r = normalise(rec); delete r.id;
-    return normalise((await this._post({ action: 'create', record: r })).record);
+    const result = normalise((await this._post({ action: 'create', record: r })).record);
+    // The server just told us exactly what was written - use that directly
+    // instead of re-downloading the whole history to learn what we already
+    // know. If this row's year has not been individually fetched yet, it is
+    // still correctly present; ensureYearLoaded/ensureAllYearsLoaded simply
+    // has one less row to bring in later for that year.
+    if (this.cache) this.cache.transactions.push(result);
+    return result;
   }
   async bulkAdd(list, onProgress) {
     const records = list.map(r => { const n = normalise(r); delete n.id; return n; });
@@ -265,20 +393,40 @@ class SheetsStore {
       inserted += (await this._post({ action: 'bulk', records: records.slice(i, i + CHUNK) })).inserted;
       onProgress?.(Math.min(i + CHUNK, records.length), records.length);
     }
+    // A bulk import can span arbitrary years and arbitrary volume - simplest
+    // and safest to just bring the client back in sync with a real fetch
+    // afterward, rather than trying to patch potentially thousands of rows
+    // in place.
+    if (this.cache) { this.cache = null; await this._ensure(); await this.ensureAllYearsLoaded(); }
     return inserted;
   }
   async update(id, rec) {
     const r = normalise({ ...rec, id });
-    return normalise((await this._post({ action: 'update', id, record: r })).record);
+    const result = normalise((await this._post({ action: 'update', id, record: r })).record);
+    if (this.cache) {
+      const i = this.cache.transactions.findIndex(x => x.id === result.id);
+      if (i !== -1) this.cache.transactions[i] = result;
+      else this.cache.transactions.push(result);  // edited row from a not-yet-loaded year
+    }
+    return result;
   }
-  async remove(id) { await this._post({ action: 'delete', id }); }
-  async clear() { await this._post({ action: 'clear' }); }
+  async remove(id) {
+    await this._post({ action: 'delete', id });
+    if (this.cache) this.cache.transactions = this.cache.transactions.filter(x => x.id !== Number(id));
+  }
+  async clear() { await this._post({ action: 'clear' }); this.cache = null; }
   async isEmpty() { return (await this.list()).length === 0; }
 }
 
 /* ------------------------------------------------------------------ IndexedDB */
 class LocalStore {
   constructor(db) { this.db = db; this.kind = 'local'; }
+  // No-ops: unlike SheetsStore, IndexedDB always holds the full history
+  // already - there is no partial year-scoping to catch up on. These exist
+  // so app.js can call them unconditionally regardless of which adapter is
+  // active, without an `if (store.kind === 'sheets')` check at every call site.
+  async ensureYearLoaded() {}
+  async ensureAllYearsLoaded() {}
   static open() {
     return new Promise((resolve, reject) => {
       if (!('indexedDB' in globalThis)) return reject(new Error('no indexedDB'));
@@ -371,6 +519,8 @@ class LocalStore {
 /* ------------------------------------------------------------------ memory */
 class MemoryStore {
   constructor() { this.rows = []; this.seq = 1; this.budget = emptyBudget(); this.kind = 'memory'; }
+  async ensureYearLoaded() {}
+  async ensureAllYearsLoaded() {}
   async list() { return [...this.rows].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.id - a.id)); }
   async add(rec) { const r = normalise(rec); r.id = this.seq++; this.rows.push(r); return r; }
   async bulkAdd(l) { for (const x of l) await this.add(x); return l.length; }

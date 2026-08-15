@@ -306,7 +306,16 @@ async function refresh() {
     current year even if it has nothing yet (so Jan 1 of a new year isn't
     stuck picking a year with zero transactions to select from). */
 function availableYears() {
-  const fromData = new Set(state.rows.map(r => Number(String(r.date).slice(0, 4))).filter(Boolean));
+  // SheetsStore's cache carries allTxYears straight from the server - every
+  // year that actually EXISTS in the sheet, independent of which years have
+  // had their data fetched yet. Scanning state.rows alone would only show
+  // years already loaded, which is wrong the moment a year is fetched lazily
+  // rather than eagerly. LocalStore/MemoryStore never partially load, so
+  // scanning state.rows for them is already complete and correct.
+  const serverYears = state.store?.cache?.allTxYears;
+  const fromData = new Set(serverYears?.length
+    ? serverYears
+    : state.rows.map(r => Number(String(r.date).slice(0, 4))).filter(Boolean));
   fromData.add(currentYear());
   return [...fromData].sort((a, b) => b - a);
 }
@@ -387,6 +396,12 @@ function wireDashboard(showCompare) {
     localStorage.setItem(YEAR_KEY, state.year);
     state.month = 0;  // switching years resets to "full year" - a specific
                        // month carried over from a different year is confusing
+    // Normally a no-op: the background full-history load kicked off at boot
+    // has almost always already finished by the time anyone reaches for the
+    // year selector. Only genuinely fetches if that year truly is not in
+    // memory yet - switching years faster than the background load can win.
+    await state.store.ensureYearLoaded?.(state.year);
+    state.rows = await state.store.list();
     // Budget is per-year on the sheet, so changing year needs a fresh fetch,
     // not just a re-render of already-cached data.
     state.budget = await state.store.getBudget(state.year);
@@ -2199,6 +2214,14 @@ function renderData() {
         throw new Error(reason || 'could not reach the sheet with that URL \u2014 check it is deployed and you are signed in with an allowed account');
       }
       await refresh();
+      // This button is a one-time, manual "does this actually work" check,
+      // not a hot path - unlike normal boot, waiting the extra moment here
+      // for the real total is worth it. Without this, the confirmation would
+      // report only the current year's count (e.g. "24 rows loaded"), which
+      // reads as "your sheet only has 24 rows" rather than what it actually
+      // means: that many rows loaded SO FAR.
+      await state.store.ensureAllYearsLoaded?.();
+      state.rows = await state.store.list();
     });
     if (state.store.kind === 'sheets') notice(`Connected to "${state.store.sheetName}" \u2014 ${state.rows.length} rows loaded.`, 'ok');
     renderData();
@@ -2369,6 +2392,8 @@ async function boot() {
           state.store = await openStore(notice);
           if (state.store.kind !== 'sheets') throw new Error('still could not reach the sheet');
           await refresh();
+          await state.store.ensureAllYearsLoaded?.();  // same reasoning as Connect & test: a rare, manual action, worth the accurate total
+          state.rows = await state.store.list();
         });
         if (done) { notice(`Connected to "${state.store.sheetName}" \u2014 ${state.rows.length} rows loaded.`, 'ok'); (VIEWS[state.tab] || renderDashboard)(); }
       }});
@@ -2396,6 +2421,18 @@ async function boot() {
   const hashTab = (location.hash || '#dashboard').slice(1);
   const startTab = firstRun ? 'data' : (hashTab in VIEWS ? hashTab : 'dashboard');
   go(startTab);
+
+  // Fire-and-forget: brings in every other year's transactions silently in
+  // the background, so by the time anyone actually reaches for a different
+  // year or searches Transactions, it is usually already there - without
+  // making the FIRST paint wait on however much history has accumulated.
+  // Only re-renders on Dashboard/Transactions, where more data arriving
+  // actually changes what is on screen; skipped entirely on Add (would wipe
+  // in-progress form input) and elsewhere it would just be pointless churn.
+  state.store.ensureAllYearsLoaded?.().then(async () => {
+    state.rows = await state.store.list();
+    if (state.tab === 'dashboard' || state.tab === 'transactions') (VIEWS[state.tab] || renderDashboard)();
+  }).catch(() => {});  // best-effort - a failure here just means years stay lazy-loaded on demand
 }
 
 (async function main() {
