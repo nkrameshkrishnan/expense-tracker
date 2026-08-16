@@ -16,7 +16,7 @@ No server. No build step. No npm install.
 Anyone holding the URL can read every transaction. Before you use this for real:
 **Share → General access → Restricted**.
 
-That does not affect the app. The Apps Script runs as *you* and reaches the sheet
+That does not affect the app. The Apps Script runs as _you_ and reaches the sheet
 through your own account, not through link sharing.
 
 ### 2. GitHub Secrets cannot keep a secret in a static site
@@ -29,11 +29,11 @@ So the secret keeps the endpoint out of your **repository**, not out of your
 **deployed page**. That is a real difference — it stops the URL leaking through a
 public repo, git history, or a fork — but it is not access control.
 
-|  | Endpoint visible in repo | Visible on deployed site |
-|---|---|---|
-| Hardcoded in `config.js` | **Yes** | Yes |
-| Injected from GitHub secret | No | **Yes** |
-| Entered at runtime (Data → Google Sheet) | No | **No** |
+|                                          | Endpoint visible in repo | Visible on deployed site |
+| ---------------------------------------- | ------------------------ | ------------------------ |
+| Hardcoded in `config.js`                 | **Yes**                  | Yes                      |
+| Injected from GitHub secret              | No                       | **Yes**                  |
+| Entered at runtime (Data → Google Sheet) | No                       | **No**                   |
 
 **If the sheet holds anything you would mind a stranger reading or writing, leave the
 secrets unset and enter the endpoint in the app.** It is stored in your browser's
@@ -58,6 +58,7 @@ provides real protection in the runtime-entry setup.
 
    This adds an **ID** column in `M` on the Transactions tab and numbers your existing
    230 rows 1–230. Columns A–L are not touched.
+
 5. **Deploy → New deployment → Web app** — Execute as **Me**, Access **Anyone**.
 6. Copy the URL ending in `/exec`.
 
@@ -80,10 +81,10 @@ workflow needs to generate `config.js` first.)
 
 Optional, per the warning above — **Settings → Secrets and variables → Actions**:
 
-| Secret | Value |
-|---|---|
-| `SHEETS_ENDPOINT` | the `/exec` URL |
-| `SHEETS_TOKEN` | same string as `SHARED_TOKEN` |
+| Secret            | Value                         |
+| ----------------- | ----------------------------- |
+| `SHEETS_ENDPOINT` | the `/exec` URL               |
+| `SHEETS_TOKEN`    | same string as `SHARED_TOKEN` |
 
 Skip both to keep the endpoint off the public page; connect under **Data → Google
 Sheet** instead.

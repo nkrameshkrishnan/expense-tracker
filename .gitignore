@@ -1,6 +1,8 @@
 .DS_Store
 __pycache__/
 *.pyc
+node_modules/
+package-lock.json
 
 # Never commit real financial data to a public repo
 data/seed.json
@@ -10,3 +12,8 @@ data/*.json
 *_Consolidated_*.xlsx
 Expense*.xlsx
 *.csv
+.claude/CLAUDE.md
+.claude/settings.json
+.claude/agents/code-reviewer.md
+.claude/commands/fix-issue.md
+.claude/commands/review.md

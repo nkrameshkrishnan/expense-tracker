@@ -8,9 +8,13 @@
    Config precedence: what you type under Data → Google Sheet (localStorage) wins over
    the build-time values injected from GitHub secrets. */
 
+<<<<<<< Updated upstream
 import { SHEETS_ENDPOINT, SHEETS_TOKEN, GOOGLE_CLIENT_ID, SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
+=======
+import { SHEETS_ENDPOINT, SHEETS_TOKEN, GOOGLE_CLIENT_ID } from "./config.js";
+>>>>>>> Stashed changes
 
-const sleep = ms => new Promise(r => setTimeout(r, ms));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** The actual current calendar year, not a value baked in at build time.
     Was `export const YEAR = 2026;` - fine for exactly one year, silently
@@ -18,91 +22,159 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     UI default should call this; anything needing "the year the person is
     currently viewing" should use state.year in app.js instead, since those
     are genuinely different things (today's date vs. a chosen Dashboard year). */
-export function currentYear() { return new Date().getFullYear(); }
+export function currentYear() {
+  return new Date().getFullYear();
+}
 
 export const CATEGORIES = [
-  ['Salary', 'Income'], ['Dividends', 'Income'], ['Other Income', 'Income'],
-  ['Rent / Housing', 'Expense'], ['Groceries', 'Expense'], ['Utilities', 'Expense'],
-  ['Internet & Phone', 'Expense'], ['Transport', 'Expense'], ['Gas', 'Expense'], ['Dining Out', 'Expense'],
-  ['Health & Fitness', 'Expense'], ['Insurance', 'Expense'], ['Shopping', 'Expense'],
-  ['Entertainment', 'Expense'], ['Subscriptions', 'Expense'], ['Travel', 'Expense'],
-  ['Education', 'Expense'], ['Gifts & Donations', 'Expense'], ['Personal Care', 'Expense'],
-  ['Savings & Investments', 'Expense'], ['Miscellaneous', 'Expense'],
+  ["Salary", "Income"],
+  ["Dividends", "Income"],
+  ["Other Income", "Income"],
+  ["Rent / Housing", "Expense"],
+  ["Groceries", "Expense"],
+  ["Utilities", "Expense"],
+  ["Internet & Phone", "Expense"],
+  ["Transport", "Expense"],
+  ["Gas", "Expense"],
+  ["Dining Out", "Expense"],
+  ["Health & Fitness", "Expense"],
+  ["Insurance", "Expense"],
+  ["Shopping", "Expense"],
+  ["Entertainment", "Expense"],
+  ["Subscriptions", "Expense"],
+  ["Travel", "Expense"],
+  ["Education", "Expense"],
+  ["Gifts & Donations", "Expense"],
+  ["Personal Care", "Expense"],
+  ["Savings & Investments", "Expense"],
+  ["Miscellaneous", "Expense"],
 ];
-export const CAT_NAMES = CATEGORIES.map(c => c[0]);
-export const EXPENSE_CATS = CATEGORIES.filter(c => c[1] === 'Expense').map(c => c[0]);
+export const CAT_NAMES = CATEGORIES.map((c) => c[0]);
+export const EXPENSE_CATS = CATEGORIES.filter((c) => c[1] === "Expense").map(
+  (c) => c[0],
+);
 export const CAT_TYPE = Object.fromEntries(CATEGORIES);
 
-export const TYPES = ['Expense', 'Income', 'Transfer', 'Dividends'];
-export const PAYMENTS = ['Credit Card', 'Debit Card', 'Cash', 'e-Transfer', 'Pre-authorized Debit', 'Other'];
-export const ACCOUNTS = [
-  'CIBC Chequing', 'WealthSimple Chequing', 'Savings',
-  'Visa', 'Mastercard', 'Amex',
-  'WealthSimple TFSA', 'WealthSimple RRSP', 'WealthSimple Non-registered',
-  'Cash Wallet',
+export const TYPES = ["Expense", "Income", "Transfer", "Dividends"];
+export const PAYMENTS = [
+  "Credit Card",
+  "Debit Card",
+  "Cash",
+  "e-Transfer",
+  "Pre-authorized Debit",
+  "Other",
 ];
-export const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+export const ACCOUNTS = [
+  "CIBC Chequing",
+  "WealthSimple Chequing",
+  "Savings",
+  "Visa",
+  "Mastercard",
+  "Amex",
+  "WealthSimple TFSA",
+  "WealthSimple RRSP",
+  "WealthSimple Non-registered",
+  "Cash Wallet",
+];
+export const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
 
 /* Who the money belongs to. 'Joint' is a real third bucket, not a sum of the other
    two — a shared grocery run is Joint, it is not half Ramesh and half Surya.
    Rows imported before this feature existed have no person and read as Unassigned. */
-export const PEOPLE = ['Ramesh', 'Surya', 'Joint'];
-export const UNASSIGNED = 'Unassigned';
-export const PERSON_KEY = 'ledger.person';
+export const PEOPLE = ["Ramesh", "Surya", "Joint"];
+export const UNASSIGNED = "Unassigned";
+export const PERSON_KEY = "ledger.person";
 
 /* Accounts tracked for net worth. Some exist only as balances and never appear
    in transactions (a GIC, a savings account that sat at zero all year), so this
    is deliberately a superset of ACCOUNTS rather than derived from it. */
 export const NET_WORTH_ACCOUNTS = [
-  { account: 'CIBC Chequing',                owner: 'Ramesh', kind: 'Asset' },
-  { account: 'CIBC TFSA (Investment)',       owner: 'Ramesh', kind: 'Asset' },
-  { account: 'WealthSimple Chequing',        owner: 'Ramesh', kind: 'Asset' },
-  { account: 'WealthSimple TFSA',            owner: 'Ramesh', kind: 'Asset' },
-  { account: 'WealthSimple RRSP',            owner: 'Ramesh', kind: 'Asset' },
-  { account: 'WealthSimple Non-registered',  owner: 'Ramesh', kind: 'Asset' },
-  { account: 'CIBC Visa',                    owner: 'Ramesh', kind: 'Liability' },
-  { account: 'CIBC Mastercard',              owner: 'Ramesh', kind: 'Liability' },
-  { account: 'Amex (Ramesh)',                owner: 'Ramesh', kind: 'Liability' },
-  { account: 'CIBC Chequing (Surya)',        owner: 'Surya',  kind: 'Asset' },
-  { account: 'CIBC Savings (Surya)',         owner: 'Surya',  kind: 'Asset' },
-  { account: 'CIBC TFSA (Surya)',            owner: 'Surya',  kind: 'Asset' },
-  { account: 'CIBC TFSA GIC (Surya)',        owner: 'Surya',  kind: 'Asset' },
-  { account: 'WealthSimple Chequing (Surya)',owner: 'Surya',  kind: 'Asset' },
-  { account: 'WealthSimple TFSA (Surya)',    owner: 'Surya',  kind: 'Asset' },
-  { account: 'WealthSimple RRSP (Surya)',    owner: 'Surya',  kind: 'Asset' },
-  { account: 'WealthSimple Non-registered (Surya)', owner: 'Surya', kind: 'Asset' },
-  { account: 'Amex (Surya)',                 owner: 'Surya',  kind: 'Liability' },
+  { account: "CIBC Chequing", owner: "Ramesh", kind: "Asset" },
+  { account: "CIBC TFSA (Investment)", owner: "Ramesh", kind: "Asset" },
+  { account: "WealthSimple Chequing", owner: "Ramesh", kind: "Asset" },
+  { account: "WealthSimple TFSA", owner: "Ramesh", kind: "Asset" },
+  { account: "WealthSimple RRSP", owner: "Ramesh", kind: "Asset" },
+  { account: "WealthSimple Non-registered", owner: "Ramesh", kind: "Asset" },
+  { account: "CIBC Visa", owner: "Ramesh", kind: "Liability" },
+  { account: "CIBC Mastercard", owner: "Ramesh", kind: "Liability" },
+  { account: "Amex (Ramesh)", owner: "Ramesh", kind: "Liability" },
+  { account: "CIBC Chequing (Surya)", owner: "Surya", kind: "Asset" },
+  { account: "CIBC Savings (Surya)", owner: "Surya", kind: "Asset" },
+  { account: "CIBC TFSA (Surya)", owner: "Surya", kind: "Asset" },
+  { account: "CIBC TFSA GIC (Surya)", owner: "Surya", kind: "Asset" },
+  { account: "WealthSimple Chequing (Surya)", owner: "Surya", kind: "Asset" },
+  { account: "WealthSimple TFSA (Surya)", owner: "Surya", kind: "Asset" },
+  { account: "WealthSimple RRSP (Surya)", owner: "Surya", kind: "Asset" },
+  {
+    account: "WealthSimple Non-registered (Surya)",
+    owner: "Surya",
+    kind: "Asset",
+  },
+  { account: "Amex (Surya)", owner: "Surya", kind: "Liability" },
 ];
 
-export const CUSTOM_KEY = 'ledger.customLists';
-export const ENDPOINT_KEY = 'ledger.sheetsEndpoint';
-export const TOKEN_KEY = 'ledger.sheetsToken';
-export const ID_TOKEN_KEY = 'ledger.googleIdToken';
+export const CUSTOM_KEY = "ledger.customLists";
+export const ENDPOINT_KEY = "ledger.sheetsEndpoint";
+export const TOKEN_KEY = "ledger.sheetsToken";
+export const ID_TOKEN_KEY = "ledger.googleIdToken";
 
-export const getClientId = () => (localStorage.getItem('ledger.clientId') || GOOGLE_CLIENT_ID || '').trim();
+export const getClientId = () =>
+  (localStorage.getItem("ledger.clientId") || GOOGLE_CLIENT_ID || "").trim();
 // sessionStorage can throw in locked-down browser contexts (strict privacy
 // modes, some sandboxed embeds). Falls back to an in-memory value for the
 // lifetime of the tab rather than crashing the whole app on that one call.
-let _idTokenMem = '';
-export const getIdToken = () => { try { return sessionStorage.getItem(ID_TOKEN_KEY) || ''; } catch { return _idTokenMem; } };
-export const setIdToken = t => {
+let _idTokenMem = "";
+export const getIdToken = () => {
   try {
-    if (t) sessionStorage.setItem(ID_TOKEN_KEY, t); else sessionStorage.removeItem(ID_TOKEN_KEY);
-  } catch { /* fall through to memory */ }
-  _idTokenMem = t || '';
+    return sessionStorage.getItem(ID_TOKEN_KEY) || "";
+  } catch {
+    return _idTokenMem;
+  }
+};
+export const setIdToken = (t) => {
+  try {
+    if (t) sessionStorage.setItem(ID_TOKEN_KEY, t);
+    else sessionStorage.removeItem(ID_TOKEN_KEY);
+  } catch {
+    /* fall through to memory */
+  }
+  _idTokenMem = t || "";
 };
 
-export const getEndpoint = () => (localStorage.getItem(ENDPOINT_KEY) || SHEETS_ENDPOINT || '').trim();
-export const getToken = () => (localStorage.getItem(TOKEN_KEY) || SHEETS_TOKEN || '').trim();
+export const getEndpoint = () =>
+  (localStorage.getItem(ENDPOINT_KEY) || SHEETS_ENDPOINT || "").trim();
+export const getToken = () =>
+  (localStorage.getItem(TOKEN_KEY) || SHEETS_TOKEN || "").trim();
 export const endpointSource = () =>
-  localStorage.getItem(ENDPOINT_KEY) ? 'runtime' : (SHEETS_ENDPOINT ? 'build' : 'none');
+  localStorage.getItem(ENDPOINT_KEY)
+    ? "runtime"
+    : SHEETS_ENDPOINT
+      ? "build"
+      : "none";
 
+<<<<<<< Updated upstream
 export const SUPABASE_URL_KEY = 'ledger.supabaseUrl';
 export const SUPABASE_KEY_KEY = 'ledger.supabaseAnonKey';
 export const getSupabaseUrl = () => (localStorage.getItem(SUPABASE_URL_KEY) || SUPABASE_URL || '').trim();
 export const getSupabaseAnonKey = () => (localStorage.getItem(SUPABASE_KEY_KEY) || SUPABASE_ANON_KEY || '').trim();
 
 const DB_NAME = 'ledger-expense-tracker';
+=======
+const DB_NAME = "ledger-expense-tracker";
+>>>>>>> Stashed changes
 const DB_VERSION = 1;
 
 export function emptyBudget() {
@@ -116,10 +188,11 @@ export function emptyBudget() {
 
 export function normalise(r) {
   const amount = Math.abs(Number(r.amount) || 0);
-  let type = r.type || r.typ || 'Expense';
-  if (!TYPES.includes(type)) type = 'Expense';
+  let type = r.type || r.typ || "Expense";
+  if (!TYPES.includes(type)) type = "Expense";
   const raw = r.category || r.cat;
   return {
+<<<<<<< Updated upstream
     // Sheets (via Code.gs) always returns a real JS number here already.
     // Postgres bigint columns (used for Supabase's identity primary keys)
     // serialize as STRINGS over JSON instead - both pg and PostgREST do
@@ -132,41 +205,48 @@ export function normalise(r) {
     // Number(id), because the cached id was still a string.
     id: Number(r.id) || 0,
     date: String(r.date || '').slice(0, 10),
+=======
+    id: r.id,
+    date: String(r.date || "").slice(0, 10),
+>>>>>>> Stashed changes
     type,
     // Any non-empty string is allowed: users can create their own categories,
     // and forcing unknown names to Miscellaneous would silently discard them.
-    category: String(raw || '').trim() || 'Miscellaneous',
-    subcategory: r.subcategory || r.sub || '',
-    description: r.description || r.desc || '',
+    category: String(raw || "").trim() || "Miscellaneous",
+    subcategory: r.subcategory || r.sub || "",
+    description: r.description || r.desc || "",
     amount: Math.round(amount * 100) / 100,
-    payment: r.payment || '',
-    account: r.account || '',
-    recurring: (r.recurring === 'Yes' || r.recur === 'Yes') ? 'Yes' : 'No',
-    notes: r.notes || r.note || '',
-    person: PEOPLE.includes(r.person) ? r.person : '',
+    payment: r.payment || "",
+    account: r.account || "",
+    recurring: r.recurring === "Yes" || r.recur === "Yes" ? "Yes" : "No",
+    notes: r.notes || r.note || "",
+    person: PEOPLE.includes(r.person) ? r.person : "",
   };
 }
 
 /* ------------------------------------------------------------- Google Sheets */
 class SheetsStore {
   constructor(endpoint, token) {
-    this.endpoint = endpoint.replace(/\/+$/, '');
+    this.endpoint = endpoint.replace(/\/+$/, "");
     this.token = token;
-    this.kind = 'sheets';
+    this.kind = "sheets";
     this.cache = null;
-    this.sheetName = '';
+    this.sheetName = "";
   }
 
   async _get(opts = {}, attempt = 1) {
     const { year, txYear } = opts;
-    const yq = year ? `&year=${encodeURIComponent(year)}` : '';
+    const yq = year ? `&year=${encodeURIComponent(year)}` : "";
     // txYear is independent of Budget's `year` - omitting it means "return
     // every year's transactions", exactly like before this existed. -1 is
     // used deliberately by the metadata-only refresh below: no real
     // transaction can ever be dated year -1, so it is a cheap way to ask for
     // "everything except transactions" without needing a second server-side
     // flag.
-    const tq = txYear !== undefined && txYear !== null ? `&txYear=${encodeURIComponent(txYear)}` : '';
+    const tq =
+      txYear !== undefined && txYear !== null
+        ? `&txYear=${encodeURIComponent(txYear)}`
+        : "";
     const url = `${this.endpoint}?idToken=${encodeURIComponent(getIdToken())}${yq}${tq}&t=${Date.now()}`;
     let res;
     try {
@@ -182,12 +262,21 @@ class SheetsStore {
       // after, or through a different code path, to escape the same cache
       // hit. The query-string cache-buster on the /exec URL itself does not
       // help here - it only affects that first URL, not the redirect target.
-      res = await fetch(url, { method: 'GET', redirect: 'follow', cache: 'no-store' });
+      res = await fetch(url, {
+        method: "GET",
+        redirect: "follow",
+        cache: "no-store",
+      });
     } catch (networkErr) {
       // A dropped connection is exactly the kind of transient blip retrying
       // absorbs - fetch() throws for this rather than returning a status.
-      if (attempt < 6) { await sleep(500 * attempt); return this._get(opts, attempt + 1); }
-      throw new Error(`Could not reach the sheet (${networkErr.message}). Check your connection.`);
+      if (attempt < 6) {
+        await sleep(500 * attempt);
+        return this._get(opts, attempt + 1);
+      }
+      throw new Error(
+        `Could not reach the sheet (${networkErr.message}). Check your connection.`,
+      );
     }
     if (!res.ok) {
       // Apps Script /exec endpoints are known to intermittently 404 for
@@ -203,8 +292,13 @@ class SheetsStore {
       // ~12.6s of sleep (plus each attempt's own round trip) gives real
       // headroom for that compounded case without hanging a truly broken
       // deployment forever.
-      if (res.status === 404 && attempt < 7) { await sleep(600 * attempt); return this._get(opts, attempt + 1); }
-      throw new Error(`Sheet responded ${res.status}${attempt > 1 ? ` (after ${attempt} attempts)` : ''}. Check the deployment is set to "Anyone".`);
+      if (res.status === 404 && attempt < 7) {
+        await sleep(600 * attempt);
+        return this._get(opts, attempt + 1);
+      }
+      throw new Error(
+        `Sheet responded ${res.status}${attempt > 1 ? ` (after ${attempt} attempts)` : ""}. Check the deployment is set to "Anyone".`,
+      );
     }
     const text = await res.text();
     let data;
@@ -212,11 +306,14 @@ class SheetsStore {
       data = JSON.parse(text);
     } catch {
       // Almost always Google's sign-in page: the web app is not public.
-      throw new Error('Got HTML instead of JSON — redeploy the Apps Script with Access set to "Anyone".');
+      throw new Error(
+        'Got HTML instead of JSON — redeploy the Apps Script with Access set to "Anyone".',
+      );
     }
     if (!data.ok) {
-      const err = new Error(data.error || 'Sheet refused the request.');
-      if (/sign in|sign-in|not permitted|rejected that sign/i.test(err.message)) err.auth = true;
+      const err = new Error(data.error || "Sheet refused the request.");
+      if (/sign in|sign-in|not permitted|rejected that sign/i.test(err.message))
+        err.auth = true;
       throw err;
     }
     return data;
@@ -230,33 +327,50 @@ class SheetsStore {
     // landed the first time. 'create'/'bulk'/'addDebt'/'importDebts' APPEND
     // rows - retrying one of those after an ambiguous failure could leave a
     // duplicate row behind, so those are never auto-retried here.
-    const idempotent = ['update', 'delete', 'clear', 'setBudget', 'setBalances',
-                        'deleteBalanceDate', 'deleteDebt', 'updateDebt'].includes(payload.action);
+    const idempotent = [
+      "update",
+      "delete",
+      "clear",
+      "setBudget",
+      "setBalances",
+      "deleteBalanceDate",
+      "deleteDebt",
+      "updateDebt",
+    ].includes(payload.action);
     let res;
     try {
       res = await fetch(this.endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({ ...payload, idToken: getIdToken() }),
-        redirect: 'follow',
-        cache: 'no-store',
+        redirect: "follow",
+        cache: "no-store",
       });
     } catch (networkErr) {
       // fetch() throwing (not a bad status, a genuinely failed request) means
       // it is unclear whether the server ever saw it. Retrying is not risk-free
       // even for idempotent actions - but leaving the person stuck on a dropped
       // connection is worse, so retry once for those specifically.
-      if (idempotent && attempt < 2) { await sleep(600); return this._post(payload, attempt + 1); }
-      throw new Error(`Could not reach the sheet (${networkErr.message}). Check your connection and try again.`);
+      if (idempotent && attempt < 2) {
+        await sleep(600);
+        return this._post(payload, attempt + 1);
+      }
+      throw new Error(
+        `Could not reach the sheet (${networkErr.message}). Check your connection and try again.`,
+      );
     }
     if (!res.ok) {
-      if (idempotent && res.status === 404 && attempt < 2) { await sleep(600); return this._post(payload, attempt + 1); }
+      if (idempotent && res.status === 404 && attempt < 2) {
+        await sleep(600);
+        return this._post(payload, attempt + 1);
+      }
       throw new Error(`Sheet responded ${res.status}.`);
     }
     const data = JSON.parse(await res.text());
     if (!data.ok) {
-      const err = new Error(data.error || 'Write rejected by the sheet.');
-      if (/sign in|sign-in|not permitted|rejected that sign/i.test(err.message)) err.auth = true;
+      const err = new Error(data.error || "Write rejected by the sheet.");
+      if (/sign in|sign-in|not permitted|rejected that sign/i.test(err.message))
+        err.auth = true;
       throw err;
     }
     // No blanket cache invalidation here anymore. That used to mean EVERY
@@ -282,8 +396,8 @@ class SheetsStore {
     // erased a real transaction. Basing the decision on cache presence
     // instead of a flag means there is no unsafe default left to forget.
     if (this.cache) {
-      const seen = new Set(this.cache.transactions.map(r => r.id));
-      this.cache.transactions.push(...rows.filter(r => !seen.has(r.id)));
+      const seen = new Set(this.cache.transactions.map((r) => r.id));
+      this.cache.transactions.push(...rows.filter((r) => !seen.has(r.id)));
     } else {
       this.cache = { transactions: rows };
     }
@@ -293,8 +407,8 @@ class SheetsStore {
     this.cache.debts = d.debts || [];
     this.cache.allTxYears = d.transactionYearsAvailable || [];
     this.cache.loadedTxYears = this.cache.loadedTxYears || new Set();
-    this.sheetName = d.sheetName || '';
-    this.user = d.user || null;      // verified by Apps Script, not by the browser
+    this.sheetName = d.sheetName || "";
+    this.user = d.user || null; // verified by Apps Script, not by the browser
     return this.cache;
   }
   // Was an UNSCOPED fetch - ping() runs first, inside openStore(), before
@@ -305,7 +419,9 @@ class SheetsStore {
   // branch never actually fired on the real boot path. Caught by tracing
   // the real call sequence end to end, not from reading either function in
   // isolation - each looked correct on its own.
-  async ping() { return this._ensure(); }
+  async ping() {
+    return this._ensure();
+  }
 
   /** First call this session: fetch only the CURRENT year, so the very
       first paint does not wait on however many years of history exist -
@@ -318,7 +434,7 @@ class SheetsStore {
     const d = await this._get({ txYear: y });
     this._fill(d);
     this.cache.loadedTxYears = new Set([y]);
-    this.cache.allYearsLoaded = (this.cache.allTxYears.length <= 1);
+    this.cache.allYearsLoaded = this.cache.allTxYears.length <= 1;
     return this.cache;
   }
 
@@ -329,7 +445,7 @@ class SheetsStore {
     await this._ensure();
     if (this.cache.allYearsLoaded || this.cache.loadedTxYears.has(year)) return;
     const d = await this._get({ txYear: year });
-    this._fill(d);  // merge is now automatic whenever this.cache already exists
+    this._fill(d); // merge is now automatic whenever this.cache already exists
     this.cache.loadedTxYears.add(year);
   }
 
@@ -341,7 +457,7 @@ class SheetsStore {
   async ensureAllYearsLoaded() {
     await this._ensure();
     if (this.cache.allYearsLoaded) return;
-    const d = await this._get({});   // no txYear = every year, in one call
+    const d = await this._get({}); // no txYear = every year, in one call
     // _fill() merges automatically whenever this.cache already exists - this
     // fetch can take a real network round trip, and a transaction added
     // WHILE it was in flight is already sitting in the cache by the time
@@ -353,24 +469,59 @@ class SheetsStore {
     this.cache.allYearsLoaded = true;
   }
 
-  async list() { return (await this._ensure()).transactions; }
-  async getBalances() { return (await this._ensure()).balances || []; }
-  async getDebts() { return (await this._ensure()).debts || []; }
-  async addDebt(record) { const r = await this._post({ action: 'addDebt', record }); await this._refreshMeta(); return r.id; }
-  async updateDebt(id, record) { await this._post({ action: 'updateDebt', id, record }); await this._refreshMeta(); }
-  async deleteDebt(id) { await this._post({ action: 'deleteDebt', id }); await this._refreshMeta(); }
-  async importDebts(records) { const r = await this._post({ action: 'importDebts', records }); await this._refreshMeta(); return r; }
-  async setBalances(date, entries) { await this._post({ action: 'setBalances', date, entries }); await this._refreshMeta(); }
-  async deleteBalanceDate(date) { await this._post({ action: 'deleteBalanceDate', date }); await this._refreshMeta(); }
+  async list() {
+    return (await this._ensure()).transactions;
+  }
+  async getBalances() {
+    return (await this._ensure()).balances || [];
+  }
+  async getDebts() {
+    return (await this._ensure()).debts || [];
+  }
+  async addDebt(record) {
+    const r = await this._post({ action: "addDebt", record });
+    await this._refreshMeta();
+    return r.id;
+  }
+  async updateDebt(id, record) {
+    await this._post({ action: "updateDebt", id, record });
+    await this._refreshMeta();
+  }
+  async deleteDebt(id) {
+    await this._post({ action: "deleteDebt", id });
+    await this._refreshMeta();
+  }
+  async importDebts(records) {
+    const r = await this._post({ action: "importDebts", records });
+    await this._refreshMeta();
+    return r;
+  }
+  async setBalances(date, entries) {
+    await this._post({ action: "setBalances", date, entries });
+    await this._refreshMeta();
+  }
+  async deleteBalanceDate(date) {
+    await this._post({ action: "deleteBalanceDate", date });
+    await this._refreshMeta();
+  }
   async getBudget(year) {
     const cached = await this._ensure();
     const wantsCachedYear = !year || year === cached.budgetYear;
-    const b = wantsCachedYear ? cached.budget : (await this._get({ year })).budget;
+    const b = wantsCachedYear
+      ? cached.budget
+      : (await this._get({ year })).budget;
     const full = emptyBudget();
-    if (b) for (const c of Object.keys(b)) if (full[c]) for (let m = 1; m <= 12; m++) full[c][m] = Number(b[c][m]) || 0;
+    if (b)
+      for (const c of Object.keys(b))
+        if (full[c])
+          for (let m = 1; m <= 12; m++) full[c][m] = Number(b[c][m]) || 0;
     return full;
   }
-  async setBudget(budget, year) { await this._post({ action: 'setBudget', budget, year }); await this._refreshMeta(); return budget; }
+  async setBudget(budget, year) {
+    await this._post({ action: "setBudget", budget, year });
+    await this._refreshMeta();
+    return budget;
+  }
 
   /** Refreshes budget/balances/debts without touching the transactions
       cache at all. txYear:-1 can never match a real row (no transaction is
@@ -388,8 +539,11 @@ class SheetsStore {
   }
 
   async add(rec) {
-    const r = normalise(rec); delete r.id;
-    const result = normalise((await this._post({ action: 'create', record: r })).record);
+    const r = normalise(rec);
+    delete r.id;
+    const result = normalise(
+      (await this._post({ action: "create", record: r })).record,
+    );
     // The server just told us exactly what was written - use that directly
     // instead of re-downloading the whole history to learn what we already
     // know. If this row's year has not been individually fetched yet, it is
@@ -399,38 +553,61 @@ class SheetsStore {
     return result;
   }
   async bulkAdd(list, onProgress) {
-    const records = list.map(r => { const n = normalise(r); delete n.id; return n; });
+    const records = list.map((r) => {
+      const n = normalise(r);
+      delete n.id;
+      return n;
+    });
     // Apps Script now writes a chunk with a handful of batched range calls, so
     // larger chunks mean fewer HTTP round trips without risking the 6-min limit.
     const CHUNK = 1000;
     let inserted = 0;
     for (let i = 0; i < records.length; i += CHUNK) {
-      inserted += (await this._post({ action: 'bulk', records: records.slice(i, i + CHUNK) })).inserted;
+      inserted += (
+        await this._post({
+          action: "bulk",
+          records: records.slice(i, i + CHUNK),
+        })
+      ).inserted;
       onProgress?.(Math.min(i + CHUNK, records.length), records.length);
     }
     // A bulk import can span arbitrary years and arbitrary volume - simplest
     // and safest to just bring the client back in sync with a real fetch
     // afterward, rather than trying to patch potentially thousands of rows
     // in place.
-    if (this.cache) { this.cache = null; await this._ensure(); await this.ensureAllYearsLoaded(); }
+    if (this.cache) {
+      this.cache = null;
+      await this._ensure();
+      await this.ensureAllYearsLoaded();
+    }
     return inserted;
   }
   async update(id, rec) {
     const r = normalise({ ...rec, id });
-    const result = normalise((await this._post({ action: 'update', id, record: r })).record);
+    const result = normalise(
+      (await this._post({ action: "update", id, record: r })).record,
+    );
     if (this.cache) {
-      const i = this.cache.transactions.findIndex(x => x.id === result.id);
+      const i = this.cache.transactions.findIndex((x) => x.id === result.id);
       if (i !== -1) this.cache.transactions[i] = result;
-      else this.cache.transactions.push(result);  // edited row from a not-yet-loaded year
+      else this.cache.transactions.push(result); // edited row from a not-yet-loaded year
     }
     return result;
   }
   async remove(id) {
-    await this._post({ action: 'delete', id });
-    if (this.cache) this.cache.transactions = this.cache.transactions.filter(x => x.id !== Number(id));
+    await this._post({ action: "delete", id });
+    if (this.cache)
+      this.cache.transactions = this.cache.transactions.filter(
+        (x) => x.id !== Number(id),
+      );
   }
-  async clear() { await this._post({ action: 'clear' }); this.cache = null; }
-  async isEmpty() { return (await this.list()).length === 0; }
+  async clear() {
+    await this._post({ action: "clear" });
+    this.cache = null;
+  }
+  async isEmpty() {
+    return (await this.list()).length === 0;
+  }
 }
 
 /* ------------------------------------------------------------------- Supabase
@@ -683,7 +860,10 @@ function budgetRowsToShape(rows) {
 
 /* ------------------------------------------------------------------ IndexedDB */
 class LocalStore {
-  constructor(db) { this.db = db; this.kind = 'local'; }
+  constructor(db) {
+    this.db = db;
+    this.kind = "local";
+  }
   // No-ops: unlike SheetsStore, IndexedDB always holds the full history
   // already - there is no partial year-scoping to catch up on. These exist
   // so app.js can call them unconditionally regardless of which adapter is
@@ -692,104 +872,220 @@ class LocalStore {
   async ensureAllYearsLoaded() {}
   static open() {
     return new Promise((resolve, reject) => {
-      if (!('indexedDB' in globalThis)) return reject(new Error('no indexedDB'));
+      if (!("indexedDB" in globalThis))
+        return reject(new Error("no indexedDB"));
       const req = indexedDB.open(DB_NAME, DB_VERSION);
       req.onupgradeneeded = () => {
         const db = req.result;
-        if (!db.objectStoreNames.contains('transactions')) {
-          db.createObjectStore('transactions', { keyPath: 'id', autoIncrement: true }).createIndex('date', 'date');
+        if (!db.objectStoreNames.contains("transactions")) {
+          db.createObjectStore("transactions", {
+            keyPath: "id",
+            autoIncrement: true,
+          }).createIndex("date", "date");
         }
-        if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta');
+        if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta");
       };
       req.onsuccess = () => resolve(new LocalStore(req.result));
-      req.onerror = () => reject(req.error || new Error('indexedDB blocked'));
-      req.onblocked = () => reject(new Error('indexedDB blocked'));
+      req.onerror = () => reject(req.error || new Error("indexedDB blocked"));
+      req.onblocked = () => reject(new Error("indexedDB blocked"));
     });
   }
-  _tx(s, m) { return this.db.transaction(s, m).objectStore(s); }
-  _wrap(req) { return new Promise((res, rej) => { req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error); }); }
-  async list() {
-    const rows = await this._wrap(this._tx('transactions', 'readonly').getAll());
-    return rows.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.id - a.id));
+  _tx(s, m) {
+    return this.db.transaction(s, m).objectStore(s);
   }
-  async add(rec) { const r = normalise(rec); delete r.id; const id = await this._wrap(this._tx('transactions', 'readwrite').add(r)); return { ...r, id }; }
+  _wrap(req) {
+    return new Promise((res, rej) => {
+      req.onsuccess = () => res(req.result);
+      req.onerror = () => rej(req.error);
+    });
+  }
+  async list() {
+    const rows = await this._wrap(
+      this._tx("transactions", "readonly").getAll(),
+    );
+    return rows.sort((a, b) =>
+      a.date < b.date ? 1 : a.date > b.date ? -1 : b.id - a.id,
+    );
+  }
+  async add(rec) {
+    const r = normalise(rec);
+    delete r.id;
+    const id = await this._wrap(this._tx("transactions", "readwrite").add(r));
+    return { ...r, id };
+  }
   async bulkAdd(list) {
-    const os = this.db.transaction('transactions', 'readwrite').objectStore('transactions');
-    for (const rec of list) { const r = normalise(rec); delete r.id; os.add(r); }
-    await new Promise((res, rej) => { os.transaction.oncomplete = res; os.transaction.onerror = () => rej(os.transaction.error); });
+    const os = this.db
+      .transaction("transactions", "readwrite")
+      .objectStore("transactions");
+    for (const rec of list) {
+      const r = normalise(rec);
+      delete r.id;
+      os.add(r);
+    }
+    await new Promise((res, rej) => {
+      os.transaction.oncomplete = res;
+      os.transaction.onerror = () => rej(os.transaction.error);
+    });
     return list.length;
   }
-  async update(id, rec) { const r = normalise({ ...rec, id }); await this._wrap(this._tx('transactions', 'readwrite').put(r)); return r; }
-  async remove(id) { await this._wrap(this._tx('transactions', 'readwrite').delete(Number(id))); }
-  async clear() { await this._wrap(this._tx('transactions', 'readwrite').clear()); await this._wrap(this._tx('meta', 'readwrite').delete('budget')); }
+  async update(id, rec) {
+    const r = normalise({ ...rec, id });
+    await this._wrap(this._tx("transactions", "readwrite").put(r));
+    return r;
+  }
+  async remove(id) {
+    await this._wrap(this._tx("transactions", "readwrite").delete(Number(id)));
+  }
+  async clear() {
+    await this._wrap(this._tx("transactions", "readwrite").clear());
+    await this._wrap(this._tx("meta", "readwrite").delete("budget"));
+  }
   async getBudget(year) {
     const y = year || currentYear();
-    const all = (await this._wrap(this._tx('meta', 'readonly').get('budgetsByYear'))) || {};
+    const all =
+      (await this._wrap(this._tx("meta", "readonly").get("budgetsByYear"))) ||
+      {};
     return all[y] || emptyBudget();
   }
-  async getBalances() { return (await this._wrap(this._tx('meta', 'readonly').get('balances'))) || []; }
-  async getDebts() { return (await this._wrap(this._tx('meta', 'readonly').get('debts'))) || []; }
+  async getBalances() {
+    return (
+      (await this._wrap(this._tx("meta", "readonly").get("balances"))) || []
+    );
+  }
+  async getDebts() {
+    return (await this._wrap(this._tx("meta", "readonly").get("debts"))) || [];
+  }
   async addDebt(record) {
     const all = await this.getDebts();
-    const id = Math.max(0, ...all.map(d => Number(d.id) || 0)) + 1;
-    await this._wrap(this._tx('meta', 'readwrite').put([...all, { ...record, id }], 'debts'));
+    const id = Math.max(0, ...all.map((d) => Number(d.id) || 0)) + 1;
+    await this._wrap(
+      this._tx("meta", "readwrite").put([...all, { ...record, id }], "debts"),
+    );
     return id;
   }
   async updateDebt(id, record) {
     const all = await this.getDebts();
-    await this._wrap(this._tx('meta', 'readwrite').put(
-      all.map(d => (Number(d.id) === Number(id) ? { ...record, id: Number(id) } : d)), 'debts'));
+    await this._wrap(
+      this._tx("meta", "readwrite").put(
+        all.map((d) =>
+          Number(d.id) === Number(id) ? { ...record, id: Number(id) } : d,
+        ),
+        "debts",
+      ),
+    );
   }
   async deleteDebt(id) {
     const all = await this.getDebts();
-    await this._wrap(this._tx('meta', 'readwrite').put(
-      all.filter(d => Number(d.id) !== Number(id) && Number(d.parentId) !== Number(id)), 'debts'));
+    await this._wrap(
+      this._tx("meta", "readwrite").put(
+        all.filter(
+          (d) =>
+            Number(d.id) !== Number(id) && Number(d.parentId) !== Number(id),
+        ),
+        "debts",
+      ),
+    );
   }
   async importDebts(records) {
     const all = await this.getDebts();
-    let id = Math.max(0, ...all.map(d => Number(d.id) || 0)) + 1;
+    let id = Math.max(0, ...all.map((d) => Number(d.id) || 0)) + 1;
     const fileToReal = {};
-    for (const r of records) if (r.kind !== 'Payment') { fileToReal[String(r.fileRef)] = id++; }
-    const rows = []; let nD = 0, nP = 0, skipped = 0;
-    id = Math.max(0, ...all.map(d => Number(d.id) || 0)) + 1;
+    for (const r of records)
+      if (r.kind !== "Payment") {
+        fileToReal[String(r.fileRef)] = id++;
+      }
+    const rows = [];
+    let nD = 0,
+      nP = 0,
+      skipped = 0;
+    id = Math.max(0, ...all.map((d) => Number(d.id) || 0)) + 1;
     for (const r of records) {
-      if (r.kind !== 'Payment') { rows.push({ ...r, id, parentId: null }); id++; nD++; continue; }
+      if (r.kind !== "Payment") {
+        rows.push({ ...r, id, parentId: null });
+        id++;
+        nD++;
+        continue;
+      }
       const parentReal = fileToReal[String(r.parentFileRef)];
-      if (!parentReal) { skipped++; continue; }
-      rows.push({ ...r, id, parentId: parentReal }); id++; nP++;
+      if (!parentReal) {
+        skipped++;
+        continue;
+      }
+      rows.push({ ...r, id, parentId: parentReal });
+      id++;
+      nP++;
     }
-    await this._wrap(this._tx('meta', 'readwrite').put([...all, ...rows], 'debts'));
+    await this._wrap(
+      this._tx("meta", "readwrite").put([...all, ...rows], "debts"),
+    );
     return { debts: nD, payments: nP, skipped };
   }
   async setBalances(date, entries) {
-    const all = (await this.getBalances()).filter(b => b.date !== date);
-    await this._wrap(this._tx('meta', 'readwrite').put([...all, ...entries.map(e => ({ ...e, date }))], 'balances'));
+    const all = (await this.getBalances()).filter((b) => b.date !== date);
+    await this._wrap(
+      this._tx("meta", "readwrite").put(
+        [...all, ...entries.map((e) => ({ ...e, date }))],
+        "balances",
+      ),
+    );
   }
   async deleteBalanceDate(date) {
-    const all = (await this.getBalances()).filter(b => b.date !== date);
-    await this._wrap(this._tx('meta', 'readwrite').put(all, 'balances'));
+    const all = (await this.getBalances()).filter((b) => b.date !== date);
+    await this._wrap(this._tx("meta", "readwrite").put(all, "balances"));
   }
   async setBudget(b, year) {
     const y = year || currentYear();
-    const all = (await this._wrap(this._tx('meta', 'readonly').get('budgetsByYear'))) || {};
+    const all =
+      (await this._wrap(this._tx("meta", "readonly").get("budgetsByYear"))) ||
+      {};
     all[y] = b;
-    await this._wrap(this._tx('meta', 'readwrite').put(all, 'budgetsByYear'));
+    await this._wrap(this._tx("meta", "readwrite").put(all, "budgetsByYear"));
     return b;
   }
-  async isEmpty() { return (await this._wrap(this._tx('transactions', 'readonly').count())) === 0; }
+  async isEmpty() {
+    return (
+      (await this._wrap(this._tx("transactions", "readonly").count())) === 0
+    );
+  }
 }
 
 /* ------------------------------------------------------------------ memory */
 class MemoryStore {
-  constructor() { this.rows = []; this.seq = 1; this.budget = emptyBudget(); this.kind = 'memory'; }
+  constructor() {
+    this.rows = [];
+    this.seq = 1;
+    this.budget = emptyBudget();
+    this.kind = "memory";
+  }
   async ensureYearLoaded() {}
   async ensureAllYearsLoaded() {}
-  async list() { return [...this.rows].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.id - a.id)); }
-  async add(rec) { const r = normalise(rec); r.id = this.seq++; this.rows.push(r); return r; }
-  async bulkAdd(l) { for (const x of l) await this.add(x); return l.length; }
-  async update(id, rec) { const r = normalise({ ...rec, id: Number(id) }); this.rows = this.rows.map(x => (x.id === r.id ? r : x)); return r; }
-  async remove(id) { this.rows = this.rows.filter(x => x.id !== Number(id)); }
-  async clear() { this.rows = []; this.budget = emptyBudget(); }
+  async list() {
+    return [...this.rows].sort((a, b) =>
+      a.date < b.date ? 1 : a.date > b.date ? -1 : b.id - a.id,
+    );
+  }
+  async add(rec) {
+    const r = normalise(rec);
+    r.id = this.seq++;
+    this.rows.push(r);
+    return r;
+  }
+  async bulkAdd(l) {
+    for (const x of l) await this.add(x);
+    return l.length;
+  }
+  async update(id, rec) {
+    const r = normalise({ ...rec, id: Number(id) });
+    this.rows = this.rows.map((x) => (x.id === r.id ? r : x));
+    return r;
+  }
+  async remove(id) {
+    this.rows = this.rows.filter((x) => x.id !== Number(id));
+  }
+  async clear() {
+    this.rows = [];
+    this.budget = emptyBudget();
+  }
   async getBudget(year) {
     const y = year || currentYear();
     this.budgetsByYear = this.budgetsByYear || {};
@@ -801,45 +1097,76 @@ class MemoryStore {
     this.budgetsByYear[y] = b;
     return b;
   }
-  async getBalances() { return this.balances || (this.balances = []); }
-  async getDebts() { return this.debts || (this.debts = []); }
+  async getBalances() {
+    return this.balances || (this.balances = []);
+  }
+  async getDebts() {
+    return this.debts || (this.debts = []);
+  }
   async addDebt(record) {
     this.debts = this.debts || [];
-    const id = Math.max(0, ...this.debts.map(d => Number(d.id) || 0)) + 1;
+    const id = Math.max(0, ...this.debts.map((d) => Number(d.id) || 0)) + 1;
     this.debts.push({ ...record, id });
     return id;
   }
   async updateDebt(id, record) {
-    this.debts = (this.debts || []).map(d => (Number(d.id) === Number(id) ? { ...record, id: Number(id) } : d));
+    this.debts = (this.debts || []).map((d) =>
+      Number(d.id) === Number(id) ? { ...record, id: Number(id) } : d,
+    );
   }
   async deleteDebt(id) {
-    this.debts = (this.debts || []).filter(d => Number(d.id) !== Number(id) && Number(d.parentId) !== Number(id));
+    this.debts = (this.debts || []).filter(
+      (d) => Number(d.id) !== Number(id) && Number(d.parentId) !== Number(id),
+    );
   }
   async importDebts(records) {
     this.debts = this.debts || [];
-    let id = Math.max(0, ...this.debts.map(d => Number(d.id) || 0)) + 1;
+    let id = Math.max(0, ...this.debts.map((d) => Number(d.id) || 0)) + 1;
     const fileToReal = {};
-    for (const r of records) if (r.kind !== 'Payment') { fileToReal[String(r.fileRef)] = id++; }
-    const rows = []; let nD = 0, nP = 0, skipped = 0;
-    id = Math.max(0, ...this.debts.map(d => Number(d.id) || 0)) + 1;
+    for (const r of records)
+      if (r.kind !== "Payment") {
+        fileToReal[String(r.fileRef)] = id++;
+      }
+    const rows = [];
+    let nD = 0,
+      nP = 0,
+      skipped = 0;
+    id = Math.max(0, ...this.debts.map((d) => Number(d.id) || 0)) + 1;
     for (const r of records) {
-      if (r.kind !== 'Payment') { rows.push({ ...r, id, parentId: null }); id++; nD++; continue; }
+      if (r.kind !== "Payment") {
+        rows.push({ ...r, id, parentId: null });
+        id++;
+        nD++;
+        continue;
+      }
       const parentReal = fileToReal[String(r.parentFileRef)];
-      if (!parentReal) { skipped++; continue; }
-      rows.push({ ...r, id, parentId: parentReal }); id++; nP++;
+      if (!parentReal) {
+        skipped++;
+        continue;
+      }
+      rows.push({ ...r, id, parentId: parentReal });
+      id++;
+      nP++;
     }
     this.debts.push(...rows);
     return { debts: nD, payments: nP, skipped };
   }
   async setBalances(date, entries) {
-    this.balances = [...(this.balances || []).filter(b => b.date !== date),
-                     ...entries.map(e => ({ ...e, date }))];
+    this.balances = [
+      ...(this.balances || []).filter((b) => b.date !== date),
+      ...entries.map((e) => ({ ...e, date })),
+    ];
   }
-  async deleteBalanceDate(date) { this.balances = (this.balances || []).filter(b => b.date !== date); }
-  async isEmpty() { return this.rows.length === 0; }
+  async deleteBalanceDate(date) {
+    this.balances = (this.balances || []).filter((b) => b.date !== date);
+  }
+  async isEmpty() {
+    return this.rows.length === 0;
+  }
 }
 
 export async function openStore(onNotice) {
+<<<<<<< Updated upstream
   // Supabase is preferred once BOTH pieces are configured - during a
   // transition period this lets the app be pointed at either backend
   // without disturbing whichever one is not yet set up. Falls through to
@@ -858,23 +1185,44 @@ export async function openStore(onNotice) {
     }
   }
   const endpoint = getEndpoint(), token = getToken();
+=======
+  const endpoint = getEndpoint(),
+    token = getToken();
+>>>>>>> Stashed changes
   if (endpoint) {
     try {
       const s = new SheetsStore(endpoint, token);
       await s.ping();
       return s;
     } catch (e) {
-      onNotice?.(`Google Sheet unreachable: ${e.message} Falling back to this browser's storage — changes will NOT reach the sheet.`, 'bad');
+      onNotice?.(
+        `Google Sheet unreachable: ${e.message} Falling back to this browser's storage — changes will NOT reach the sheet.`,
+        "bad",
+      );
     }
+<<<<<<< Updated upstream
   } else if (!supabaseUrl) {
     onNotice?.('No Google Sheet connected. Using browser storage — connect the sheet under Data.');
+=======
+  } else {
+    onNotice?.(
+      "No Google Sheet connected. Using browser storage — connect the sheet under Data.",
+    );
+>>>>>>> Stashed changes
   }
   try {
     return await LocalStore.open();
   } catch {
-    onNotice?.('IndexedDB unavailable, so nothing will persist. Export before closing the tab.', 'bad');
+    onNotice?.(
+      "IndexedDB unavailable, so nothing will persist. Export before closing the tab.",
+      "bad",
+    );
     return new MemoryStore();
   }
 }
 
+<<<<<<< Updated upstream
 export { SheetsStore, SupabaseStore };
+=======
+export { SheetsStore };
+>>>>>>> Stashed changes
