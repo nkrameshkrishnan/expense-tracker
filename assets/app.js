@@ -20,6 +20,7 @@ import {
   getClientId,
   getIdToken,
   setIdToken,
+  setNonce,
   NET_WORTH_ACCOUNTS,
   SheetsStore,
   getToken,
@@ -78,6 +79,19 @@ const state = {
    explained nothing and offered no way back in. Wrapping this in a fixed,
    opaque, high-z-index layer means showing it can never result in stale
    content bleeding through, no matter which code path triggered it. */
+/** Hex-encoded SHA-256 of a string - used only for the Google sign-in nonce
+    below. Google's initialize() takes the HASHED nonce and embeds it in the
+    id token's own nonce claim; Supabase's signInWithIdToken needs the RAW
+    value to hash and compare itself, which is why both a raw and a hashed
+    version have to exist side by side rather than just using one value. */
+async function sha256Hex(text) {
+  const bytes = new TextEncoder().encode(text);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 function showGate(message) {
   // Named bootOverlay, not boot - a local `const boot` here would shadow the
   // outer async function boot() inside this function's own nested sign-in
@@ -105,11 +119,20 @@ function showGate(message) {
        assets/config.js (and OAUTH_CLIENT_ID in Code.gs), then reload.</p>`;
     return;
   }
-  const start = () => {
+  const start = async () => {
+    // Generated fresh per sign-in attempt: Google's initialize() gets the
+    // HASHED nonce (embedded in the resulting id token's own nonce claim),
+    // while the RAW value is stashed via setNonce() in the callback below
+    // for signInWithGoogleIdToken() to hand to Supabase later - see the
+    // comment on signInWithGoogleIdToken in store.js for why both matter.
+    const rawNonce = crypto.randomUUID();
+    const hashedNonce = await sha256Hex(rawNonce);
     google.accounts.id.initialize({
       client_id: cid,
+      nonce: hashedNonce,
       callback: async (res) => {
         setIdToken(res.credential);
+        setNonce(rawNonce);
         gate.hidden = true;
         // boot() below makes a real network fetch that can take several
         // seconds on a cold start. Hiding the gate here without showing

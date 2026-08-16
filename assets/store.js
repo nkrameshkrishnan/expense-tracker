@@ -132,6 +132,7 @@ export const CUSTOM_KEY = "ledger.customLists";
 export const ENDPOINT_KEY = "ledger.sheetsEndpoint";
 export const TOKEN_KEY = "ledger.sheetsToken";
 export const ID_TOKEN_KEY = "ledger.googleIdToken";
+export const NONCE_KEY = "ledger.googleNonce";
 
 export const getClientId = () =>
   (localStorage.getItem("ledger.clientId") || GOOGLE_CLIENT_ID || "").trim();
@@ -154,6 +155,30 @@ export const setIdToken = (t) => {
     /* fall through to memory */
   }
   _idTokenMem = t || "";
+};
+// The RAW nonce given to signInWithIdToken() - Google's initialize() only
+// ever sees its SHA-256 hash (see showGate() in app.js), so the raw value
+// has to be kept somewhere to hand to Supabase later. Persisted alongside
+// the id token itself (not just held in a variable) because Supabase sign-in
+// can happen well after the Google callback fires - e.g. on a later page
+// load that reuses a still-valid sessionStorage id token - not only in the
+// same tick as the callback.
+let _nonceMem = "";
+export const getNonce = () => {
+  try {
+    return sessionStorage.getItem(NONCE_KEY) || "";
+  } catch {
+    return _nonceMem;
+  }
+};
+export const setNonce = (n) => {
+  try {
+    if (n) sessionStorage.setItem(NONCE_KEY, n);
+    else sessionStorage.removeItem(NONCE_KEY);
+  } catch {
+    /* fall through to memory */
+  }
+  _nonceMem = n || "";
 };
 
 export const getEndpoint = () =>
@@ -682,9 +707,17 @@ class SupabaseStore {
       the database side, the same job Code.gs's ALLOWED_EMAILS did. */
   async signInWithGoogleIdToken(idToken) {
     const sb = await this._client();
+    // Must be present/absent on BOTH sides together, or GoTrue rejects the
+    // token outright ("Passed nonce and nonce in id_token should either
+    // both exist or not"): Google's initialize() in showGate() only ever
+    // sees the HASHED nonce (embedded in the token's own nonce claim),
+    // while signInWithIdToken needs the RAW value to hash and compare
+    // against that claim itself.
+    const nonce = getNonce();
     const { error } = await sb.auth.signInWithIdToken({
       provider: "google",
       token: idToken,
+      ...(nonce ? { nonce } : {}),
     });
     if (error) {
       const e = new Error(error.message);
