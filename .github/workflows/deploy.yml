@@ -43,6 +43,11 @@ jobs:
           # browser sends this value in plaintext on every sign-in anyway — but
           # using a Secret here costs nothing and keeps it out of the log output.
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          # Public by design (see assets/config.js) - access is enforced by RLS,
+          # not by keeping this out of the bundle. Stored as a Secret anyway so
+          # it isn't echoed in workflow logs.
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
           if [ -z "$SHEETS_ENDPOINT" ]; then
             echo "::warning::SHEETS_ENDPOINT is not set. The site will ship without an endpoint and users must enter it under Data → Google Sheet."
@@ -61,6 +66,11 @@ jobs:
           else
             echo "GOOGLE_CLIENT_ID is set and looks valid (value masked)."
           fi
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "::warning::SUPABASE_URL/SUPABASE_ANON_KEY not set. The site will ship on the Sheets backend."
+          else
+            echo "::warning::Supabase URL and anon key baked into assets/config.js — publicly readable on the deployed site (expected; access is enforced by RLS)."
+          fi
 
           # Generated with node (always present on ubuntu-latest) so JSON.stringify
           # handles escaping — a quote or backslash in a secret cannot break the module.
@@ -73,6 +83,8 @@ jobs:
               "export const SHEETS_ENDPOINT = " + q(process.env.SHEETS_ENDPOINT) + ";\n" +
               "export const SHEETS_TOKEN = " + q(process.env.SHEETS_TOKEN) + ";\n" +
               "export const GOOGLE_CLIENT_ID = " + q(process.env.GOOGLE_CLIENT_ID) + ";\n" +
+              "export const SUPABASE_URL = " + q(process.env.SUPABASE_URL) + ";\n" +
+              "export const SUPABASE_ANON_KEY = " + q(process.env.SUPABASE_ANON_KEY) + ";\n" +
               "export const BUILD_STAMP = " + q(stamp) + ";\n");
           '
 

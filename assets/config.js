@@ -13,3 +13,13 @@ export const BUILD_STAMP = "dev";
    authorise anything. Access is decided in Apps Script by verifying the signed
    ID token and checking the email against ALLOWED_EMAILS there. */
 export const GOOGLE_CLIENT_ID = "";
+
+/* Supabase project - the planned replacement for the Sheets/Apps Script backend.
+   SUPABASE_URL and the anon key are both meant to be public (same as
+   GOOGLE_CLIENT_ID above): access is decided by Row Level Security policies on
+   the database itself, verifying the same Google ID token's email against an
+   allow-list - the anon key alone grants nothing without a valid signed-in
+   session. Leave blank to keep using the Sheets backend; store.js prefers
+   Supabase over Sheets only once both are actually configured. */
+export const SUPABASE_URL = "";
+export const SUPABASE_ANON_KEY = "";
