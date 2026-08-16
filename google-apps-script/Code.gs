@@ -55,16 +55,52 @@ var ALLOWED_EMAILS = [
   "surya@example.com", // <- Surya's Google account
 ];
 
+/* ------------------------------------------------------- Rate limiting
+ * Apps Script web apps never expose the caller's IP, so per-IP limiting
+ * genuinely isn't possible here - CacheService counters keyed by identity
+ * are the available substitute. Two layers:
+ *  - Global: blocks BEFORE the tokeninfo network call, so a flood of
+ *    garbage/forged tokens (no email known yet) can't burn UrlFetchApp
+ *    quota or Google's rate limit on our behalf.
+ *  - Per-email: once a real signed token names an email, that specific
+ *    account is throttled separately - catches someone hammering one
+ *    real-but-not-allow-listed account without it also locking out the
+ *    OTHER household member's legitimate sign-ins in the same window.
+ * put() resets the TTL on every failure, so the window keeps sliding
+ * forward as long as failures keep coming and only actually expires after
+ * a full quiet period - a deliberate simplification of true sliding-window
+ * limiting, appropriate for a two-person household app, not a public API. */
+var RATE_LIMIT_WINDOW_SEC = 300;
+var RATE_LIMIT_MAX_GLOBAL = 20;
+var RATE_LIMIT_MAX_PER_EMAIL = 5;
+
+function isRateLimited(cache, key, max) {
+  return (Number(cache.get(key)) || 0) >= max;
+}
+function recordFailure(cache, key) {
+  var count = (Number(cache.get(key)) || 0) + 1;
+  cache.put(key, String(count), RATE_LIMIT_WINDOW_SEC);
+}
+
 /**
  * Verify a Google ID token and confirm the signer is allowed in.
  * Throws on any doubt. Never returns a "maybe".
  */
 function requireUser(idToken) {
+  var cache = CacheService.getScriptCache();
+  if (isRateLimited(cache, "ratelimit:global", RATE_LIMIT_MAX_GLOBAL)) {
+    Logger.log("requireUser: rejected - global rate limit exceeded");
+    throw new Error(
+      "Too many failed sign-in attempts. Try again in a few minutes.",
+    );
+  }
+
   if (OAUTH_CLIENT_ID.indexOf("CHANGE_ME") === 0) {
     throw new Error("OAUTH_CLIENT_ID is not configured in Code.gs.");
   }
   if (!idToken) {
     Logger.log("requireUser: rejected - no idToken supplied");
+    recordFailure(cache, "ratelimit:global");
     throw new Error("Sign in with Google to continue.");
   }
 
@@ -73,7 +109,6 @@ function requireUser(idToken) {
   var digest = Utilities.base64EncodeWebSafe(
     Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, idToken),
   );
-  var cache = CacheService.getScriptCache();
   var cached = cache.get("idt:" + digest);
   if (cached) return JSON.parse(cached);
 
@@ -87,24 +122,37 @@ function requireUser(idToken) {
       "requireUser: rejected - Google tokeninfo returned " +
         res.getResponseCode(),
     );
+    recordFailure(cache, "ratelimit:global");
     throw new Error("Google rejected that sign-in. Sign in again.");
   }
 
   var info = JSON.parse(res.getContentText());
   if (info.aud !== OAUTH_CLIENT_ID) {
     Logger.log("requireUser: rejected - token issued for a different aud");
+    recordFailure(cache, "ratelimit:global");
     throw new Error("That sign-in was issued for a different app.");
   }
   if (String(info.email_verified) !== "true") {
     Logger.log("requireUser: rejected - email not verified");
+    recordFailure(cache, "ratelimit:global");
     throw new Error("Google account email is not verified.");
   }
   if (Number(info.exp) * 1000 < Date.now()) {
     Logger.log("requireUser: rejected - token expired");
+    recordFailure(cache, "ratelimit:global");
     throw new Error("Sign-in expired. Sign in again.");
   }
 
   var email = String(info.email || "").toLowerCase();
+  if (
+    isRateLimited(cache, "ratelimit:email:" + email, RATE_LIMIT_MAX_PER_EMAIL)
+  ) {
+    Logger.log("requireUser: rejected - per-email rate limit for " + email);
+    throw new Error(
+      "Too many failed attempts for this account. Try again in a few minutes.",
+    );
+  }
+
   var allowed = false;
   for (var i = 0; i < ALLOWED_EMAILS.length; i++) {
     if (String(ALLOWED_EMAILS[i]).toLowerCase() === email) {
@@ -118,6 +166,8 @@ function requireUser(idToken) {
     Logger.log(
       "requireUser: rejected - " + email + " is not on ALLOWED_EMAILS",
     );
+    recordFailure(cache, "ratelimit:global");
+    recordFailure(cache, "ratelimit:email:" + email);
     throw new Error(
       "Account " + email + " is not permitted to use this tracker.",
     );
