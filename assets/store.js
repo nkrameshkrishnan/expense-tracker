@@ -639,6 +639,15 @@ function loadSupabaseSdk() {
   return supabaseSdkReady;
 }
 
+// Cached at module scope, not per-instance: openStore() runs more than once
+// a session (boot, then again on "Test connection"/"Disconnect"), and each
+// call constructs a fresh SupabaseStore. Without this, every one of those
+// called createClient() again for the same project, and supabase-js warns
+// "Multiple GoTrueClient instances detected... same storage key" because
+// they all read/write the same localStorage auth-token entry.
+let cachedSupabaseClient = null;
+let cachedSupabaseClientKey = "";
+
 class SupabaseStore {
   constructor(url, anonKey) {
     this.kind = "supabase";
@@ -653,7 +662,15 @@ class SupabaseStore {
   async _client() {
     if (this.sb) return this.sb;
     await loadSupabaseSdk();
-    this.sb = window.supabase.createClient(this.url, this.anonKey);
+    const key = `${this.url}|${this.anonKey}`;
+    if (!cachedSupabaseClient || cachedSupabaseClientKey !== key) {
+      cachedSupabaseClient = window.supabase.createClient(
+        this.url,
+        this.anonKey,
+      );
+      cachedSupabaseClientKey = key;
+    }
+    this.sb = cachedSupabaseClient;
     return this.sb;
   }
 
