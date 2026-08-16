@@ -673,6 +673,31 @@ function loadSupabaseSdk() {
 let cachedSupabaseClient = null;
 let cachedSupabaseClientKey = "";
 
+// PostgREST (what supabase-js talks to) caps any single response at 1000
+// rows by default - a project-level setting, not something this code
+// controls, and it fails silently: no error, just a truncated result. A
+// real transaction history WILL cross 1000 rows eventually, and every read
+// below used to be a plain .select() with no .range(), so rows past the
+// cap simply vanished from the app with nothing indicating why. buildQuery
+// must return a FRESH query object each call - a supabase-js query builder
+// is not safely re-usable across repeated awaits.
+const SUPABASE_PAGE_SIZE = 1000;
+async function selectAllRows(buildQuery) {
+  const rows = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await buildQuery(
+      from,
+      from + SUPABASE_PAGE_SIZE - 1,
+    );
+    if (error) return { data: null, error };
+    rows.push(...data);
+    if (data.length < SUPABASE_PAGE_SIZE) break;
+    from += SUPABASE_PAGE_SIZE;
+  }
+  return { data: rows, error: null };
+}
+
 class SupabaseStore {
   constructor(url, anonKey) {
     this.kind = "supabase";
@@ -743,15 +768,26 @@ class SupabaseStore {
       { data: bal, error: e3 },
       { data: debts, error: e4 },
     ] = await Promise.all([
-      sb
-        .from("transactions")
-        .select("*")
-        .gte("date", `${year}-01-01`)
-        .lte("date", `${year}-12-31`)
-        .order("date", { ascending: false }),
-      sb.from("budget").select("*").eq("year", year),
-      sb.from("balances").select("*").order("date", { ascending: false }),
-      sb.from("debts").select("*"),
+      selectAllRows((from, to) =>
+        sb
+          .from("transactions")
+          .select("*")
+          .gte("date", `${year}-01-01`)
+          .lte("date", `${year}-12-31`)
+          .order("date", { ascending: false })
+          .range(from, to),
+      ),
+      selectAllRows((from, to) =>
+        sb.from("budget").select("*").eq("year", year).range(from, to),
+      ),
+      selectAllRows((from, to) =>
+        sb
+          .from("balances")
+          .select("*")
+          .order("date", { ascending: false })
+          .range(from, to),
+      ),
+      selectAllRows((from, to) => sb.from("debts").select("*").range(from, to)),
     ]);
     const err = e1 || e2 || e3 || e4;
     if (err) {
@@ -775,11 +811,14 @@ class SupabaseStore {
     await this._ensure();
     if (this.cache.allYearsLoaded || this.cache.loadedYears.has(year)) return;
     const sb = await this._client();
-    const { data, error } = await sb
-      .from("transactions")
-      .select("*")
-      .gte("date", `${year}-01-01`)
-      .lte("date", `${year}-12-31`);
+    const { data, error } = await selectAllRows((from, to) =>
+      sb
+        .from("transactions")
+        .select("*")
+        .gte("date", `${year}-01-01`)
+        .lte("date", `${year}-12-31`)
+        .range(from, to),
+    );
     if (error) throw new Error(error.message);
     const seen = new Set(this.cache.transactions.map((r) => r.id));
     this.cache.transactions.push(
@@ -792,10 +831,13 @@ class SupabaseStore {
     await this._ensure();
     if (this.cache.allYearsLoaded) return;
     const sb = await this._client();
-    const { data, error } = await sb
-      .from("transactions")
-      .select("*")
-      .order("date", { ascending: false });
+    const { data, error } = await selectAllRows((from, to) =>
+      sb
+        .from("transactions")
+        .select("*")
+        .order("date", { ascending: false })
+        .range(from, to),
+    );
     if (error) throw new Error(error.message);
     const seen = new Set(this.cache.transactions.map((r) => r.id));
     this.cache.transactions.push(

@@ -132,6 +132,33 @@ async function chunkedInsert(client, table, cols, rows, { returning } = {}) {
   return returned;
 }
 
+/* Wraps a section's actual write (insert + reconcile) in a single Postgres
+   transaction, committing only if reconciliation passes and rolling back on
+   any failure or interruption in between. This is exactly what was missing
+   when a real run of this script got interrupted mid-way: chunkedInsert's
+   individual per-chunk statements each auto-commit on their own with no
+   transaction, so an interruption after chunk 2 of 3 left exactly those two
+   chunks permanently in the database with no error ever shown - and the
+   "already has rows" guard on the next run then saw a nonzero count and
+   silently treated that PARTIAL migration as a COMPLETE one. Wrapping the
+   whole section in one transaction makes it all-or-nothing: either every
+   row is there AND verified matching, or none of it is. */
+async function withTransaction(client, work) {
+  await client.query("BEGIN");
+  try {
+    const ok = await work();
+    await client.query(ok ? "COMMIT" : "ROLLBACK");
+    if (!ok) console.error("Rolled back - nothing was left partially written.");
+    return ok;
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => {});
+    console.error(
+      "Rolled back due to an error - nothing was left partially written.",
+    );
+    throw e;
+  }
+}
+
 /* ------------------------------------------------------------ Transactions */
 
 function readTransactionRows(wb) {
@@ -246,51 +273,52 @@ async function migrateTransactions(client, wb) {
       `Skipping: transactions already has ${existing[0].c} row(s). This script does not deduplicate.`,
     );
 
-  console.log("Inserting into Postgres...");
-  const cols = [
-    "date",
-    "type",
-    "category",
-    "subcategory",
-    "description",
-    "amount",
-    "payment",
-    "account",
-    "recurring",
-    "notes",
-    "person",
-  ];
-  await chunkedInsert(client, "transactions", cols, sourceRows);
+  const ok = await withTransaction(client, async () => {
+    console.log("Inserting into Postgres...");
+    const cols = [
+      "date",
+      "type",
+      "category",
+      "subcategory",
+      "description",
+      "amount",
+      "payment",
+      "account",
+      "recurring",
+      "notes",
+      "person",
+    ];
+    await chunkedInsert(client, "transactions", cols, sourceRows);
 
-  console.log("Reconciling against what actually landed in the database...");
-  const dbSummary = await fetchTransactionsDbSummary(client);
-  let allMatch = true;
-  if (dbSummary.total !== sourceSummary.total) {
-    reportMismatch("total row count", sourceSummary.total, dbSummary.total);
-    allMatch = false;
-  }
-  for (const t of TYPES) {
-    const s = sourceSummary.byType[t],
-      d = dbSummary.byType[t];
-    if (s.count !== d.count) {
-      reportMismatch(`${t} row count`, s.count, d.count);
+    console.log("Reconciling against what actually landed in the database...");
+    const dbSummary = await fetchTransactionsDbSummary(client);
+    let allMatch = true;
+    if (dbSummary.total !== sourceSummary.total) {
+      reportMismatch("total row count", sourceSummary.total, dbSummary.total);
       allMatch = false;
     }
-    if (Math.abs(s.sum - d.sum) > 0.01) {
-      reportMismatch(`${t} sum`, s.sum, d.sum);
-      allMatch = false;
+    for (const t of TYPES) {
+      const s = sourceSummary.byType[t],
+        d = dbSummary.byType[t];
+      if (s.count !== d.count) {
+        reportMismatch(`${t} row count`, s.count, d.count);
+        allMatch = false;
+      }
+      if (Math.abs(s.sum - d.sum) > 0.01) {
+        reportMismatch(`${t} sum`, s.sum, d.sum);
+        allMatch = false;
+      }
     }
-  }
-  if (!allMatch) {
-    console.error(
-      "RECONCILIATION FAILED for transactions. Do NOT cut the app over yet.",
+    if (!allMatch) {
+      console.error("RECONCILIATION FAILED for transactions.");
+      return false;
+    }
+    console.log(
+      "RECONCILED: transactions row counts and type-sums match exactly.",
     );
-    process.exitCode = 1;
-    return;
-  }
-  console.log(
-    "RECONCILED: transactions row counts and type-sums match exactly.",
-  );
+    return true;
+  });
+  if (!ok) process.exitCode = 1;
 }
 
 /* ------------------------------------------------------------------ Budget */
@@ -451,41 +479,42 @@ async function migrateBudget(client, wb) {
       `Skipping: budget already has rows for year(s) ${alreadyPopulated.map((r) => r.year).join(", ")}.`,
     );
 
-  console.log("Inserting into Postgres...");
-  await chunkedInsert(
-    client,
-    "budget",
-    ["year", "category", "month", "amount"],
-    sourceRows,
-  );
-
-  console.log("Reconciling against what actually landed in the database...");
-  const dbSummary = await fetchBudgetDbSummary(client, years);
-  let allMatch = true;
-  if (dbSummary.total !== sourceSummary.total) {
-    reportMismatch("total row count", sourceSummary.total, dbSummary.total);
-    allMatch = false;
-  }
-  for (const y of years) {
-    const s = sourceSummary.byYear[y] || { count: 0, sum: 0 },
-      d = dbSummary.byYear[y];
-    if (s.count !== d.count) {
-      reportMismatch(`${y} row count`, s.count, d.count);
-      allMatch = false;
-    }
-    if (Math.abs(s.sum - d.sum) > 0.01) {
-      reportMismatch(`${y} sum`, s.sum, d.sum);
-      allMatch = false;
-    }
-  }
-  if (!allMatch) {
-    console.error(
-      "RECONCILIATION FAILED for budget. Do NOT cut the app over yet.",
+  const ok = await withTransaction(client, async () => {
+    console.log("Inserting into Postgres...");
+    await chunkedInsert(
+      client,
+      "budget",
+      ["year", "category", "month", "amount"],
+      sourceRows,
     );
-    process.exitCode = 1;
-    return;
-  }
-  console.log("RECONCILED: budget row counts and year-sums match exactly.");
+
+    console.log("Reconciling against what actually landed in the database...");
+    const dbSummary = await fetchBudgetDbSummary(client, years);
+    let allMatch = true;
+    if (dbSummary.total !== sourceSummary.total) {
+      reportMismatch("total row count", sourceSummary.total, dbSummary.total);
+      allMatch = false;
+    }
+    for (const y of years) {
+      const s = sourceSummary.byYear[y] || { count: 0, sum: 0 },
+        d = dbSummary.byYear[y];
+      if (s.count !== d.count) {
+        reportMismatch(`${y} row count`, s.count, d.count);
+        allMatch = false;
+      }
+      if (Math.abs(s.sum - d.sum) > 0.01) {
+        reportMismatch(`${y} sum`, s.sum, d.sum);
+        allMatch = false;
+      }
+    }
+    if (!allMatch) {
+      console.error("RECONCILIATION FAILED for budget.");
+      return false;
+    }
+    console.log("RECONCILED: budget row counts and year-sums match exactly.");
+    return true;
+  });
+  if (!ok) process.exitCode = 1;
 }
 
 /* ------------------------------------------------------------------- Debts */
@@ -619,79 +648,84 @@ async function migrateDebts(client, wb) {
       `Skipping: debts already has ${existing[0].c} row(s). This script does not deduplicate.`,
     );
 
-  console.log("Inserting into Postgres (pass 1: rows, no parent links yet)...");
-  const cols = [
-    "kind",
-    "counterparty",
-    "direction",
-    "description",
-    "date",
-    "amount",
-    "owner",
-    "notes",
-  ];
-  const newIds = await chunkedInsert(client, "debts", cols, sourceRows, {
-    returning: "id",
-  });
-  const idMap = new Map(sourceRows.map((r, i) => [r.sourceId, newIds[i]]));
+  const ok = await withTransaction(client, async () => {
+    console.log(
+      "Inserting into Postgres (pass 1: rows, no parent links yet)...",
+    );
+    const cols = [
+      "kind",
+      "counterparty",
+      "direction",
+      "description",
+      "date",
+      "amount",
+      "owner",
+      "notes",
+    ];
+    const newIds = await chunkedInsert(client, "debts", cols, sourceRows, {
+      returning: "id",
+    });
+    const idMap = new Map(sourceRows.map((r, i) => [r.sourceId, newIds[i]]));
 
-  const toLink = sourceRows.filter((r) => r.sourceParentId != null);
-  console.log(
-    `Inserting into Postgres (pass 2: linking ${toLink.length} payment row(s) to their debt)...`,
-  );
-  for (const r of toLink) {
-    const childId = idMap.get(r.sourceId);
-    const parentId = idMap.get(r.sourceParentId);
-    if (!parentId) {
-      console.error(
-        `  Could not resolve parent for source ID ${r.sourceId} (ParentID ${r.sourceParentId} not found among inserted rows).`,
+    const toLink = sourceRows.filter((r) => r.sourceParentId != null);
+    console.log(
+      `Inserting into Postgres (pass 2: linking ${toLink.length} payment row(s) to their debt)...`,
+    );
+    for (const r of toLink) {
+      const childId = idMap.get(r.sourceId);
+      const parentId = idMap.get(r.sourceParentId);
+      // Throws rather than skip-and-continue: within a transaction, an
+      // unresolvable link means the source data itself is inconsistent
+      // (a ParentID pointing nowhere) - better to roll back the whole
+      // section and surface that clearly than insert 32 good rows and one
+      // silently-unlinked payment.
+      if (!parentId)
+        throw new Error(
+          `Could not resolve parent for source ID ${r.sourceId} (ParentID ${r.sourceParentId} not found among inserted rows).`,
+        );
+      await client.query("UPDATE debts SET parent_id = $1 WHERE id = $2", [
+        parentId,
+        childId,
+      ]);
+    }
+
+    console.log("Reconciling against what actually landed in the database...");
+    const dbSummary = await fetchDebtsDbSummary(client);
+    let allMatch = true;
+    if (dbSummary.total !== sourceSummary.total) {
+      reportMismatch("total row count", sourceSummary.total, dbSummary.total);
+      allMatch = false;
+    }
+    for (const k of DEBT_KINDS) {
+      const s = sourceSummary.byKind[k],
+        d = dbSummary.byKind[k];
+      if (s.count !== d.count) {
+        reportMismatch(`${k} row count`, s.count, d.count);
+        allMatch = false;
+      }
+      if (Math.abs(s.sum - d.sum) > 0.01) {
+        reportMismatch(`${k} sum`, s.sum, d.sum);
+        allMatch = false;
+      }
+    }
+    if (dbSummary.linked !== sourceSummary.linked) {
+      reportMismatch(
+        "rows with a resolved parent link",
+        sourceSummary.linked,
+        dbSummary.linked,
       );
-      process.exitCode = 1;
-      continue;
-    }
-    await client.query("UPDATE debts SET parent_id = $1 WHERE id = $2", [
-      parentId,
-      childId,
-    ]);
-  }
-
-  console.log("Reconciling against what actually landed in the database...");
-  const dbSummary = await fetchDebtsDbSummary(client);
-  let allMatch = true;
-  if (dbSummary.total !== sourceSummary.total) {
-    reportMismatch("total row count", sourceSummary.total, dbSummary.total);
-    allMatch = false;
-  }
-  for (const k of DEBT_KINDS) {
-    const s = sourceSummary.byKind[k],
-      d = dbSummary.byKind[k];
-    if (s.count !== d.count) {
-      reportMismatch(`${k} row count`, s.count, d.count);
       allMatch = false;
     }
-    if (Math.abs(s.sum - d.sum) > 0.01) {
-      reportMismatch(`${k} sum`, s.sum, d.sum);
-      allMatch = false;
+    if (!allMatch) {
+      console.error("RECONCILIATION FAILED for debts.");
+      return false;
     }
-  }
-  if (dbSummary.linked !== sourceSummary.linked) {
-    reportMismatch(
-      "rows with a resolved parent link",
-      sourceSummary.linked,
-      dbSummary.linked,
+    console.log(
+      "RECONCILED: debts row counts, kind-sums, and parent links all match exactly.",
     );
-    allMatch = false;
-  }
-  if (!allMatch || process.exitCode) {
-    console.error(
-      "RECONCILIATION FAILED for debts. Do NOT cut the app over yet.",
-    );
-    process.exitCode = 1;
-    return;
-  }
-  console.log(
-    "RECONCILED: debts row counts, kind-sums, and parent links all match exactly.",
-  );
+    return true;
+  });
+  if (!ok) process.exitCode = 1;
 }
 
 /* ---------------------------------------------------------------- Balances */
@@ -802,41 +836,42 @@ async function migrateBalances(client, wb) {
       `Skipping: balances already has ${existing[0].c} row(s). This script does not deduplicate.`,
     );
 
-  console.log("Inserting into Postgres...");
-  await chunkedInsert(
-    client,
-    "balances",
-    ["date", "account", "owner", "kind", "balance", "notes"],
-    sourceRows,
-  );
-
-  console.log("Reconciling against what actually landed in the database...");
-  const dbSummary = await fetchBalancesDbSummary(client);
-  let allMatch = true;
-  if (dbSummary.total !== sourceSummary.total) {
-    reportMismatch("total row count", sourceSummary.total, dbSummary.total);
-    allMatch = false;
-  }
-  for (const k of BALANCE_KINDS) {
-    const s = sourceSummary.byKind[k],
-      d = dbSummary.byKind[k];
-    if (s.count !== d.count) {
-      reportMismatch(`${k} row count`, s.count, d.count);
-      allMatch = false;
-    }
-    if (Math.abs(s.sum - d.sum) > 0.01) {
-      reportMismatch(`${k} sum`, s.sum, d.sum);
-      allMatch = false;
-    }
-  }
-  if (!allMatch) {
-    console.error(
-      "RECONCILIATION FAILED for balances. Do NOT cut the app over yet.",
+  const ok = await withTransaction(client, async () => {
+    console.log("Inserting into Postgres...");
+    await chunkedInsert(
+      client,
+      "balances",
+      ["date", "account", "owner", "kind", "balance", "notes"],
+      sourceRows,
     );
-    process.exitCode = 1;
-    return;
-  }
-  console.log("RECONCILED: balances row counts and kind-sums match exactly.");
+
+    console.log("Reconciling against what actually landed in the database...");
+    const dbSummary = await fetchBalancesDbSummary(client);
+    let allMatch = true;
+    if (dbSummary.total !== sourceSummary.total) {
+      reportMismatch("total row count", sourceSummary.total, dbSummary.total);
+      allMatch = false;
+    }
+    for (const k of BALANCE_KINDS) {
+      const s = sourceSummary.byKind[k],
+        d = dbSummary.byKind[k];
+      if (s.count !== d.count) {
+        reportMismatch(`${k} row count`, s.count, d.count);
+        allMatch = false;
+      }
+      if (Math.abs(s.sum - d.sum) > 0.01) {
+        reportMismatch(`${k} sum`, s.sum, d.sum);
+        allMatch = false;
+      }
+    }
+    if (!allMatch) {
+      console.error("RECONCILIATION FAILED for balances.");
+      return false;
+    }
+    console.log("RECONCILED: balances row counts and kind-sums match exactly.");
+    return true;
+  });
+  if (!ok) process.exitCode = 1;
 }
 
 /* ---------------------------------------------------------------------- main */
