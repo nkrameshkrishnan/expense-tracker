@@ -22,6 +22,18 @@ insert into allowed_emails (email) values
   ('surya@example.com')
 on conflict (email) do nothing;
 
+-- RLS, no policies: the table this whole access-control system is built on
+-- must never be directly readable or writable by a client - not even by a
+-- signed-in household member. With RLS enabled and zero policies, every
+-- direct query against it is denied by default for anon/authenticated
+-- roles; is_allowed_household_member() below can still read it because it
+-- is SECURITY DEFINER, which runs as the function owner and bypasses RLS
+-- for that one internal query. Without this, the default Supabase grants on
+-- public-schema tables would let the anon key alone SELECT this list (an
+-- email leak) or INSERT/DELETE it (self-granting access to every other
+-- table by adding your own email to the allow-list).
+alter table allowed_emails enable row level security;
+
 -- Every policy below reuses this: true only for a signed-in session whose
 -- JWT email claim is on the list. auth.jwt() is only populated for an
 -- authenticated request, so an anonymous (anon-key-only, no session) request
@@ -100,6 +112,7 @@ create table if not exists balances (
   owner text not null default '',
   kind text not null check (kind in ('Asset', 'Liability')),
   balance numeric(14, 2) not null,
+  notes text not null default '',
   primary key (date, account)
 );
 
@@ -115,19 +128,20 @@ create policy "household can delete balances" on balances
   for delete using (is_allowed_household_member());
 
 -- ============================================================ debts
--- assets/store.js's SupabaseStore passes debt records through mostly
--- unshaped (insert(record) / update(record)), so this schema is inferred
--- from the accounting model in README.md ("Debts & Loans") rather than a
--- hardcoded client-side shape — adjust columns here if your actual records
--- carry different fields before applying.
+-- Column shape verified against a real export (Expense_Tracker_2026.xlsx's
+-- Debts tab: ID, Kind, ParentID, Counterparty, Direction, Description, Date,
+-- Amount, Owner, Notes) rather than inferred - counterparty and direction
+-- are always populated on both Debt and Payment rows in real data.
 create table if not exists debts (
   id bigint generated always as identity primary key,
   parent_id bigint references debts (id) on delete cascade,
   kind text not null check (kind in ('Debt', 'Payment')),
-  direction text check (direction in ('Owed', 'Lent')),
+  counterparty text not null,
+  direction text not null check (direction in ('Owed', 'Lent')),
+  description text not null default '',
   date date not null,
-  person text not null default '',
   amount numeric(12, 2) not null check (amount >= 0),
+  owner text not null default '',
   notes text not null default ''
 );
 
