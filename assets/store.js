@@ -8,11 +8,13 @@
    Config precedence: what you type under Data → Google Sheet (localStorage) wins over
    the build-time values injected from GitHub secrets. */
 
-<<<<<<< Updated upstream
-import { SHEETS_ENDPOINT, SHEETS_TOKEN, GOOGLE_CLIENT_ID, SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
-=======
-import { SHEETS_ENDPOINT, SHEETS_TOKEN, GOOGLE_CLIENT_ID } from "./config.js";
->>>>>>> Stashed changes
+import {
+  SHEETS_ENDPOINT,
+  SHEETS_TOKEN,
+  GOOGLE_CLIENT_ID,
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY,
+} from "./config.js";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -165,16 +167,14 @@ export const endpointSource = () =>
       ? "build"
       : "none";
 
-<<<<<<< Updated upstream
-export const SUPABASE_URL_KEY = 'ledger.supabaseUrl';
-export const SUPABASE_KEY_KEY = 'ledger.supabaseAnonKey';
-export const getSupabaseUrl = () => (localStorage.getItem(SUPABASE_URL_KEY) || SUPABASE_URL || '').trim();
-export const getSupabaseAnonKey = () => (localStorage.getItem(SUPABASE_KEY_KEY) || SUPABASE_ANON_KEY || '').trim();
+export const SUPABASE_URL_KEY = "ledger.supabaseUrl";
+export const SUPABASE_KEY_KEY = "ledger.supabaseAnonKey";
+export const getSupabaseUrl = () =>
+  (localStorage.getItem(SUPABASE_URL_KEY) || SUPABASE_URL || "").trim();
+export const getSupabaseAnonKey = () =>
+  (localStorage.getItem(SUPABASE_KEY_KEY) || SUPABASE_ANON_KEY || "").trim();
 
-const DB_NAME = 'ledger-expense-tracker';
-=======
 const DB_NAME = "ledger-expense-tracker";
->>>>>>> Stashed changes
 const DB_VERSION = 1;
 
 export function emptyBudget() {
@@ -192,7 +192,6 @@ export function normalise(r) {
   if (!TYPES.includes(type)) type = "Expense";
   const raw = r.category || r.cat;
   return {
-<<<<<<< Updated upstream
     // Sheets (via Code.gs) always returns a real JS number here already.
     // Postgres bigint columns (used for Supabase's identity primary keys)
     // serialize as STRINGS over JSON instead - both pg and PostgREST do
@@ -204,11 +203,7 @@ export function normalise(r) {
     // silently never matched a Postgres-sourced id against a coerced
     // Number(id), because the cached id was still a string.
     id: Number(r.id) || 0,
-    date: String(r.date || '').slice(0, 10),
-=======
-    id: r.id,
     date: String(r.date || "").slice(0, 10),
->>>>>>> Stashed changes
     type,
     // Any non-empty string is allowed: users can create their own categories,
     // and forcing unknown names to Miscellaneous would silently discard them.
@@ -623,13 +618,22 @@ class SheetsStore {
    fetch the SDK for them. */
 let supabaseSdkReady = null;
 function loadSupabaseSdk() {
-  if (typeof window !== 'undefined' && window.supabase?.createClient) return Promise.resolve();
+  if (typeof window !== "undefined" && window.supabase?.createClient)
+    return Promise.resolve();
   if (supabaseSdkReady) return supabaseSdkReady;
   supabaseSdkReady = new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
+    const s = document.createElement("script");
+    s.src =
+      "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js";
     s.onload = resolve;
-    s.onerror = () => { supabaseSdkReady = null; reject(new Error('Could not load the Supabase client library. Check your connection and try again.')); };
+    s.onerror = () => {
+      supabaseSdkReady = null;
+      reject(
+        new Error(
+          "Could not load the Supabase client library. Check your connection and try again.",
+        ),
+      );
+    };
     document.head.appendChild(s);
   });
   return supabaseSdkReady;
@@ -637,12 +641,12 @@ function loadSupabaseSdk() {
 
 class SupabaseStore {
   constructor(url, anonKey) {
-    this.kind = 'supabase';
+    this.kind = "supabase";
     this.url = url;
     this.anonKey = anonKey;
-    this.sb = null;       // created lazily once the SDK has loaded
-    this.cache = null;    // same accumulating, year-aware cache shape as SheetsStore
-    this.sheetName = 'Supabase';
+    this.sb = null; // created lazily once the SDK has loaded
+    this.cache = null; // same accumulating, year-aware cache shape as SheetsStore
+    this.sheetName = "Supabase";
     this.user = null;
   }
 
@@ -661,11 +665,20 @@ class SupabaseStore {
       the database side, the same job Code.gs's ALLOWED_EMAILS did. */
   async signInWithGoogleIdToken(idToken) {
     const sb = await this._client();
-    const { error } = await sb.auth.signInWithIdToken({ provider: 'google', token: idToken });
-    if (error) { const e = new Error(error.message); e.auth = true; throw e; }
+    const { error } = await sb.auth.signInWithIdToken({
+      provider: "google",
+      token: idToken,
+    });
+    if (error) {
+      const e = new Error(error.message);
+      e.auth = true;
+      throw e;
+    }
   }
 
-  async ping() { return this._ensure(); }
+  async ping() {
+    return this._ensure();
+  }
 
   async _ensure() {
     if (this.cache) return this.cache;
@@ -674,18 +687,36 @@ class SupabaseStore {
 
   async _loadYear(year) {
     const sb = await this._client();
-    const [{ data: tx, error: e1 }, { data: bg, error: e2 }, { data: bal, error: e3 }, { data: debts, error: e4 }] = await Promise.all([
-      sb.from('transactions').select('*').gte('date', `${year}-01-01`).lte('date', `${year}-12-31`).order('date', { ascending: false }),
-      sb.from('budget').select('*').eq('year', year),
-      sb.from('balances').select('*').order('date', { ascending: false }),
-      sb.from('debts').select('*'),
+    const [
+      { data: tx, error: e1 },
+      { data: bg, error: e2 },
+      { data: bal, error: e3 },
+      { data: debts, error: e4 },
+    ] = await Promise.all([
+      sb
+        .from("transactions")
+        .select("*")
+        .gte("date", `${year}-01-01`)
+        .lte("date", `${year}-12-31`)
+        .order("date", { ascending: false }),
+      sb.from("budget").select("*").eq("year", year),
+      sb.from("balances").select("*").order("date", { ascending: false }),
+      sb.from("debts").select("*"),
     ]);
     const err = e1 || e2 || e3 || e4;
-    if (err) { const e = new Error(err.message); if (/JWT|permission|RLS/i.test(err.message)) e.auth = true; throw e; }
+    if (err) {
+      const e = new Error(err.message);
+      if (/JWT|permission|RLS/i.test(err.message)) e.auth = true;
+      throw e;
+    }
     this.cache = {
-      transactions: tx.map(normalise), loadedYears: new Set([year]), allYearsLoaded: false,
-      budget: budgetRowsToShape(bg), budgetYear: year,
-      balances: bal || [], debts: debts || [],
+      transactions: tx.map(normalise),
+      loadedYears: new Set([year]),
+      allYearsLoaded: false,
+      budget: budgetRowsToShape(bg),
+      budgetYear: year,
+      balances: bal || [],
+      debts: debts || [],
     };
     return this.cache;
   }
@@ -694,11 +725,16 @@ class SupabaseStore {
     await this._ensure();
     if (this.cache.allYearsLoaded || this.cache.loadedYears.has(year)) return;
     const sb = await this._client();
-    const { data, error } = await sb.from('transactions').select('*')
-      .gte('date', `${year}-01-01`).lte('date', `${year}-12-31`);
+    const { data, error } = await sb
+      .from("transactions")
+      .select("*")
+      .gte("date", `${year}-01-01`)
+      .lte("date", `${year}-12-31`);
     if (error) throw new Error(error.message);
-    const seen = new Set(this.cache.transactions.map(r => r.id));
-    this.cache.transactions.push(...data.map(normalise).filter(r => !seen.has(r.id)));
+    const seen = new Set(this.cache.transactions.map((r) => r.id));
+    this.cache.transactions.push(
+      ...data.map(normalise).filter((r) => !seen.has(r.id)),
+    );
     this.cache.loadedYears.add(year);
   }
 
@@ -706,38 +742,63 @@ class SupabaseStore {
     await this._ensure();
     if (this.cache.allYearsLoaded) return;
     const sb = await this._client();
-    const { data, error } = await sb.from('transactions').select('*').order('date', { ascending: false });
+    const { data, error } = await sb
+      .from("transactions")
+      .select("*")
+      .order("date", { ascending: false });
     if (error) throw new Error(error.message);
-    const seen = new Set(this.cache.transactions.map(r => r.id));
-    this.cache.transactions.push(...data.map(normalise).filter(r => !seen.has(r.id)));
+    const seen = new Set(this.cache.transactions.map((r) => r.id));
+    this.cache.transactions.push(
+      ...data.map(normalise).filter((r) => !seen.has(r.id)),
+    );
     this.cache.allYearsLoaded = true;
   }
 
-  async list() { return (await this._ensure()).transactions; }
-  async getBalances() { return (await this._ensure()).balances; }
-  async getDebts() { return (await this._ensure()).debts; }
+  async list() {
+    return (await this._ensure()).transactions;
+  }
+  async getBalances() {
+    return (await this._ensure()).balances;
+  }
+  async getDebts() {
+    return (await this._ensure()).debts;
+  }
 
   async add(rec) {
-    const r = normalise(rec); delete r.id;
+    const r = normalise(rec);
+    delete r.id;
     const sb = await this._client();
-    const { data, error } = await sb.from('transactions').insert(r).select().single();
+    const { data, error } = await sb
+      .from("transactions")
+      .insert(r)
+      .select()
+      .single();
     if (error) throw new Error(error.message);
     const result = normalise(data);
     if (this.cache) this.cache.transactions.push(result);
     return result;
   }
   async bulkAdd(list, onProgress) {
-    const records = list.map(r => { const n = normalise(r); delete n.id; return n; });
+    const records = list.map((r) => {
+      const n = normalise(r);
+      delete n.id;
+      return n;
+    });
     const sb = await this._client();
     const CHUNK = 1000;
     let inserted = 0;
     for (let i = 0; i < records.length; i += CHUNK) {
-      const { data, error } = await sb.from('transactions').insert(records.slice(i, i + CHUNK)).select();
+      const { data, error } = await sb
+        .from("transactions")
+        .insert(records.slice(i, i + CHUNK))
+        .select();
       if (error) throw new Error(error.message);
       inserted += data.length;
       onProgress?.(Math.min(i + CHUNK, records.length), records.length);
     }
-    this.cache = null; await this._ensure(); await this.ensureAllYearsLoaded();
+    this.cache = null;
+    await this._ensure();
+    await this.ensureAllYearsLoaded();
     return inserted;
   }
   async update(id, rec) {
@@ -748,33 +809,47 @@ class SupabaseStore {
     const r = normalise({ ...rec, id });
     delete r.id;
     const sb = await this._client();
-    const { data, error } = await sb.from('transactions').update(r).eq('id', id).select().single();
+    const { data, error } = await sb
+      .from("transactions")
+      .update(r)
+      .eq("id", id)
+      .select()
+      .single();
     if (error) throw new Error(error.message);
     const result = normalise(data);
     if (this.cache) {
-      const i = this.cache.transactions.findIndex(x => x.id === result.id);
-      if (i !== -1) this.cache.transactions[i] = result; else this.cache.transactions.push(result);
+      const i = this.cache.transactions.findIndex((x) => x.id === result.id);
+      if (i !== -1) this.cache.transactions[i] = result;
+      else this.cache.transactions.push(result);
     }
     return result;
   }
   async remove(id) {
     const sb = await this._client();
-    const { error } = await sb.from('transactions').delete().eq('id', id);
+    const { error } = await sb.from("transactions").delete().eq("id", id);
     if (error) throw new Error(error.message);
-    if (this.cache) this.cache.transactions = this.cache.transactions.filter(x => x.id !== Number(id));
+    if (this.cache)
+      this.cache.transactions = this.cache.transactions.filter(
+        (x) => x.id !== Number(id),
+      );
   }
   async clear() {
     const sb = await this._client();
-    await sb.from('transactions').delete().neq('id', 0);
+    await sb.from("transactions").delete().neq("id", 0);
     this.cache = null;
   }
-  async isEmpty() { return (await this.list()).length === 0; }
+  async isEmpty() {
+    return (await this.list()).length === 0;
+  }
 
   async getBudget(year) {
     const cached = await this._ensure();
     if (!year || year === cached.budgetYear) return cached.budget;
     const sb = await this._client();
-    const { data, error } = await sb.from('budget').select('*').eq('year', year);
+    const { data, error } = await sb
+      .from("budget")
+      .select("*")
+      .eq("year", year);
     if (error) throw new Error(error.message);
     return budgetRowsToShape(data);
   }
@@ -783,28 +858,38 @@ class SupabaseStore {
     const rows = [];
     for (const category of Object.keys(budget))
       for (let month = 1; month <= 12; month++)
-        if (budget[category][month]) rows.push({ year, category, month, amount: budget[category][month] });
-    const { error } = await sb.from('budget').upsert(rows, { onConflict: 'year,category,month' });
+        if (budget[category][month])
+          rows.push({ year, category, month, amount: budget[category][month] });
+    const { error } = await sb
+      .from("budget")
+      .upsert(rows, { onConflict: "year,category,month" });
     if (error) throw new Error(error.message);
-    if (this.cache && year === this.cache.budgetYear) this.cache.budget = budget;
+    if (this.cache && year === this.cache.budgetYear)
+      this.cache.budget = budget;
     return budget;
   }
 
   async setBalances(date, entries) {
     const sb = await this._client();
-    const { error } = await sb.from('balances').upsert(entries.map(e => ({ date, ...e })), { onConflict: 'date,account' });
+    const { error } = await sb.from("balances").upsert(
+      entries.map((e) => ({ date, ...e })),
+      { onConflict: "date,account" },
+    );
     if (error) throw new Error(error.message);
     if (this.cache) await this._refreshBalances();
   }
   async deleteBalanceDate(date) {
     const sb = await this._client();
-    const { error } = await sb.from('balances').delete().eq('date', date);
+    const { error } = await sb.from("balances").delete().eq("date", date);
     if (error) throw new Error(error.message);
     if (this.cache) await this._refreshBalances();
   }
   async _refreshBalances() {
     const sb = await this._client();
-    const { data, error } = await sb.from('balances').select('*').order('date', { ascending: false });
+    const { data, error } = await sb
+      .from("balances")
+      .select("*")
+      .order("date", { ascending: false });
     if (!error) this.cache.balances = data;
   }
 
@@ -812,38 +897,60 @@ class SupabaseStore {
       JSON, unlike Sheets which always returns real numbers - same class of
       issue fixed in normalise() for transactions. Debts don't go through
       normalise() at all, so each method here coerces explicitly instead. */
-  _normDebt(d) { return { ...d, id: Number(d.id) || 0, parent_id: d.parent_id != null ? Number(d.parent_id) : null }; }
+  _normDebt(d) {
+    return {
+      ...d,
+      id: Number(d.id) || 0,
+      parent_id: d.parent_id != null ? Number(d.parent_id) : null,
+    };
+  }
 
   async addDebt(record) {
     const sb = await this._client();
-    const { data, error } = await sb.from('debts').insert(record).select().single();
+    const { data, error } = await sb
+      .from("debts")
+      .insert(record)
+      .select()
+      .single();
     if (error) throw new Error(error.message);
     const result = this._normDebt(data);
     if (this.cache) this.cache.debts.push(result);
     return result.id;
   }
   async updateDebt(id, record) {
-    const r = { ...record }; delete r.id;   // same identity-column constraint as transactions.update()
+    const r = { ...record };
+    delete r.id; // same identity-column constraint as transactions.update()
     const sb = await this._client();
-    const { data, error } = await sb.from('debts').update(r).eq('id', id).select().single();
+    const { data, error } = await sb
+      .from("debts")
+      .update(r)
+      .eq("id", id)
+      .select()
+      .single();
     if (error) throw new Error(error.message);
     const result = this._normDebt(data);
-    if (this.cache) { const i = this.cache.debts.findIndex(d => d.id === result.id); if (i !== -1) this.cache.debts[i] = result; }
+    if (this.cache) {
+      const i = this.cache.debts.findIndex((d) => d.id === result.id);
+      if (i !== -1) this.cache.debts[i] = result;
+    }
   }
   async deleteDebt(id) {
     // The debts.parent_id foreign key is ON DELETE CASCADE - deleting a debt
     // correctly removes its payments too, with no separate cleanup query.
     const numId = Number(id);
     const sb = await this._client();
-    const { error } = await sb.from('debts').delete().eq('id', id);
+    const { error } = await sb.from("debts").delete().eq("id", id);
     if (error) throw new Error(error.message);
-    if (this.cache) this.cache.debts = this.cache.debts.filter(d => d.id !== numId && d.parent_id !== numId);
+    if (this.cache)
+      this.cache.debts = this.cache.debts.filter(
+        (d) => d.id !== numId && d.parent_id !== numId,
+      );
   }
   async importDebts(records) {
     const sb = await this._client();
-    const { data, error } = await sb.from('debts').insert(records).select();
+    const { data, error } = await sb.from("debts").insert(records).select();
     if (error) throw new Error(error.message);
-    const results = data.map(d => this._normDebt(d));
+    const results = data.map((d) => this._normDebt(d));
     if (this.cache) this.cache.debts.push(...results);
     return { inserted: results.length };
   }
@@ -854,7 +961,8 @@ class SupabaseStore {
     needs to know which backend produced a budget. */
 function budgetRowsToShape(rows) {
   const full = emptyBudget();
-  for (const row of rows || []) if (full[row.category]) full[row.category][row.month] = Number(row.amount);
+  for (const row of rows || [])
+    if (full[row.category]) full[row.category][row.month] = Number(row.amount);
   return full;
 }
 
@@ -1166,13 +1274,13 @@ class MemoryStore {
 }
 
 export async function openStore(onNotice) {
-<<<<<<< Updated upstream
   // Supabase is preferred once BOTH pieces are configured - during a
   // transition period this lets the app be pointed at either backend
   // without disturbing whichever one is not yet set up. Falls through to
   // Sheets, then Local/Memory, on any failure - exactly the same graceful
   // degradation the app already had for Sheets alone.
-  const supabaseUrl = getSupabaseUrl(), supabaseKey = getSupabaseAnonKey();
+  const supabaseUrl = getSupabaseUrl(),
+    supabaseKey = getSupabaseAnonKey();
   if (supabaseUrl && supabaseKey) {
     try {
       const s = new SupabaseStore(supabaseUrl, supabaseKey);
@@ -1181,14 +1289,14 @@ export async function openStore(onNotice) {
       await s.ping();
       return s;
     } catch (e) {
-      onNotice?.(`Supabase unreachable: ${e.message} Falling back to Google Sheets or this browser's storage.`, 'bad');
+      onNotice?.(
+        `Supabase unreachable: ${e.message} Falling back to Google Sheets or this browser's storage.`,
+        "bad",
+      );
     }
   }
-  const endpoint = getEndpoint(), token = getToken();
-=======
   const endpoint = getEndpoint(),
     token = getToken();
->>>>>>> Stashed changes
   if (endpoint) {
     try {
       const s = new SheetsStore(endpoint, token);
@@ -1200,15 +1308,10 @@ export async function openStore(onNotice) {
         "bad",
       );
     }
-<<<<<<< Updated upstream
   } else if (!supabaseUrl) {
-    onNotice?.('No Google Sheet connected. Using browser storage — connect the sheet under Data.');
-=======
-  } else {
     onNotice?.(
       "No Google Sheet connected. Using browser storage — connect the sheet under Data.",
     );
->>>>>>> Stashed changes
   }
   try {
     return await LocalStore.open();
@@ -1221,8 +1324,4 @@ export async function openStore(onNotice) {
   }
 }
 
-<<<<<<< Updated upstream
 export { SheetsStore, SupabaseStore };
-=======
-export { SheetsStore };
->>>>>>> Stashed changes
