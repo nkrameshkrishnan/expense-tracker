@@ -802,7 +802,7 @@ class SupabaseStore {
       budget: budgetRowsToShape(bg),
       budgetYear: year,
       balances: bal || [],
-      debts: debts || [],
+      debts: (debts || []).map((d) => this._normDebt(d)),
     };
     return this.cache;
   }
@@ -985,15 +985,24 @@ class SupabaseStore {
     if (!error) this.cache.balances = data;
   }
 
-  /** Postgres bigint columns (id, parent_id) serialize as strings over
-      JSON, unlike Sheets which always returns real numbers - same class of
-      issue fixed in normalise() for transactions. Debts don't go through
-      normalise() at all, so each method here coerces explicitly instead. */
+  /** Postgres bigint/numeric columns (id, parent_id, amount) serialize as
+      strings over JSON, unlike Sheets which always returns real numbers -
+      same class of issue fixed in normalise() for transactions. Debts don't
+      go through normalise() at all, so each method here coerces explicitly
+      instead. Also renames parent_id -> parentId: the Postgres column is
+      snake_case, but app.js and every other store (LocalStore, MemoryStore)
+      use camelCase parentId throughout - e.g. relatedTransactions()/the
+      outstanding-balance calc in app.js filter on `d.parentId`. Left as
+      parent_id, a Supabase-sourced payment's parentId is always undefined,
+      so it never matches its debt: outstanding silently shows the full
+      principal as if zero payments had ever been made against it. */
   _normDebt(d) {
+    const { parent_id, ...rest } = d;
     return {
-      ...d,
+      ...rest,
       id: Number(d.id) || 0,
-      parent_id: d.parent_id != null ? Number(d.parent_id) : null,
+      parentId: parent_id != null ? Number(parent_id) : null,
+      amount: Number(d.amount) || 0,
     };
   }
 
@@ -1035,7 +1044,7 @@ class SupabaseStore {
     if (error) throw new Error(error.message);
     if (this.cache)
       this.cache.debts = this.cache.debts.filter(
-        (d) => d.id !== numId && d.parent_id !== numId,
+        (d) => d.id !== numId && d.parentId !== numId,
       );
   }
   async importDebts(records) {

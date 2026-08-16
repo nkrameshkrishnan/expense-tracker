@@ -2028,11 +2028,11 @@ function renderNetWorth() {
   </div>
 
   ${
-    state.store.kind !== "sheets"
+    !isRemoteStore(state.store)
       ? `<div class="nw-warn" style="border-left-color:var(--red)">
-    <b>Not connected to a Google Sheet.</b> Everything on this page is saved to
+    <b>Not connected to a Google Sheet or Supabase.</b> Everything on this page is saved to
     ${state.store.kind === "memory" ? "this session only \u2014 it will be lost on reload" : "this browser only"}.
-    Connect under <b>Data \u2192 Google Sheet</b> if you want balances to persist in your actual spreadsheet.
+    Connect under <b>Data \u2192 Google Sheet</b> (or configure Supabase) if you want balances to persist.
   </div>`
       : ""
   }
@@ -2941,17 +2941,12 @@ function renderBalanceForm(copyFrom) {
         )
       )
         return;
-      const target =
-        state.store.kind === "sheets"
-          ? "your Google Sheet"
-          : state.store.kind === "memory"
-            ? "this session only (nothing will be saved after reload)"
-            : "this browser only \u2014 NOT your Google Sheet";
+      const target = backendLabel(state.store);
       if (
-        state.store.kind !== "sheets" &&
+        !isRemoteStore(state.store) &&
         !confirm(
-          `Not connected to a Google Sheet right now. This import will go to ${target}.\n\n` +
-            `Connect first under Data \u2192 Google Sheet if you want it saved there instead. Continue anyway?`,
+          `Not connected to a Google Sheet or Supabase right now. This import will go to ${target}.\n\n` +
+            `Connect first under Data \u2192 Google Sheet (or configure Supabase) if you want it saved there instead. Continue anyway?`,
         )
       ) {
         out.textContent = "Cancelled.";
@@ -2970,7 +2965,7 @@ function renderBalanceForm(copyFrom) {
       if (done) {
         notice(
           `Imported ${rows.length} balances to ${target}.`,
-          state.store.kind === "sheets" ? "ok" : "bad",
+          isRemoteStore(state.store) ? "ok" : "bad",
         );
         renderNetWorth();
       }
@@ -2998,17 +2993,12 @@ function renderBalanceForm(copyFrom) {
       !confirm(`A snapshot for ${date} already exists. Replace it?`)
     )
       return;
-    const target =
-      state.store.kind === "sheets"
-        ? "your Google Sheet"
-        : state.store.kind === "memory"
-          ? "this session only (nothing will be saved after reload)"
-          : "this browser only \u2014 NOT your Google Sheet";
+    const target = backendLabel(state.store);
     if (
-      state.store.kind !== "sheets" &&
+      !isRemoteStore(state.store) &&
       !confirm(
-        `Not connected to a Google Sheet right now. This will save to ${target}.\n\n` +
-          `Connect first under Data \u2192 Google Sheet if you want it saved there instead. Continue anyway?`,
+        `Not connected to a Google Sheet or Supabase right now. This will save to ${target}.\n\n` +
+          `Connect first under Data \u2192 Google Sheet (or configure Supabase) if you want it saved there instead. Continue anyway?`,
       )
     )
       return;
@@ -3022,7 +3012,7 @@ function renderBalanceForm(copyFrom) {
     if (done) {
       notice(
         `Snapshot saved for ${date} to ${target}.`,
-        state.store.kind === "sheets" ? "ok" : "bad",
+        isRemoteStore(state.store) ? "ok" : "bad",
       );
       renderNetWorth();
     }
@@ -3238,8 +3228,7 @@ function renderData() {
         out.innerHTML = `<b class="over">No usable rows found on "${esc(sheet)}".</b>`;
         return;
       }
-      const dest =
-        state.store.kind === "sheets" ? "your Google Sheet" : "browser storage";
+      const dest = backendLabel(state.store);
       if (
         !confirm(
           `Import ${rows.length} rows from "${sheet}" into ${dest}?${skipped ? `\n\n${skipped} rows will be skipped (no valid date or amount).` : ""}`,
@@ -3265,8 +3254,7 @@ function renderData() {
   };
 
   $("#wipe").onclick = async () => {
-    const where =
-      state.store.kind === "sheets" ? "your Google Sheet" : "browser storage";
+    const where = backendLabel(state.store);
     if (
       !confirm(
         `Delete all ${state.rows.length} transactions from ${where}?\n\nThis cannot be undone.`,
@@ -3323,7 +3311,7 @@ document.querySelectorAll("#tabs button").forEach(
 /** First run only, and only into browser storage. Seeding a live Google Sheet
     behind your back would be the wrong default — do that from Data → Import. */
 async function seedIfEmpty() {
-  if (state.store.kind === "sheets") return;
+  if (isRemoteStore(state.store)) return;
   if (!(await state.store.isEmpty())) return;
   try {
     const [rows, budget] = await Promise.all([
@@ -3387,6 +3375,22 @@ function revealApp() {
 // Supabase connection is a success, not a degraded state, even though its
 // kind isn't "sheets".
 const isRemoteStore = (s) => s.kind === "sheets" || s.kind === "supabase";
+
+// Shared across every "where is this actually being saved" message (Net
+// worth import/save, transactions import, the wipe confirmation) - these
+// used to hardcode "your Google Sheet" vs a generic "browser storage"
+// fallback with no Supabase case at all, which understated the blast radius
+// of a destructive action (the wipe confirmation would call it "browser
+// storage" while about to delete from a live Supabase database) and warned
+// "not connected" on a page that was, in fact, connected.
+const backendLabel = (s) =>
+  s.kind === "sheets"
+    ? "your Google Sheet"
+    : s.kind === "supabase"
+      ? "your Supabase project"
+      : s.kind === "memory"
+        ? "this session only (nothing will be saved after reload)"
+        : "this browser only";
 
 async function boot() {
   startBootMessages();
