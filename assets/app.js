@@ -431,6 +431,7 @@ async function refresh() {
   const c = $("#conn");
   const label = {
     sheets: "\u25cf google sheet",
+    supabase: "\u25cf supabase",
     local: "\u25cf browser only",
     memory: "\u25cf session only",
   };
@@ -447,8 +448,10 @@ async function refresh() {
   c.title =
     state.store.kind === "sheets"
       ? `Reading and writing "${state.store.sheetName || "your sheet"}" live`
-      : "Not connected to a Google Sheet — changes stay in this browser";
-  c.className = "conn" + (state.store.kind === "sheets" ? " remote" : "");
+      : state.store.kind === "supabase"
+        ? "Reading and writing your Supabase project live"
+        : "Not connected to a Google Sheet or Supabase — changes stay in this browser";
+  c.className = "conn" + (isRemoteStore(state.store) ? " remote" : "");
 }
 
 /* ================================================================= DASHBOARD */
