@@ -130,6 +130,14 @@ function showGate(message) {
     google.accounts.id.initialize({
       client_id: cid,
       nonce: hashedNonce,
+      // Chrome is phasing out the legacy One Tap prompt path in favour of
+      // its native FedCM API; without this flag the library silently falls
+      // back to a shim that logs deprecation warnings (including an inner
+      // one about the nonce request shape) instead of using FedCM directly.
+      // The isNotDisplayed()/isSkippedMoment() checks in prompt() below
+      // still work under FedCM - Google's guide flags them only because
+      // their semantics narrow slightly, not because they stop working.
+      use_fedcm_for_prompt: true,
       callback: async (res) => {
         setIdToken(res.credential);
         setNonce(rawNonce);
