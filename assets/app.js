@@ -21,6 +21,8 @@ import {
   getIdToken,
   setIdToken,
   NET_WORTH_ACCOUNTS,
+  SheetsStore,
+  getToken,
 } from "./store.js";
 import {
   aggregate,
@@ -3089,29 +3091,17 @@ function renderData() {
       showGate();
       return;
     }
-    // openStore() already knows the SPECIFIC reason a connection failed - a
-    // retried-and-still-404, a rejected sign-in, a network drop - and reports
-    // it via onNotice. Passing () => {} here threw that reason away and
-    // replaced it with one generic message no matter what actually happened,
-    // which is exactly why "try again" looked like it fixed something
-    // mysterious: the real cause was never shown, so retrying was the only
-    // available diagnostic.
-    let reason = "";
+    // Tests the URL just entered directly via SheetsStore, not through
+    // openStore() - openStore() prefers Supabase whenever it is configured,
+    // which would skip ever trying this endpoint at all and report failure
+    // even when the sheet itself is fine. ping() already throws with the
+    // specific reason (and .auth set, for an expired/rejected sign-in) -
+    // withBusy's catch surfaces that directly, so there is no need to
+    // reconstruct a reason from onNotice callbacks here.
     await withBusy("Testing the connection", async () => {
-      // openStore() can call onNotice twice - once for why the sheet itself
-      // failed, and again if the LocalStore fallback also fails for an
-      // unrelated reason (IndexedDB disabled, private browsing, etc). Only
-      // the FIRST message is the one this button is actually testing; a
-      // second, unrelated failure overwriting it would show the wrong reason.
-      state.store = await openStore((msg) => {
-        if (!reason) reason = msg;
-      });
-      if (state.store.kind !== "sheets") {
-        throw new Error(
-          reason ||
-            "could not reach the sheet with that URL \u2014 check it is deployed and you are signed in with an allowed account",
-        );
-      }
+      const s = new SheetsStore(url, getToken());
+      await s.ping();
+      state.store = s;
       await refresh();
       // This button is a one-time, manual "does this actually work" check,
       // not a hot path - unlike normal boot, waiting the extra moment here
@@ -3355,6 +3345,12 @@ function revealApp() {
   if (header) header.style.visibility = "";
 }
 
+// "Connected to a real backend" - true for Sheets AND Supabase. Only
+// LocalStore/MemoryStore mean openStore() actually fell back; a resolved
+// Supabase connection is a success, not a degraded state, even though its
+// kind isn't "sheets".
+const isRemoteStore = (s) => s.kind === "sheets" || s.kind === "supabase";
+
 async function boot() {
   startBootMessages();
   state.store = await openStore(notice);
@@ -3368,7 +3364,7 @@ async function boot() {
   // starts, but no window is infinite - when it does exhaust, the only
   // previous recovery path was "go to Data, click Connect & test", which
   // nothing on screen actually pointed you toward.
-  if (getEndpoint() && state.store.kind !== "sheets") {
+  if (getEndpoint() && !isRemoteStore(state.store)) {
     notice(
       "Could not reach your Google Sheet just now \u2014 working from this browser\u2019s storage instead.",
       "bad",
@@ -3377,7 +3373,7 @@ async function boot() {
         onClick: async () => {
           const done = await withBusy("Reconnecting", async () => {
             state.store = await openStore(notice);
-            if (state.store.kind !== "sheets")
+            if (!isRemoteStore(state.store))
               throw new Error("still could not reach the sheet");
             await refresh();
             await state.store.ensureAllYearsLoaded?.(); // same reasoning as Connect & test: a rare, manual action, worth the accurate total
@@ -3405,7 +3401,7 @@ async function boot() {
   // either a real sheet connection OR real local data worth not disrupting
   // with a redirect - and keeps helping for as long as neither exists yet.
   const firstRun =
-    !getEndpoint() && state.store.kind !== "sheets" && state.rows.length === 0;
+    !getEndpoint() && !isRemoteStore(state.store) && state.rows.length === 0;
   // Was: `(location.hash || '#dashboard').slice(1) in VIEWS ? location.hash.slice(1) : 'dashboard'`
   // - the '#dashboard' fallback was only used for the membership CHECK, then
   // the true branch re-read the original (still-empty) location.hash a
