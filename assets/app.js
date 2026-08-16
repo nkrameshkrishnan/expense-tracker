@@ -163,6 +163,7 @@ function showGate(message) {
           await boot();
         } catch (e) {
           setIdToken("");
+          setNonce("");
           showGate(
             e?.message ||
               "Something went wrong loading your data. Please sign in again.",
@@ -209,6 +210,7 @@ function showGate(message) {
 
 function signOut() {
   setIdToken("");
+  setNonce("");
   try {
     google.accounts.id.disableAutoSelect();
   } catch {}
@@ -390,6 +392,7 @@ async function withBusy(label, fn) {
     // to the same re-sign-in screen the app uses on first load, instead.
     if (e?.auth) {
       setIdToken("");
+      setNonce("");
       showGate(e.message);
       return false;
     }
@@ -3496,6 +3499,7 @@ async function boot() {
   } catch (e) {
     if (e?.auth || /sign in|not permitted/i.test(e?.message || "")) {
       setIdToken("");
+      setNonce("");
       showGate(e.message);
     } else {
       revealApp();

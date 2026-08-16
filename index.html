@@ -3,6 +3,20 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Best-effort CSP: the real defense against injected data is esc() at every
+     render site in app.js, but this narrows the blast radius if that's ever
+     missed somewhere. style-src needs 'unsafe-inline' because templates set
+     inline style="" attributes (budget bar widths etc) directly; script-src
+     does not, which is the directive that actually matters for XSS. connect-src
+     covers Apps Script, its script.googleusercontent.com redirect target, and
+     Supabase - wildcarded to *.supabase.co since the project subdomain is
+     chosen per-deployment, not fixed at build time. frame-ancestors is not
+     supported in a <meta> CSP (HTTP-header-only per spec) so it is omitted
+     rather than silently ignored-and-assumed-active. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' https://accounts.google.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://*.supabase.co https://accounts.google.com https://oauth2.googleapis.com; frame-src https://accounts.google.com; object-src 'none'; base-uri 'self'; form-action 'self';"
+    />
     <title>Ledger &mdash; Expense Tracker 2026</title>
     <!-- Inline SVG favicon: no extra file to host, and it survives being served
      from a GitHub Pages subpath. Without an explicit <link>, browsers fall
@@ -35,7 +49,7 @@
         <div class="brand">
           <span class="brand-mark">&#8214;</span>
           <span class="brand-name">LEDGER</span>
-          <span class="brand-year">2026 &middot; CAD</span>
+          <span class="brand-Currency">&middot; CAD</span>
         </div>
         <nav class="tabs" id="tabs">
           <button data-tab="dashboard" class="on">Dashboard</button>

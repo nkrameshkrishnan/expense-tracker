@@ -21,8 +21,9 @@
  *    cleared slot. Deleting rows would eat into the tracker's pre-filled formula
  *    block one row at a time.
  *
- * Setup: Extensions → Apps Script, paste this, set SHARED_TOKEN, run `setup` once,
- * then Deploy → New deployment → Web app → Execute as Me, Access Anyone.
+ * Setup: Extensions → Apps Script, paste this, set OAUTH_CLIENT_ID and
+ * ALLOWED_EMAILS below, run `setup` once, then Deploy → New deployment →
+ * Web app → Execute as Me, Access Anyone.
  */
 
 /* ============================ AUTHENTICATION ============================
@@ -62,7 +63,10 @@ function requireUser(idToken) {
   if (OAUTH_CLIENT_ID.indexOf("CHANGE_ME") === 0) {
     throw new Error("OAUTH_CLIENT_ID is not configured in Code.gs.");
   }
-  if (!idToken) throw new Error("Sign in with Google to continue.");
+  if (!idToken) {
+    Logger.log("requireUser: rejected - no idToken supplied");
+    throw new Error("Sign in with Google to continue.");
+  }
 
   // Google's tokeninfo endpoint validates the signature for us, so no crypto
   // library is needed. Cache briefly so a burst of writes is not 200 round trips.
@@ -78,16 +82,27 @@ function requireUser(idToken) {
       encodeURIComponent(idToken),
     { muteHttpExceptions: true },
   );
-  if (res.getResponseCode() !== 200)
+  if (res.getResponseCode() !== 200) {
+    Logger.log(
+      "requireUser: rejected - Google tokeninfo returned " +
+        res.getResponseCode(),
+    );
     throw new Error("Google rejected that sign-in. Sign in again.");
+  }
 
   var info = JSON.parse(res.getContentText());
-  if (info.aud !== OAUTH_CLIENT_ID)
+  if (info.aud !== OAUTH_CLIENT_ID) {
+    Logger.log("requireUser: rejected - token issued for a different aud");
     throw new Error("That sign-in was issued for a different app.");
-  if (String(info.email_verified) !== "true")
+  }
+  if (String(info.email_verified) !== "true") {
+    Logger.log("requireUser: rejected - email not verified");
     throw new Error("Google account email is not verified.");
-  if (Number(info.exp) * 1000 < Date.now())
+  }
+  if (Number(info.exp) * 1000 < Date.now()) {
+    Logger.log("requireUser: rejected - token expired");
     throw new Error("Sign-in expired. Sign in again.");
+  }
 
   var email = String(info.email || "").toLowerCase();
   var allowed = false;
@@ -97,10 +112,16 @@ function requireUser(idToken) {
       break;
     }
   }
-  if (!allowed)
+  if (!allowed) {
+    // Logs the email, not the token - the point is to see WHO was refused
+    // (a real allow-list gap vs. someone probing), never a credential.
+    Logger.log(
+      "requireUser: rejected - " + email + " is not on ALLOWED_EMAILS",
+    );
     throw new Error(
       "Account " + email + " is not permitted to use this tracker.",
     );
+  }
 
   // Cache until the token expires, capped at 5 minutes.
   var ttl = Math.max(
