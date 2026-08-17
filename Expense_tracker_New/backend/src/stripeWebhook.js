@@ -21,6 +21,7 @@
 import { stripe } from "./stripe.js";
 import { planFromPriceId } from "./plans.js";
 import { runProvisioningTransaction } from "./db.js";
+import { sendPastDueEmail, sendDowngradedEmail } from "./notify.js";
 
 export const handler = async (event) => {
   const signature = event.headers?.["stripe-signature"] || event.headers?.["Stripe-Signature"];
@@ -81,6 +82,22 @@ export async function handleCheckoutCompleted(execute, session) {
   );
 }
 
+/** Looks up the email of the tenant's `owner`-role member from a
+    stripe_customer_id alone - the same no-app.tenant_id-set provisioning
+    context handleSubscriptionUpdated/handleSubscriptionDeleted already run
+    under, relying on the tenant_users_provisioning_select RLS policy
+    (db/schema.sql) the same way the update statements below rely on
+    tenants_provisioning_update. */
+async function ownerEmailForCustomer(execute, customerId) {
+  const rows = await execute.rows(
+    `select tu.email from tenant_users tu
+     join tenants t on t.id = tu.tenant_id
+     where t.stripe_customer_id = :customerId and tu.role = 'owner'`,
+    { customerId },
+  );
+  return rows[0]?.email;
+}
+
 export async function handleSubscriptionUpdated(execute, subscription) {
   // Stripe subscription statuses collapse to the two this app branches on:
   // 'past_due' maps directly; everything else that still represents a live,
@@ -93,6 +110,10 @@ export async function handleSubscriptionUpdated(execute, subscription) {
     status,
     customerId: subscription.customer,
   });
+  if (status === "past_due") {
+    const ownerEmail = await ownerEmailForCustomer(execute, subscription.customer);
+    if (ownerEmail) await sendPastDueEmail(ownerEmail);
+  }
 }
 
 export async function handleSubscriptionDeleted(execute, subscription) {
@@ -101,4 +122,6 @@ export async function handleSubscriptionDeleted(execute, subscription) {
      where stripe_customer_id = :customerId`,
     { customerId: subscription.customer },
   );
+  const ownerEmail = await ownerEmailForCustomer(execute, subscription.customer);
+  if (ownerEmail) await sendDowngradedEmail(ownerEmail);
 }

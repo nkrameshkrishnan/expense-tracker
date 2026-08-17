@@ -1,6 +1,7 @@
 import { test, mock, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { RDSDataClient } from "@aws-sdk/client-rds-data";
+import { SESClient } from "@aws-sdk/client-ses";
 import { freshDb, withProvisioning, makeExecute } from "./pg-harness.js";
 import { stripe } from "../src/stripe.js";
 import {
@@ -161,6 +162,100 @@ test("processing the same event twice is safe (idempotent)", async () => {
 
     const { rows } = await client.query(`select status from tenants where id = $1`, [tenantId]);
     assert.equal(rows[0].status, "past_due");
+  } finally {
+    await client.end();
+  }
+});
+
+// --- SES notifications: these two send real, mocked-SES-only email calls
+// out of the same business-logic functions as the rest of this section, for
+// the same reason spelled out in the block comment above (the real
+// `handler` has no path to the local Docker Postgres, so it can't be used
+// to verify a DB-driven owner-email lookup against seeded rows). Only
+// SESClient.prototype.send is mocked here - the tenant/tenant_users
+// lookups run for real, through RLS, the same as every other test below
+// the "Business logic" divider.
+
+test("customer.subscription.updated to past_due sends the past-due email to the owner", async () => {
+  const client = await freshDb();
+  try {
+    const tenantId = await seedTenant(client, { plan: "pro", status: "active" });
+    await withProvisioning(client, "owner-sub", async (c) => {
+      await c.query(
+        `insert into tenant_users (user_sub, tenant_id, email, role) values ('owner-sub', $1, 'owner@x.com', 'owner')`,
+        [tenantId],
+      );
+    });
+    const sent = [];
+    mock.method(SESClient.prototype, "send", async (command) => {
+      sent.push(command.input);
+      return {};
+    });
+
+    await withProvisioning(client, "stripe-webhook", (c) =>
+      handleSubscriptionUpdated(makeExecute(c), { customer: "cus_test123", status: "past_due" }),
+    );
+
+    assert.equal(sent.length, 1);
+    assert.deepEqual(sent[0].Destination.ToAddresses, ["owner@x.com"]);
+    assert.match(sent[0].Message.Subject.Data, /payment failed/i);
+  } finally {
+    await client.end();
+  }
+});
+
+test("customer.subscription.deleted sends the downgraded email to the owner", async () => {
+  const client = await freshDb();
+  try {
+    const tenantId = await seedTenant(client, { plan: "family", status: "active" });
+    await withProvisioning(client, "owner-sub", async (c) => {
+      await c.query(
+        `insert into tenant_users (user_sub, tenant_id, email, role) values ('owner-sub', $1, 'owner@x.com', 'owner')`,
+        [tenantId],
+      );
+    });
+    const sent = [];
+    mock.method(SESClient.prototype, "send", async (command) => {
+      sent.push(command.input);
+      return {};
+    });
+
+    await withProvisioning(client, "stripe-webhook", (c) =>
+      handleSubscriptionDeleted(makeExecute(c), { customer: "cus_test123" }),
+    );
+
+    assert.equal(sent.length, 1);
+    assert.deepEqual(sent[0].Destination.ToAddresses, ["owner@x.com"]);
+    assert.match(sent[0].Message.Subject.Data, /Free plan/);
+  } finally {
+    await client.end();
+  }
+});
+
+test("customer.subscription.updated NOT reaching past_due does not send any email", async () => {
+  const client = await freshDb();
+  try {
+    const tenantId = await seedTenant(client, { plan: "pro", status: "past_due" });
+    await withProvisioning(client, "owner-sub", async (c) => {
+      await c.query(
+        `insert into tenant_users (user_sub, tenant_id, email, role) values ('owner-sub', $1, 'owner@x.com', 'owner')`,
+        [tenantId],
+      );
+    });
+    const sent = [];
+    mock.method(SESClient.prototype, "send", async (command) => {
+      sent.push(command.input);
+      return {};
+    });
+
+    // Recovery: status goes from past_due back to active. Only the
+    // past_due branch should ever email - a recovering subscription must
+    // not trigger a past-due (or any) notification.
+    await withProvisioning(client, "stripe-webhook", (c) =>
+      handleSubscriptionUpdated(makeExecute(c), { customer: "cus_test123", status: "active" }),
+    );
+
+    assert.equal(sent.length, 0);
   } finally {
     await client.end();
   }
