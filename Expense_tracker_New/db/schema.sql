@@ -83,8 +83,25 @@ create policy tenant_invites_isolation on tenant_invites
 -- authorization boundary is "which Lambda code path runs this query", the
 -- same trust model the RDS Data API access pattern already relies on
 -- everywhere else in this schema.
+--
+-- EVERY provisioning policy below is scoped to "no app.tenant_id set".
+-- That scoping is load-bearing, not stylistic: permissive Postgres RLS
+-- policies combine with OR, so an unconditional `true` here does not just
+-- permit the provisioning session, it ORs itself into every steady-state
+-- tenant-scoped query too and silently cancels the corresponding
+-- *_isolation policy for the whole application. (That is exactly what
+-- happened to tenant_invites_provisioning_select: any tenant's owner/admin
+-- could read every other tenant's pending invite tokens via
+-- routes/tenants.js's listPendingInvites, and a token alone is enough to
+-- join that tenant - see postConfirmation.js.) Never write `using (true)`
+-- or `with check (true)` in this block.
+--
+-- runProvisioningTransaction (db.js) deliberately leaves app.tenant_id
+-- unset, so nullif(current_setting('app.tenant_id', true), '') is null is
+-- true for exactly those sessions and false for every request that went
+-- through runInTenantTransaction.
 create policy tenants_provisioning_insert on tenants
-  for insert with check (true);
+  for insert with check (nullif(current_setting('app.tenant_id', true), '') is null);
 -- Needed alongside the insert policy above: postConfirmation.js's
 -- `insert into tenants (name) values (...) returning id` requires the new
 -- row to be visible under RLS for RETURNING to succeed, not just
@@ -92,20 +109,15 @@ create policy tenants_provisioning_insert on tenants
 -- visibility. Without this, FORCE ROW LEVEL SECURITY (see below) makes
 -- every brand-new-tenant signup fail.
 --
--- Deliberately scoped to "no app.tenant_id set" (`using (true)` alone,
--- matching the other provisioning policies below, would additionally OR
--- into every steady-state tenant-scoped SELECT too - since permissive
--- policies combine with OR, a plain `true` here would let ANY signed-in
--- tenant read every OTHER tenant's row via a bare `select * from
--- tenants`, not just the provisioning session it's meant for).
+-- Scoped to "no app.tenant_id set" for the reason spelled out above.
 create policy tenants_provisioning_select on tenants
   for select using (nullif(current_setting('app.tenant_id', true), '') is null);
 create policy tenant_users_provisioning_insert on tenant_users
-  for insert with check (true);
+  for insert with check (nullif(current_setting('app.tenant_id', true), '') is null);
 create policy tenant_invites_provisioning_select on tenant_invites
-  for select using (true);
+  for select using (nullif(current_setting('app.tenant_id', true), '') is null);
 create policy tenant_invites_provisioning_update on tenant_invites
-  for update using (true);
+  for update using (nullif(current_setting('app.tenant_id', true), '') is null);
 
 -- ------------------------------------------------------------- transactions
 --
