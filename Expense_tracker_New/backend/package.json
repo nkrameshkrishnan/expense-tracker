@@ -1,0 +1,22 @@
+{
+  "name": "ledger-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Server-mediated API for Ledger's multi-tenant SaaS backend (API Gateway + Lambda + Aurora Serverless v2 + Cognito).",
+  "dependencies": {
+    "@aws-sdk/client-rds-data": "^3.600.0",
+    "@aws-sdk/client-cognito-identity-provider": "^3.600.0",
+    "aws-jwt-verify": "^4.0.1"
+  },
+  "devDependencies": {
+    "pg": "^8.12.0"
+  },
+  "scripts": {
+    "build": "sam build",
+    "deploy": "sam deploy --guided",
+    "local": "sam local start-api",
+    "test": "node --test test/"
+  }
+}
+

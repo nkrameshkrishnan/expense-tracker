@@ -1,0 +1,9 @@
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: ledger_test
+      POSTGRES_PASSWORD: ledger_test
+      POSTGRES_DB: ledger_test
+    ports:
+      - "5433:5432" # not 5432, so it never collides with a local Postgres install
