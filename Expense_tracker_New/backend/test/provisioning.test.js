@@ -72,15 +72,18 @@ test("an invite can be looked up and marked used with no app.tenant_id set", asy
 test("listPendingInvites never returns another tenant's invites", async () => {
   const client = await freshDb();
   try {
+    // plan: 'family' (cap 5), not the 'free' default (cap 1) - each tenant
+    // here seats an owner AND sends an invite, which Task 5's seat-cap
+    // check on createInvite would otherwise correctly reject.
     const tenantA = await withProvisioning(client, "seed-a", async (c) => {
       const { rows } = await c.query(
-        `insert into tenants (name) values ('Household A') returning id`,
+        `insert into tenants (name, plan) values ('Household A', 'family') returning id`,
       );
       return rows[0].id;
     });
     const tenantB = await withProvisioning(client, "seed-b", async (c) => {
       const { rows } = await c.query(
-        `insert into tenants (name) values ('Household B') returning id`,
+        `insert into tenants (name, plan) values ('Household B', 'family') returning id`,
       );
       return rows[0].id;
     });

@@ -4,6 +4,8 @@
    routes/*.js modules. Invite creation/consumption across the provisioning
    boundary is handled separately in postConfirmation.js. */
 
+import { SEAT_CAPS } from "../plans.js";
+
 export async function getMembership(execute, userSub) {
   const rows = await execute.rows(
     `select role from tenant_users where user_sub = :userSub`,
@@ -27,6 +29,27 @@ export async function listPendingInvites(execute) {
 }
 
 export async function createInvite(execute, { email, role }) {
+  const [{ plan }] = await execute.rows(
+    `select plan from tenants where id = cast(current_setting('app.tenant_id', true) as uuid)`,
+  );
+  // cast(... as int) rather than `::int`, same reason as
+  // listTransactionYears (transactions.js) and this function's own
+  // `cast(... as uuid)` below: the second colon of `::` is indistinguishable
+  // from a `:name` bind param to both the RDS Data API's named-parameter
+  // parser and this repo's test harness shim (test/pg-harness.js), so it
+  // fails the statement with an unbound `:int` parameter instead of casting.
+  const [{ count: memberCount }] = await execute.rows(
+    `select cast(count(*) as int) as count from tenant_users`,
+  );
+  const [{ count: pendingCount }] = await execute.rows(
+    `select cast(count(*) as int) as count from tenant_invites where used_at is null and expires_at > now()`,
+  );
+  if (memberCount + pendingCount >= SEAT_CAPS[plan]) {
+    throw new Error(
+      `This plan is limited to ${SEAT_CAPS[plan]} seat${SEAT_CAPS[plan] === 1 ? "" : "s"} - upgrade to invite more members.`,
+    );
+  }
+
   // cast(...) rather than the `::uuid` shorthand: the latter's second colon
   // is indistinguishable from a `:name` bind param to any regex-based
   // named-parameter translator (see test/tenants-route.test.js's execute

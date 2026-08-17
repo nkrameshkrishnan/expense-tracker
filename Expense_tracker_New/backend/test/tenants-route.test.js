@@ -8,7 +8,10 @@ test("listMembers/getMembership/createInvite/revokeInvite round-trip", async () 
   try {
     const tenantId = await withProvisioning(client, "seed-user", async (c) => {
       const { rows } = await c.query(
-        `insert into tenants (name) values ('Household') returning id`,
+        // plan: 'family' (cap 5), not the 'free' default (cap 1) - this
+        // test seats an owner AND sends an invite, which Task 5's seat-cap
+        // check on createInvite would otherwise correctly reject.
+        `insert into tenants (name, plan) values ('Household', 'family') returning id`,
       );
       return rows[0].id;
     });
