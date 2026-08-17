@@ -1,0 +1,290 @@
+# AWS SAM template for Ledger's server-mediated backend.
+#
+# Networking is self-contained: the VPC/subnets/DB subnet group below are
+# created fresh by this template rather than depending on an existing
+# account VPC, so `sam deploy` works standalone. This is deliberately
+# minimal — no NAT gateway, no internet gateway, no route beyond local —
+# because the RDS Data API doesn't need it: DataFunction/PostConfirmation-
+# Function call the public `rds-data.amazonaws.com` endpoint directly (they
+# are NOT in this VPC at all), and that AWS-managed service is what actually
+# reaches into the cluster's subnets on the backend's behalf. The only thing
+# that genuinely can't be filled in here is the Google OAuth client
+# id/secret for the Cognito identity provider (reuse the existing Google
+# Cloud OAuth app this project already has for Google Sign-In, or create a
+# new one scoped to this API) — those are real secrets, supplied at deploy
+# time below, never committed.
+#
+# Deploy with: sam build && sam deploy --guided
+
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Ledger — server-mediated multi-tenant backend (Approach A)
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+  GoogleClientId:
+    Type: String
+    NoEcho: true
+  GoogleClientSecret:
+    Type: String
+    NoEcho: true
+  AllowedOrigin:
+    Type: String
+    Default: "*"
+    Description: Frontend origin for CORS (e.g. https://nkrameshkrishnan.github.io) — tighten from * before going live.
+  FrontendUrl:
+    Type: String
+    Description: >-
+      Exact frontend URL for Cognito's OAuth redirect (e.g.
+      https://nkrameshkrishnan.github.io/Expense_tracker_New/frontend/).
+      Unlike AllowedOrigin, Cognito's CallbackURLs/LogoutURLs reject "*"
+      outright — this must be a real, reachable URL, required (no default).
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 10
+    MemorySize: 256
+    Environment:
+      Variables:
+        DB_CLUSTER_ARN: !GetAtt DbCluster.DBClusterArn
+        DB_SECRET_ARN: !Ref DbSecret
+        DB_NAME: ledger
+        COGNITO_USER_POOL_ID: !Ref UserPool
+        COGNITO_CLIENT_ID: !Ref UserPoolClient
+        ALLOWED_ORIGIN: !Ref AllowedOrigin
+
+Resources:
+  # --------------------------------------------------------------- Compute
+  DataFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: handler.handler
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - rds-data:ExecuteStatement
+                - rds-data:BeginTransaction
+                - rds-data:CommitTransaction
+                - rds-data:RollbackTransaction
+              Resource: !GetAtt DbCluster.DBClusterArn
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref DbSecret
+      Events:
+        Get:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /data
+            Method: GET
+        Post:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /data
+            Method: POST
+        Options:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /data
+            Method: OPTIONS
+
+  PostConfirmationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: postConfirmation.handler
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - rds-data:ExecuteStatement
+                - rds-data:BeginTransaction
+                - rds-data:CommitTransaction
+                - rds-data:RollbackTransaction
+              Resource: !GetAtt DbCluster.DBClusterArn
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref DbSecret
+            - Effect: Allow
+              Action: cognito-idp:AdminUpdateUserAttributes
+              Resource: !GetAtt UserPool.Arn
+
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref Stage
+      CorsConfiguration:
+        AllowOrigins: [!Ref AllowedOrigin]
+        AllowHeaders: [authorization, content-type, x-tenant-id]
+        AllowMethods: [GET, POST, OPTIONS]
+
+  # ------------------------------------------------------------------ Auth
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub ledger-${Stage}
+      AutoVerifiedAttributes: [email]
+      Schema:
+        - Name: email
+          Required: true
+          Mutable: true
+        - Name: tenant_id
+          AttributeDataType: String
+          Mutable: true
+      LambdaConfig:
+        PostConfirmation: !GetAtt PostConfirmationFunction.Arn
+
+  PostConfirmationInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref PostConfirmationFunction
+      Action: lambda:InvokeFunction
+      Principal: cognito-idp.amazonaws.com
+      SourceArn: !GetAtt UserPool.Arn
+
+  GoogleIdentityProvider:
+    Type: AWS::Cognito::UserPoolIdentityProvider
+    Properties:
+      UserPoolId: !Ref UserPool
+      ProviderName: Google
+      ProviderType: Google
+      ProviderDetails:
+        client_id: !Ref GoogleClientId
+        client_secret: !Ref GoogleClientSecret
+        authorize_scopes: "profile email openid"
+      AttributeMapping:
+        email: email
+        username: sub
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    DependsOn: GoogleIdentityProvider
+    Properties:
+      UserPoolId: !Ref UserPool
+      SupportedIdentityProviders: [Google]
+      AllowedOAuthFlows: [code]
+      AllowedOAuthScopes: [openid, email, profile]
+      AllowedOAuthFlowsUserPoolClient: true
+      GenerateSecret: false
+      CallbackURLs:
+        - !Ref FrontendUrl
+      LogoutURLs:
+        - !Ref FrontendUrl
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      UserPoolId: !Ref UserPool
+      Domain: !Sub ledger-${Stage}-${AWS::AccountId}
+
+  # --------------------------------------------------------------- Networking
+  # Minimal, self-contained, no egress at all — nothing in these subnets ever
+  # needs to reach the internet (see the file-level comment at the top for
+  # why: DataFunction talks to the public rds-data.amazonaws.com endpoint,
+  # never to the cluster directly). No NAT gateway, no internet gateway,
+  # both of which would be pure ongoing cost for zero benefit here.
+  LedgerVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.42.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub ledger-${Stage}
+
+  DbSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref LedgerVpc
+      CidrBlock: 10.42.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      Tags:
+        - Key: Name
+          Value: !Sub ledger-${Stage}-db-a
+
+  DbSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref LedgerVpc
+      CidrBlock: 10.42.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      Tags:
+        - Key: Name
+          Value: !Sub ledger-${Stage}-db-b
+
+  DbSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: !Sub Aurora subnets for ledger-${Stage}
+      SubnetIds:
+        - !Ref DbSubnetA
+        - !Ref DbSubnetB
+
+  DbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "Ledger ${Stage} Aurora cluster — no inbound rules needed, Data API doesn't connect over the VPC network path"
+      VpcId: !Ref LedgerVpc
+      SecurityGroupEgress:
+        # Deny-all egress (the implicit default allow-all removed) — nothing
+        # in this security group ever needs to reach out; the Lambdas that talk
+        # to the Data API live entirely outside this VPC.
+        - IpProtocol: "-1"
+          CidrIp: 127.0.0.1/32
+
+  # -------------------------------------------------------------- Database
+  # Aurora Serverless v2 at floor capacity (0.5 ACU) — near-zero idle cost,
+  # matches the pre-validation stage this scaffold targets. EnableHttpEndpoint
+  # turns on the Data API so DataFunction/PostConfirmationFunction never need
+  # VPC networking of their own.
+  DbSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ledger-${Stage}-db-credentials
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "ledger_admin"}'
+        GenerateStringKey: password
+        ExcludeCharacters: '"@/\'
+        PasswordLength: 32
+
+  DbCluster:
+    Type: AWS::RDS::DBCluster
+    Properties:
+      Engine: aurora-postgresql
+      EngineMode: provisioned
+      EngineVersion: "15.4"
+      DatabaseName: ledger
+      MasterUsername: !Sub "{{resolve:secretsmanager:${DbSecret}::username}}"
+      MasterUserPassword: !Sub "{{resolve:secretsmanager:${DbSecret}::password}}"
+      EnableHttpEndpoint: true
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      VpcSecurityGroupIds: [!Ref DbSecurityGroup]
+      ServerlessV2ScalingConfiguration:
+        MinCapacity: 0.5
+        MaxCapacity: 2
+
+  DbInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: aurora-postgresql
+      DBInstanceClass: db.serverless
+      DBClusterIdentifier: !Ref DbCluster
+      DBSubnetGroupName: !Ref DbSubnetGroup
+
+Outputs:
+  ApiUrl:
+    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}"
+  UserPoolId:
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Value: !Ref UserPoolClient
+  UserPoolDomain:
+    Value: !Sub "https://ledger-${Stage}-${AWS::AccountId}.auth.${AWS::Region}.amazoncognito.com"

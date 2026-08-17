@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Best-effort CSP: the real defense against injected data is esc() at every
+     render site in app.js, but this narrows the blast radius if that's ever
+     missed somewhere. style-src needs 'unsafe-inline' because templates set
+     inline style="" attributes (budget bar widths etc) directly; script-src
+     does not, which is the directive that actually matters for XSS. connect-src
+     covers the API Gateway endpoint - wildcarded to *.execute-api.<region>.amazonaws.com
+     since the API id is chosen per-deployment; adjust the region segment to match
+     wherever backend/template.yaml is actually deployed. No Google/Cognito origin
+     is needed here: sign-in is a full-page redirect to Cognito's Hosted UI, which
+     isn't governed by connect-src or form-action. frame-ancestors is not supported
+     in a <meta> CSP (HTTP-header-only per spec) so it is omitted rather than
+     silently ignored-and-assumed-active. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://*.execute-api.us-east-1.amazonaws.com; object-src 'none'; base-uri 'self'; form-action 'self';"
+    />
+    <title>Ledger &mdash; Expense Tracker 2026</title>
+    <!-- Inline SVG favicon: no extra file to host, and it survives being served
+     from a GitHub Pages subpath. Without an explicit <link>, browsers fall
+     back to requesting /favicon.ico at the domain root, which 404s on any
+     project page like this one (nkrameshkrishnan.github.io/expense-tracker/). -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%2312161c'/%3E%3Ctext x='50' y='68' font-size='58' font-family='Georgia,serif' fill='%23b45309' text-anchor='middle'%3E%E2%80%96%3C/text%3E%3C/svg%3E"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./assets/styles.css" />
+    <!-- No Google Identity Services script here: Cognito's Hosted UI federates to
+     Google itself (see assets/app.js's showGate/cognitoAuthorizeUrl), so sign-in
+     is a full-page redirect rather than an embedded widget. -->
+    <script
+      src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"
+      defer
+    ></script>
+    <!-- SheetJS (930KB, ~5x this app's own code) is no longer loaded here. It is
+     only ever used by Export/Import on the Data tab, so xlsxio.js injects it
+     on first actual use instead of blocking every page load for a feature
+     most sessions never touch. -->
+  </head>
+  <body>
+    <header class="rail" id="app-header" style="visibility: hidden">
+      <div class="rail-in">
+        <div class="brand">
+          <span class="brand-mark">&#8214;</span>
+          <span class="brand-name">LEDGER</span>
+          <span class="brand-Currency"> &middot; CAD</span>
+        </div>
+        <nav class="tabs" id="tabs">
+          <button data-tab="dashboard" class="on">Dashboard</button>
+          <button data-tab="add">Add</button>
+          <button data-tab="transactions">Transactions</button>
+          <button data-tab="budget">Budget</button>
+          <button data-tab="networth">Net worth</button>
+          <button data-tab="data">Data</button>
+        </nav>
+        <div class="people" id="people"></div>
+        <div class="conn" id="conn" title="Storage backend">&#9679; local</div>
+      </div>
+    </header>
+
+    <div id="banner" class="banner" hidden></div>
+
+    <!-- Shown by inline HTML, not by script - so there is no blank-page gap while
+     the JS bundle parses and starts running. app.js hides it once it knows
+     whether to show the sign-in gate or real content, whichever comes first. -->
+    <div id="boot-loading">
+      <div class="boot-mark">&#8214;</div>
+      <div class="boot-spin"></div>
+      <div class="boot-msg" id="boot-msg"></div>
+    </div>
+
+    <div id="gate" hidden></div>
+    <main id="view"></main>
+
+    <footer class="foot">
+      <span id="foot-count">&mdash;</span>
+      <span class="sep">/</span>
+      <span>Amounts always positive. <b>Type</b> decides the sign.</span>
+    </footer>
+
+    <script type="module" src="./assets/app.js"></script>
+  </body>
+</html>
