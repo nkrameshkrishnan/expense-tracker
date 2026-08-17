@@ -19,12 +19,35 @@ const CONNECTION = {
   database: "ledger_test",
 };
 
+// Arbitrary constant identifying this harness's schema-rebuild critical
+// section for pg_advisory_lock. Any bigint works; it just needs to be
+// unique enough not to collide with a lock some other tool in this
+// database happens to use (nothing else here uses advisory locks).
+const SCHEMA_REBUILD_LOCK_KEY = 72700118;
+
 /** Connects to the local test Postgres, drops and recreates the public
     schema, applies db/schema.sql fresh, and returns a connected client.
-    Callers must call client.end() when done. */
+    Callers must call client.end() when done.
+
+    node:test runs multiple test FILES concurrently as separate processes
+    by default (test-isolation=process), and every test file calls
+    freshDb() against the same shared local Postgres instance. Without
+    serialization, one file's `drop schema public cascade` can fire while
+    another file's freshDb() caller is still mid-test against tables that
+    call just dropped out from under it - corrupting results (and, worse,
+    leaving a half-broken connection that never cleanly resolves,
+    appearing to hang `node --test` indefinitely rather than failing
+    fast). pg_advisory_lock is session-scoped and automatically released
+    when the session ends, so acquiring it here - before the destructive
+    DROP/CREATE - and holding it for the connection's entire lifetime (not
+    just through schema setup) serializes whole freshDb()-using test
+    bodies across concurrent files/processes without requiring every
+    caller to remember to release anything; it releases itself on
+    client.end(). */
 export async function freshDb() {
   const client = new pg.Client(CONNECTION);
   await client.connect();
+  await client.query("select pg_advisory_lock($1)", [SCHEMA_REBUILD_LOCK_KEY]);
   await client.query("drop schema public cascade; create schema public;");
   const schema = readFileSync(SCHEMA_PATH, "utf8");
   await client.query(schema);

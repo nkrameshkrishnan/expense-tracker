@@ -16,7 +16,7 @@
     "build": "sam build",
     "deploy": "sam deploy --guided",
     "local": "sam local start-api",
-    "test": "node --test test/"
+    "test": "node --test test/*.test.js"
   }
 }
 

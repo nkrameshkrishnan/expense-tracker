@@ -50,8 +50,11 @@ create table tenant_invites (
 );
 
 alter table tenants enable row level security;
+alter table tenants force row level security;
 alter table tenant_users enable row level security;
+alter table tenant_users force row level security;
 alter table tenant_invites enable row level security;
+alter table tenant_invites force row level security;
 
 -- Membership rows are only ever read/written by the backend using the
 -- tenant-scoped session var below; there is no separate "admin bypass" role
@@ -66,11 +69,11 @@ alter table tenant_invites enable row level security;
 -- carve-outs from this isolation, scoped as narrowly as the bootstrap
 -- problem allows.
 create policy tenant_users_isolation on tenant_users
-  using (tenant_id = current_setting('app.tenant_id', true)::uuid);
+  using (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
 create policy tenants_isolation on tenants
-  using (id = current_setting('app.tenant_id', true)::uuid);
+  using (id = nullif(current_setting('app.tenant_id', true), '')::uuid);
 create policy tenant_invites_isolation on tenant_invites
-  using (tenant_id = current_setting('app.tenant_id', true)::uuid);
+  using (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
 
 -- Provisioning bootstrap (see backend/src/db.js's runProvisioningTransaction
 -- and backend/src/postConfirmation.js): creating a brand-new tenant or
@@ -82,6 +85,21 @@ create policy tenant_invites_isolation on tenant_invites
 -- everywhere else in this schema.
 create policy tenants_provisioning_insert on tenants
   for insert with check (true);
+-- Needed alongside the insert policy above: postConfirmation.js's
+-- `insert into tenants (name) values (...) returning id` requires the new
+-- row to be visible under RLS for RETURNING to succeed, not just
+-- insertable - an INSERT policy's WITH CHECK alone does not grant that
+-- visibility. Without this, FORCE ROW LEVEL SECURITY (see below) makes
+-- every brand-new-tenant signup fail.
+--
+-- Deliberately scoped to "no app.tenant_id set" (`using (true)` alone,
+-- matching the other provisioning policies below, would additionally OR
+-- into every steady-state tenant-scoped SELECT too - since permissive
+-- policies combine with OR, a plain `true` here would let ANY signed-in
+-- tenant read every OTHER tenant's row via a bare `select * from
+-- tenants`, not just the provisioning session it's meant for).
+create policy tenants_provisioning_select on tenants
+  for select using (nullif(current_setting('app.tenant_id', true), '') is null);
 create policy tenant_users_provisioning_insert on tenant_users
   for insert with check (true);
 create policy tenant_invites_provisioning_select on tenant_invites
@@ -108,9 +126,10 @@ create table transactions (
 create index transactions_tenant_date_idx on transactions (tenant_id, date desc);
 
 alter table transactions enable row level security;
+alter table transactions force row level security;
 create policy transactions_isolation on transactions
-  using (tenant_id = current_setting('app.tenant_id', true)::uuid)
-  with check (tenant_id = current_setting('app.tenant_id', true)::uuid);
+  using (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+  with check (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
 
 -- ------------------------------------------------------------------- budget
 create table budget (
@@ -123,9 +142,10 @@ create table budget (
 );
 
 alter table budget enable row level security;
+alter table budget force row level security;
 create policy budget_isolation on budget
-  using (tenant_id = current_setting('app.tenant_id', true)::uuid)
-  with check (tenant_id = current_setting('app.tenant_id', true)::uuid);
+  using (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+  with check (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
 
 -- ----------------------------------------------------------------- balances
 create table balances (
@@ -139,9 +159,10 @@ create table balances (
 );
 
 alter table balances enable row level security;
+alter table balances force row level security;
 create policy balances_isolation on balances
-  using (tenant_id = current_setting('app.tenant_id', true)::uuid)
-  with check (tenant_id = current_setting('app.tenant_id', true)::uuid);
+  using (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+  with check (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
 
 -- -------------------------------------------------------------------- debts
 create table debts (
@@ -157,6 +178,7 @@ create table debts (
 create index debts_tenant_parent_idx on debts (tenant_id, parent_id);
 
 alter table debts enable row level security;
+alter table debts force row level security;
 create policy debts_isolation on debts
-  using (tenant_id = current_setting('app.tenant_id', true)::uuid)
-  with check (tenant_id = current_setting('app.tenant_id', true)::uuid);
+  using (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+  with check (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
