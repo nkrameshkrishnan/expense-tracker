@@ -16,6 +16,7 @@ import * as debts from "./routes/debts.js";
 import * as tenants from "./routes/tenants.js";
 import { createCheckoutSession, createPortalSession } from "./routes/billing.js";
 import { stripe } from "./stripe.js";
+import { FEATURES } from "./plans.js";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": process.env.ALLOWED_ORIGIN || "*",
@@ -77,6 +78,11 @@ async function handleGet(user, event) {
   const txYear = qs.txYear !== undefined ? Number(qs.txYear) : undefined;
 
   return runInTenantTransaction(user.tenantId, user.sub, async (execute) => {
+    const [tenantRow] = await execute.rows(
+      `select plan, status, stripe_customer_id from tenants where id = cast(current_setting('app.tenant_id', true) as uuid)`,
+    );
+    const features = FEATURES[tenantRow.plan] || FEATURES.free;
+
     const [
       transactions,
       budgetRows,
@@ -86,11 +92,11 @@ async function handleGet(user, event) {
       membership,
       members,
     ] = await Promise.all([
-      tx.listTransactions(execute, { txYear }),
+      tx.listTransactions(execute, { txYear }, features),
       budget.getBudgetRows(execute, year || new Date().getFullYear()),
-      balances.listBalances(execute),
+      balances.listBalances(execute, features),
       debts.listDebts(execute),
-      tx.listTransactionYears(execute),
+      tx.listTransactionYears(execute, features),
       tenants.getMembership(execute, user.sub),
       tenants.listMembers(execute),
     ]);
@@ -110,6 +116,18 @@ async function handleGet(user, event) {
       user: { email: user.email, role },
       members,
       invites,
+      // hasStripeCustomer, not stripe_subscription_id: the webhook handler
+      // (Task 4/7) CLEARS stripe_subscription_id on cancellation, so it can
+      // never be true for a tenant who was just downgraded - it would be
+      // useless as the "used to be subscribed" signal Task 9's downgrade
+      // banner needs. stripe_customer_id is set once on first checkout and
+      // never cleared by any handler, so it survives a downgrade and is the
+      // correct durable signal.
+      tenant: {
+        plan: tenantRow.plan,
+        status: tenantRow.status,
+        hasStripeCustomer: !!tenantRow.stripe_customer_id,
+      },
     };
   });
 }

@@ -6,26 +6,30 @@
 
 import { validateTransaction, ValidationError } from "../validate.js";
 
-export async function listTransactions(execute, { txYear } = {}) {
+export async function listTransactions(execute, { txYear } = {}, features) {
   if (txYear === -1) return []; // metadata-only refresh, mirrors Code.gs's txYear:-1 convention
-  const where = txYear ? `where date >= :start and date <= :end` : "";
-  const params = txYear
-    ? { start: `${txYear}-01-01`, end: `${txYear}-12-31` }
-    : {};
+  const historyFloor = features.historyMonths
+    ? `and date >= (current_date - interval '1 month' * ${Number(features.historyMonths)})`
+    : "";
+  const where = txYear ? `where date >= :start and date <= :end ${historyFloor}` : `where true ${historyFloor}`;
+  const params = txYear ? { start: `${txYear}-01-01`, end: `${txYear}-12-31` } : {};
   return execute.rows(
     `select * from transactions ${where} order by date desc, id desc`,
     params,
   );
 }
 
-export async function listTransactionYears(execute) {
+export async function listTransactionYears(execute, features) {
+  const historyFloor = features.historyMonths
+    ? `where date >= (current_date - interval '1 month' * ${Number(features.historyMonths)})`
+    : "";
   // cast(... as int) rather than `::int`: the second colon of `::` is
   // indistinguishable from a `:name` bind param to the RDS Data API's
   // named-parameter parser, which then fails the statement with an unbound
   // parameter. Same reason routes/tenants.js's createInvite avoids `::uuid`.
   // This one runs on every GET /data, so it is on the hottest path there is.
   const rows = await execute.rows(
-    `select distinct cast(extract(year from date) as int) as year from transactions order by year desc`,
+    `select distinct cast(extract(year from date) as int) as year from transactions ${historyFloor} order by year desc`,
   );
   return rows.map((r) => r.year);
 }

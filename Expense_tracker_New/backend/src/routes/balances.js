@@ -1,6 +1,7 @@
 import { isoDate, validateBalanceEntry, ValidationError } from "../validate.js";
 
-export async function listBalances(execute) {
+export async function listBalances(execute, features) {
+  if (!features.netWorth) return [];
   return execute.rows(`select * from balances order by date desc`);
 }
 
