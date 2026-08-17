@@ -16,6 +16,7 @@
    token on every later request. */
 
 import { runProvisioningTransaction } from "./db.js";
+import { SEAT_CAPS } from "./plans.js";
 import {
   CognitoIdentityProviderClient,
   AdminUpdateUserAttributesCommand,
@@ -54,6 +55,31 @@ async function resolveTenant({ sub, email, inviteToken }) {
       );
       if (invites[0]) {
         const { tenant_id, role } = invites[0];
+        const [{ plan }] = await execute.rows(
+          `select plan from tenants where id = :tenantId`,
+          { tenantId: tenant_id },
+        );
+        // cast(... as int) rather than `::int`: same reason as
+        // routes/tenants.js's createInvite - the second colon of `::` is
+        // indistinguishable from a `:name` bind param to the RDS Data
+        // API's named-parameter parser.
+        const [{ count: memberCount }] = await execute.rows(
+          `select cast(count(*) as int) as count from tenant_users where tenant_id = :tenantId`,
+          { tenantId: tenant_id },
+        );
+        // Hard, authoritative check: state can have changed (plan
+        // downgraded, another invite redeemed) since this invite was
+        // created - createInvite's check above is only a soft, best-effort
+        // warning at send time. Falling through to "create a new tenant"
+        // here would silently strand the invitee in the wrong household,
+        // so this rejects outright instead - same reasoning as an
+        // expired/invalid token, but the failure mode is different enough
+        // (the invite IS valid, the household just doesn't have room) that
+        // it deserves its own message when this ever gets surfaced to a
+        // user-facing flow.
+        if (memberCount >= SEAT_CAPS[plan]) {
+          throw new Error(`Household is at its ${SEAT_CAPS[plan]}-seat limit for its current plan.`);
+        }
         await execute(
           `insert into tenant_users (user_sub, tenant_id, email, role)
            values (:sub, :tenantId, :email, :role)`,

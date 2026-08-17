@@ -129,6 +129,18 @@ create policy tenants_provisioning_update on tenants
   with check (nullif(current_setting('app.tenant_id', true), '') is null);
 create policy tenant_users_provisioning_insert on tenant_users
   for insert with check (nullif(current_setting('app.tenant_id', true), '') is null);
+-- Needed by postConfirmation.js's invite-redemption hard seat-cap check
+-- (Task 5): it must count the tenant's CURRENT members at the moment of
+-- actual join, inside runProvisioningTransaction, before app.tenant_id can
+-- be set for the joining user. Without this, tenant_users_isolation alone
+-- (a FOR ALL policy keyed on app.tenant_id) hides every row during
+-- provisioning and the count query silently returns 0 regardless of the
+-- tenant's real membership - not an error, just always the wrong,
+-- always-safe-looking answer. Mirrors tenants_provisioning_select's shape
+-- exactly, just for this table.
+-- Scoped to "no app.tenant_id set" for the reason spelled out above.
+create policy tenant_users_provisioning_select on tenant_users
+  for select using (nullif(current_setting('app.tenant_id', true), '') is null);
 create policy tenant_invites_provisioning_select on tenant_invites
   for select using (nullif(current_setting('app.tenant_id', true), '') is null);
 create policy tenant_invites_provisioning_update on tenant_invites
