@@ -81,14 +81,18 @@ backend instead of Sheets/Supabase.
    original project already has, or create one scoped to this API) and
    `FrontendUrl` (the exact URL the frontend will be served from — Cognito
    rejects a wildcard here, unlike the CORS `AllowedOrigin` parameter).
-2. **No tests.** `db.js`'s tenant-scoping logic and `auth.js`'s token
-   verification are exactly the code you'd want unit/integration tests
-   against before trusting them with real data — that RLS is actually
-   enforced end-to-end (not just present in the schema) should be verified
-   the same way `Security_Analysis.md` verified it for Supabase.
-3. **No CI/CD.** The original repo's `.github/workflows/deploy.yml` pattern
-   (inject secrets, `node --check`, publish) needs an equivalent here, plus a
-   `sam build && sam deploy` step for the backend.
+2. **Tests exist now, and they need Docker.** `backend/npm test` runs the
+   whole suite against a local Postgres (`docker compose -f db/docker-compose.yml
+   up -d`) with `db/schema.sql` applied fresh per test, so RLS is exercised
+   for real rather than assumed. `db/init-nosuperuser.sql` strips the test
+   role's superuser bit at container bootstrap — without that, the role
+   bypasses RLS unconditionally (superusers are exempt even from `FORCE ROW
+   LEVEL SECURITY`) and every isolation test passes vacuously. CI replicates
+   that same stripping against its Postgres service container.
+3. **CI runs; deploy is still a manual gate.**
+   `.github/workflows/ledger-new-ci.yml` does `node --check`, the backend
+   test suite, and `sam build`. The `deploy` job is deliberately `if: false`
+   until real AWS credentials and the Google OAuth secrets exist.
 4. **No data migration script.** Moving the existing household's data from
    Sheets/Supabase into this schema as "tenant #1" is straightforward
    (same shape as `migrate.mjs` in the original repo) but not written yet.
@@ -100,6 +104,36 @@ backend instead of Sheets/Supabase.
    worth a pass once there's a real multi-tenant UI concern (switching
    tenants, inviting members) that the original single-household app never
    needed.
+7. **Two Cognito assumptions are MUST-VERIFY-AGAINST-REAL-AWS before the
+   first deploy.** Neither can be checked from this repo, by reading docs,
+   or by any test here — both need a deployed User Pool and a real
+   Google-federated signup walked end to end. If either turns out false,
+   the invite flow silently breaks (a user lands in a brand-new tenant of
+   their own instead of the household that invited them) rather than
+   erroring, so verify them deliberately, not by waiting for a bug report.
+   - **Does Hosted UI forward `client_metadata` from `/oauth2/authorize`
+     into the Lambda trigger event?** `frontend/assets/app.js`'s
+     `cognitoAuthorizeUrl()` puts the invite token in a `client_metadata`
+     query param, and `backend/src/postConfirmation.js` reads it from
+     `event.request.clientMetadata`. `client_metadata` is documented for
+     the Cognito API operations (`InitiateAuth`, `SignUp`, …); whether the
+     **Hosted UI's** authorize endpoint passes a query param through to
+     `PostConfirmation` the same way is the thing to confirm. If it does
+     not, the invite token needs a different carrier — e.g. stash it
+     client-side and have the frontend call an explicit "join tenant"
+     endpoint after first sign-in, which is a backend route that does not
+     exist yet.
+   - **Do Google-federated signups fire `PostConfirmation` at all?** The
+     trigger is wired in `template.yaml` as the only tenant-provisioning
+     hook. Federated (external IdP) users are created differently from
+     native sign-ups, and the relevant trigger may be `PreSignUp` /
+     `PostAuthentication` instead. If `PostConfirmation` never fires for
+     Google users, **no tenant is ever provisioned** and every sign-in ends
+     at `requireUser()`'s "No tenant associated with this user."
+
+   Deliberately not "fixed" here: guessing at AWS behaviour and rewriting
+   working-looking code against the guess would be worse than leaving both
+   flagged.
 
 ## Deploying (once the TODOs above are filled in)
 

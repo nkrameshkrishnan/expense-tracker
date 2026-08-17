@@ -122,7 +122,10 @@ Resources:
       StageName: !Ref Stage
       CorsConfiguration:
         AllowOrigins: [!Ref AllowedOrigin]
-        AllowHeaders: [authorization, content-type, x-tenant-id]
+        # Deliberately no x-tenant-id: auth.js resolves the caller's tenant
+        # from the verified ID token only, never from a request header.
+        # Mirror any change here in handler.js's CORS_HEADERS.
+        AllowHeaders: [authorization, content-type]
         AllowMethods: [GET, POST, OPTIONS]
 
   # ------------------------------------------------------------------ Auth
@@ -169,7 +172,14 @@ Resources:
     Properties:
       UserPoolId: !Ref UserPool
       SupportedIdentityProviders: [Google]
-      AllowedOAuthFlows: [code]
+      # Implicit, not authorization-code: frontend/assets/app.js's
+      # cognitoAuthorizeUrl() requests response_type=token, a deliberate
+      # earlier design choice so the zero-build frontend needs no
+      # token-exchange endpoint (the code flow's /oauth2/token call requires
+      # a backend to hold it). Declaring [code] here while the frontend asks
+      # for a token makes Cognito reject every sign-in. If this ever moves
+      # to [code], app.js must change in the same commit.
+      AllowedOAuthFlows: [implicit]
       AllowedOAuthScopes: [openid, email, profile]
       AllowedOAuthFlowsUserPoolClient: true
       GenerateSecret: false
