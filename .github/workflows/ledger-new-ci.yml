@@ -1,0 +1,61 @@
+name: Ledger New — CI
+
+on:
+  push:
+    paths:
+      - "Expense_tracker_New/**"
+      - ".github/workflows/ledger-new-ci.yml"
+  pull_request:
+    paths:
+      - "Expense_tracker_New/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: ledger_test
+          POSTGRES_PASSWORD: ledger_test
+          POSTGRES_DB: ledger_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Syntax-check every JS file
+        run: |
+          for f in $(find Expense_tracker_New -name '*.js' -not -path '*/node_modules/*'); do
+            node --check "$f" || exit 1
+          done
+      - name: Install backend dependencies
+        working-directory: Expense_tracker_New/backend
+        run: npm install
+      - name: Run backend tests
+        working-directory: Expense_tracker_New/backend
+        run: npm test
+      - name: SAM build (validates template.yaml)
+        working-directory: Expense_tracker_New/backend
+        run: |
+          pip install aws-sam-cli
+          sam build
+
+  deploy:
+    # Deliberately manual, not triggered by push — this deploys real AWS
+    # infrastructure and needs GoogleClientId/GoogleClientSecret/FrontendUrl
+    # supplied as real secrets first (see Expense_tracker_New/README.md).
+    # Wire this up once those secrets exist in repo settings; left as a
+    # manual trigger here rather than guessing credential names.
+    if: false
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Deploy gate intentionally disabled until AWS credentials/secrets are configured."
