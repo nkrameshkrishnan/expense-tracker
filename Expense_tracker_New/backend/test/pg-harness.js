@@ -69,6 +69,29 @@ export async function freshDb() {
   }
 }
 
+/** Builds the `execute` / `execute.rows` pair that every routes/*.js module
+    expects (see db.js's withDataApiTransaction), backed by a plain pg client
+    instead of the RDS Data API. This is what lets the REAL route functions -
+    not hand-written test SQL - be exercised against real RLS policies.
+
+    The :name -> $n translation deliberately uses the same naive regex the
+    Data API's own named-parameter parser effectively uses, so a `::type`
+    cast anywhere in a route's SQL breaks HERE exactly the way it breaks in
+    production (see routes/tenants.js's createInvite comment for why that
+    matters). Making this shim smarter would hide that class of bug. */
+export function makeExecute(client) {
+  const execute = async (sql, params = {}) => {
+    const values = [];
+    const converted = sql.replace(/:(\w+)/g, (_, name) => {
+      values.push(params[name]);
+      return `$${values.length}`;
+    });
+    return client.query(converted, values);
+  };
+  execute.rows = async (sql, params) => (await execute(sql, params)).rows;
+  return execute;
+}
+
 /** Mirrors backend/src/db.js's runInTenantTransaction, but against a plain
     pg client instead of the RDS Data API - this is what lets the RLS
     policies in db/schema.sql be exercised directly without AWS. */

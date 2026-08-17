@@ -108,9 +108,19 @@ create policy tenant_invites_provisioning_update on tenant_invites
   for update using (true);
 
 -- ------------------------------------------------------------- transactions
+--
+-- tenant_id DEFAULT on this and the three business tables below: no
+-- routes/*.js INSERT supplies a tenant_id, by design - the whole point of
+-- the RLS model is that route SQL never handles tenant ids at all. Under
+-- FORCE ROW LEVEL SECURITY that means every insert would fail its WITH
+-- CHECK with nothing to check against, so the column defaults to the same
+-- session GUC the policies read, which db.js's runInTenantTransaction has
+-- always set before the first statement of the transaction runs. The
+-- default supplies the value; the policy still independently verifies it,
+-- so a client-supplied tenant_id can never override the session's.
 create table transactions (
   id           bigint generated always as identity primary key,
-  tenant_id    uuid not null references tenants(id) on delete cascade,
+  tenant_id    uuid not null default nullif(current_setting('app.tenant_id', true), '')::uuid references tenants(id) on delete cascade,
   date         date not null,
   type         text not null default 'Expense',
   category     text not null default 'Miscellaneous',
@@ -133,7 +143,7 @@ create policy transactions_isolation on transactions
 
 -- ------------------------------------------------------------------- budget
 create table budget (
-  tenant_id  uuid not null references tenants(id) on delete cascade,
+  tenant_id  uuid not null default nullif(current_setting('app.tenant_id', true), '')::uuid references tenants(id) on delete cascade,
   year       int not null,
   category   text not null,
   month      int not null check (month between 1 and 12),
@@ -149,7 +159,7 @@ create policy budget_isolation on budget
 
 -- ----------------------------------------------------------------- balances
 create table balances (
-  tenant_id  uuid not null references tenants(id) on delete cascade,
+  tenant_id  uuid not null default nullif(current_setting('app.tenant_id', true), '')::uuid references tenants(id) on delete cascade,
   date       date not null,
   account    text not null,
   amount     numeric(12, 2) not null default 0,
@@ -167,7 +177,7 @@ create policy balances_isolation on balances
 -- -------------------------------------------------------------------- debts
 create table debts (
   id          bigint generated always as identity primary key,
-  tenant_id   uuid not null references tenants(id) on delete cascade,
+  tenant_id   uuid not null default nullif(current_setting('app.tenant_id', true), '')::uuid references tenants(id) on delete cascade,
   parent_id   bigint references debts(id) on delete cascade, -- null = the debt itself; set = a payment against it
   kind        text not null default 'Debt', -- Debt | Payment
   name        text default '',

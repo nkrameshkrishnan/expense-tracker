@@ -17,8 +17,13 @@ export async function listTransactions(execute, { txYear } = {}) {
 }
 
 export async function listTransactionYears(execute) {
+  // cast(... as int) rather than `::int`: the second colon of `::` is
+  // indistinguishable from a `:name` bind param to the RDS Data API's
+  // named-parameter parser, which then fails the statement with an unbound
+  // parameter. Same reason routes/tenants.js's createInvite avoids `::uuid`.
+  // This one runs on every GET /data, so it is on the hottest path there is.
   const rows = await execute.rows(
-    `select distinct extract(year from date)::int as year from transactions order by year desc`,
+    `select distinct cast(extract(year from date) as int) as year from transactions order by year desc`,
   );
   return rows.map((r) => r.year);
 }
