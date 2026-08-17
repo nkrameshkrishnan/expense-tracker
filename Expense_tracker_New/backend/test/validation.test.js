@@ -19,7 +19,12 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { freshDb, withTenant, withProvisioning, makeExecute } from "./pg-harness.js";
+import {
+  freshDb,
+  withTenant,
+  withProvisioning,
+  makeExecute,
+} from "./pg-harness.js";
 import * as tx from "../src/routes/transactions.js";
 import * as budget from "../src/routes/budget.js";
 import * as balances from "../src/routes/balances.js";
@@ -108,8 +113,14 @@ test("createTransaction stores a well-formed record exactly as given", async () 
   const client = await freshDb();
   try {
     const tenantId = await seedTenant(client, "Household");
+    // notes overridden to a non-empty value deliberately - the fixture's
+    // default "" can't distinguish "round-tripped" from "silently dropped
+    // and defaulted", which is exactly how this field went missing before.
     const row = await withTenant(client, tenantId, "owner-sub", (c) =>
-      tx.createTransaction(makeExecute(c), txRecord()),
+      tx.createTransaction(
+        makeExecute(c),
+        txRecord({ notes: "MY IMPORTANT NOTE" }),
+      ),
     );
     assert.equal(row.tenant_id, tenantId);
     // Every field round-trips untouched — validation must not "helpfully"
@@ -123,6 +134,7 @@ test("createTransaction stores a well-formed record exactly as given", async () 
     assert.equal(row.payment, "Visa");
     assert.equal(row.account, "Chequing");
     assert.equal(row.recurring, "No");
+    assert.equal(row.notes, "MY IMPORTANT NOTE");
     assert.equal(row.person, "Ramesh");
   } finally {
     await client.end();
@@ -140,7 +152,8 @@ test("createTransaction rejects a malformed record instead of storing it", async
       await assert.rejects(
         () => tx.createTransaction(execute, txRecord({ date: undefined })),
         (err) =>
-          err instanceof ValidationError && /date is required/i.test(err.message),
+          err instanceof ValidationError &&
+          /date is required/i.test(err.message),
       );
 
       await assert.rejects(
@@ -309,7 +322,7 @@ test("addDebt coerces amount, keeps a null date, rejects a bad one", async () =>
         kind: "Debt",
         name: "Car loan",
         amount: -5000.004,
-        });
+      });
       const [row] = await debts.listDebts(execute);
       assert.equal(row.id, id);
       assert.equal(Number(row.amount), 5000);

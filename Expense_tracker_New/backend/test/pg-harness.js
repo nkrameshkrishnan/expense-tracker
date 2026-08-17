@@ -58,7 +58,9 @@ export async function freshDb() {
   const client = new pg.Client(CONNECTION);
   await client.connect();
   try {
-    await client.query("select pg_advisory_lock($1)", [SCHEMA_REBUILD_LOCK_KEY]);
+    await client.query("select pg_advisory_lock($1)", [
+      SCHEMA_REBUILD_LOCK_KEY,
+    ]);
     await client.query("drop schema public cascade; create schema public;");
     const schema = readFileSync(SCHEMA_PATH, "utf8");
     await client.query(schema);
@@ -83,6 +85,13 @@ export function makeExecute(client) {
   const execute = async (sql, params = {}) => {
     const values = [];
     const converted = sql.replace(/:(\w+)/g, (_, name) => {
+      // A truly-missing param must throw, not silently bind NULL - node-pg
+      // converts undefined to SQL NULL, which would let a route's own
+      // missing-column bug (e.g. validateTransaction() forgetting a field
+      // the INSERT still binds) pass locally while the real RDS Data API
+      // rejects the same SQL outright for an unbound named parameter.
+      if (!(name in params))
+        throw new Error(`Missing bind param ":${name}" for query: ${sql}`);
       values.push(params[name]);
       return `$${values.length}`;
     });

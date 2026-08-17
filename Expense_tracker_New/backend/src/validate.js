@@ -83,8 +83,7 @@ export function money(value, field = "amount") {
   if (!Number.isFinite(n))
     throw new ValidationError(`${field} must be a number, got "${value}".`);
   const rounded = Math.round(Math.abs(n) * 100) / 100;
-  if (rounded > MAX_AMOUNT)
-    throw new ValidationError(`${field} is too large.`);
+  if (rounded > MAX_AMOUNT) throw new ValidationError(`${field} is too large.`);
   return rounded;
 }
 
@@ -166,6 +165,7 @@ export function validateTransaction(record) {
     payment: text(record.payment, "payment"),
     account: text(record.account, "account"),
     recurring: record.recurring === "Yes" ? "Yes" : "No",
+    notes: text(record.notes, "notes"),
     // Free text, NOT allow-listed against the original PEOPLE constant
     // (["Ramesh", "Surya", "Joint"]). That list is one household's
     // vocabulary; this backend is multi-tenant, so hardcoding it
