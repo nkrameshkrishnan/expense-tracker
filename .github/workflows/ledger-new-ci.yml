@@ -28,6 +28,76 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v4
+
+      # Replicates db/init-nosuperuser.sql, which local development gets for
+      # free by mounting it into the container's docker-entrypoint-initdb.d/.
+      # A GitHub Actions service container starts BEFORE actions/checkout
+      # runs, so there is no repo on disk yet to mount from and no way to
+      # hand the service an init script — hence this step, which does the
+      # same work over the network with psql (preinstalled on ubuntu-latest)
+      # once the service reports healthy.
+      #
+      # This is not cosmetic. postgres:15 makes POSTGRES_USER a real
+      # superuser, and a Postgres superuser bypasses RLS unconditionally —
+      # FORCE ROW LEVEL SECURITY explicitly does not constrain superusers.
+      # Without this step every tenant-isolation test in the suite passes
+      # vacuously: it would report green with the RLS policies deleted
+      # outright. Keep this in sync with db/init-nosuperuser.sql; if the two
+      # drift, CI silently stops testing the thing this branch exists to
+      # guarantee.
+      - name: Strip the test role's superuser bit (mirrors db/init-nosuperuser.sql)
+        env:
+          PGPASSWORD: ledger_test
+        run: |
+          psql -v ON_ERROR_STOP=1 -h localhost -p 5433 -U ledger_test -d ledger_test <<'SQL'
+          -- Ordering below is load-bearing and matches init-nosuperuser.sql.
+          --
+          -- pgcrypto must be installed while ledger_test is STILL superuser
+          -- (CREATE EXTENSION needs superuser; pgcrypto is not a "trusted"
+          -- extension), and it must live outside the public schema, because
+          -- test/pg-harness.js's freshDb() runs `drop schema public cascade`
+          -- before every test. Parked in `extensions` it survives that, so
+          -- schema.sql's `create extension if not exists pgcrypto` finds it
+          -- already present in pg_extension and no-ops, instead of trying to
+          -- genuinely reinstall it as the by-then-unprivileged role (which
+          -- fails with "permission denied for language c").
+          create schema if not exists extensions;
+          create extension if not exists pgcrypto schema extensions;
+
+          -- Makes gen_random_bytes() (tenant_invites' token default in
+          -- schema.sql) resolve under the unqualified name schema.sql uses,
+          -- without pgcrypto living in the droppable public schema.
+          -- Database-level, so it applies to every later connection.
+          alter database ledger_test set search_path = "$user", public, extensions;
+
+          -- LAST: everything above needs the superuser privileges this
+          -- revokes. nobypassrls too — rolbypassrls is a separate attribute
+          -- that would exempt the role from RLS all on its own.
+          alter role ledger_test nosuperuser nobypassrls;
+          SQL
+
+      # Fails the job loudly if the step above silently did not take effect.
+      # Without it, a regression in the stripping shows up as "all tests
+      # green" rather than as a failure — the exact failure mode this whole
+      # arrangement exists to prevent.
+      - name: Verify RLS actually applies to the test role
+        env:
+          PGPASSWORD: ledger_test
+        run: |
+          psql -v ON_ERROR_STOP=1 -h localhost -p 5433 -U ledger_test -d ledger_test <<'SQL'
+          do $$
+          declare exempt boolean;
+          begin
+            select rolsuper or rolbypassrls into exempt
+              from pg_roles where rolname = 'ledger_test';
+            if exempt then
+              raise exception
+                'ledger_test still bypasses RLS (rolsuper/rolbypassrls set) - isolation tests would pass vacuously';
+            end if;
+          end
+          $$;
+          SQL
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
