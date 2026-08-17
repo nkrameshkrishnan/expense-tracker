@@ -21,3 +21,16 @@ test("freshDb applies schema.sql - every tenant-owned table has RLS enabled", as
     await client.end();
   }
 });
+
+test("freshDb applies schema.sql - tenants has Stripe identifier columns", async () => {
+  const client = await freshDb();
+  try {
+    const { rows } = await client.query(
+      `select column_name from information_schema.columns
+       where table_name = 'tenants' and column_name in ('stripe_customer_id', 'stripe_subscription_id')`,
+    );
+    assert.equal(rows.length, 2);
+  } finally {
+    await client.end();
+  }
+});

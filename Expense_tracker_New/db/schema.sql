@@ -17,6 +17,8 @@ create table tenants (
   name        text not null,
   plan        text not null default 'free',
   status      text not null default 'active', -- active | suspended
+  stripe_customer_id     text,
+  stripe_subscription_id text,
   created_at  timestamptz not null default now()
 );
 
