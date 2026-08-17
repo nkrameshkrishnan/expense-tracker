@@ -43,15 +43,30 @@ const SCHEMA_REBUILD_LOCK_KEY = 72700118;
     just through schema setup) serializes whole freshDb()-using test
     bodies across concurrent files/processes without requiring every
     caller to remember to release anything; it releases itself on
-    client.end(). */
+    client.end().
+
+    Everything from acquiring the lock through applying schema.sql is
+    wrapped in try/catch: if any of it throws (a schema.sql syntax error,
+    a transient connection blip), the client is end()'d before rethrowing
+    rather than left open. Without this, a setup failure would hold the
+    advisory lock for the rest of the Node process's life, and every
+    later freshDb() call in the same `node --test` file - not just the
+    one that failed - would block forever waiting on a lock nothing will
+    ever release. Closed here, at the source, rather than relying on
+    every caller to wrap its own freshDb() call in try/catch. */
 export async function freshDb() {
   const client = new pg.Client(CONNECTION);
   await client.connect();
-  await client.query("select pg_advisory_lock($1)", [SCHEMA_REBUILD_LOCK_KEY]);
-  await client.query("drop schema public cascade; create schema public;");
-  const schema = readFileSync(SCHEMA_PATH, "utf8");
-  await client.query(schema);
-  return client;
+  try {
+    await client.query("select pg_advisory_lock($1)", [SCHEMA_REBUILD_LOCK_KEY]);
+    await client.query("drop schema public cascade; create schema public;");
+    const schema = readFileSync(SCHEMA_PATH, "utf8");
+    await client.query(schema);
+    return client;
+  } catch (err) {
+    await client.end();
+    throw err;
+  }
 }
 
 /** Mirrors backend/src/db.js's runInTenantTransaction, but against a plain

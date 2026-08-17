@@ -1,3 +1,9 @@
+-- Mounted as 01-nosuperuser.sql: docker-entrypoint-initdb.d/ runs its
+-- scripts in filename sort order, and the leading "01-" is just reserving
+-- a low sort position in case a later init script ever needs to run
+-- before or after this one - there's only one script today, so it has no
+-- effect yet.
+--
 -- Runs once at container bootstrap via docker-entrypoint-initdb.d/ (official
 -- postgres images execute every *.sql/*.sh file found there, connected as
 -- the bootstrap superuser, before any application code touches the
