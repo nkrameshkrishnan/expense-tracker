@@ -325,6 +325,7 @@ class ApiStore {
     this.user = d.user || null;
     this.cache.members = d.members || [];
     this.cache.invites = d.invites || [];
+    this.cache.tenant = d.tenant || { plan: "free", status: "active" };
     return this.cache;
   }
 
@@ -404,6 +405,15 @@ class ApiStore {
     await this._post({ action: "revokeInvite", token });
     await this._refreshMeta();
   }
+  async getTenant() {
+    return (await this._ensure()).tenant || { plan: "free", status: "active" };
+  }
+  async createCheckoutSession(priceId, successUrl, cancelUrl) {
+    return this._post({ action: "createCheckoutSession", priceId, successUrl, cancelUrl });
+  }
+  async createPortalSession(returnUrl) {
+    return this._post({ action: "createPortalSession", returnUrl });
+  }
   async setBalances(date, entries) {
     await this._post({ action: "setBalances", date, entries });
     await this._refreshMeta();
@@ -439,6 +449,7 @@ class ApiStore {
     this.cache.debts = d.debts || [];
     this.cache.members = d.members || [];
     this.cache.invites = d.invites || [];
+    this.cache.tenant = d.tenant || this.cache.tenant;
     this.user = d.user || this.user;
   }
   async add(rec) {
