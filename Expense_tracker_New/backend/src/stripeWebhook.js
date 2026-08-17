@@ -87,7 +87,13 @@ export async function handleCheckoutCompleted(execute, session) {
     context handleSubscriptionUpdated/handleSubscriptionDeleted already run
     under, relying on the tenant_users_provisioning_select RLS policy
     (db/schema.sql) the same way the update statements below rely on
-    tenants_provisioning_update. */
+    tenants_provisioning_update.
+
+    Test note: the two DB-only tests further down in stripe-webhook.test.js
+    that exercise a bare `status: "past_due"` update don't seed a
+    tenant_users row for cus_test123, so this resolves to undefined there
+    and no SES call is attempted - that's intentional, not an oversight;
+    the SES-specific tests below seed an owner row explicitly. */
 async function ownerEmailForCustomer(execute, customerId) {
   const rows = await execute.rows(
     `select tu.email from tenant_users tu
@@ -96,6 +102,29 @@ async function ownerEmailForCustomer(execute, customerId) {
     { customerId },
   );
   return rows[0]?.email;
+}
+
+/** Sends a billing notification without letting SES's own failure modes
+    (throttling, unverified sender/sandbox mode, wrong region, any
+    transient AWS error) roll back the tenant-state DB write these handlers
+    just made. Both call sites below run inside the still-open
+    runProvisioningTransaction opened by the top-level `handler` (see
+    db.js's withDataApiTransaction: it rolls back and rethrows on ANY
+    callback exception), so letting a rejected send() propagate would undo
+    the `update tenants ...` that already succeeded and leave the tenant's
+    billing state stuck until SES recovers - worse than the accepted
+    "duplicate email on redelivery" tradeoff. Mirrors postConfirmation.js's
+    choice to call the Cognito AdminUpdateUserAttributesCommand only after
+    its own provisioning transaction has committed, for the same reason:
+    a downstream side effect must never be able to undo a DB write that
+    already succeeded. Logged and swallowed rather than silently dropped,
+    so an operator can still see SES is failing. */
+async function notifyBestEffort(sendFn, toEmail) {
+  try {
+    await sendFn(toEmail);
+  } catch (err) {
+    console.error(`Failed to send billing notification to ${toEmail}:`, err.message, err.stack);
+  }
 }
 
 export async function handleSubscriptionUpdated(execute, subscription) {
@@ -112,7 +141,7 @@ export async function handleSubscriptionUpdated(execute, subscription) {
   });
   if (status === "past_due") {
     const ownerEmail = await ownerEmailForCustomer(execute, subscription.customer);
-    if (ownerEmail) await sendPastDueEmail(ownerEmail);
+    if (ownerEmail) await notifyBestEffort(sendPastDueEmail, ownerEmail);
   }
 }
 
@@ -123,5 +152,5 @@ export async function handleSubscriptionDeleted(execute, subscription) {
     { customerId: subscription.customer },
   );
   const ownerEmail = await ownerEmailForCustomer(execute, subscription.customer);
-  if (ownerEmail) await sendDowngradedEmail(ownerEmail);
+  if (ownerEmail) await notifyBestEffort(sendDowngradedEmail, ownerEmail);
 }

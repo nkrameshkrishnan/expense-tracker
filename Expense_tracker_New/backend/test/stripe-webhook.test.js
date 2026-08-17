@@ -260,3 +260,55 @@ test("customer.subscription.updated NOT reaching past_due does not send any emai
     await client.end();
   }
 });
+
+test("an SES failure does not roll back the tenant status/plan DB write", async () => {
+  const client = await freshDb();
+  try {
+    const updatedTenantId = await seedTenant(client, {
+      plan: "pro",
+      status: "active",
+      stripeCustomerId: "cus_update_fail",
+    });
+    const deletedTenantId = await seedTenant(client, {
+      plan: "family",
+      status: "active",
+      stripeCustomerId: "cus_delete_fail",
+    });
+    for (const [tenantId, customerId] of [
+      [updatedTenantId, "cus_update_fail"],
+      [deletedTenantId, "cus_delete_fail"],
+    ]) {
+      await withProvisioning(client, "owner-sub", async (c) => {
+        await c.query(
+          `insert into tenant_users (user_sub, tenant_id, email, role) values ($1, $2, 'owner@x.com', 'owner')`,
+          [`owner-${customerId}`, tenantId],
+        );
+      });
+    }
+    mock.method(SESClient.prototype, "send", async () => {
+      throw new Error("SES throttled");
+    });
+
+    // Neither call should throw - a rejected SES send must not surface as
+    // an error out of the handler, and (more importantly, see below) must
+    // not have rolled back the update that already ran.
+    await withProvisioning(client, "stripe-webhook", (c) =>
+      handleSubscriptionUpdated(makeExecute(c), { customer: "cus_update_fail", status: "past_due" }),
+    );
+    await withProvisioning(client, "stripe-webhook", (c) =>
+      handleSubscriptionDeleted(makeExecute(c), { customer: "cus_delete_fail" }),
+    );
+
+    const updated = await client.query(`select status from tenants where id = $1`, [updatedTenantId]);
+    assert.equal(updated.rows[0].status, "past_due");
+
+    const deleted = await client.query(`select plan, status, stripe_subscription_id from tenants where id = $1`, [
+      deletedTenantId,
+    ]);
+    assert.equal(deleted.rows[0].plan, "free");
+    assert.equal(deleted.rows[0].status, "active");
+    assert.equal(deleted.rows[0].stripe_subscription_id, null);
+  } finally {
+    await client.end();
+  }
+});
