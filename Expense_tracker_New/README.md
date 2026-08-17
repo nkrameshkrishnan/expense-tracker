@@ -1,10 +1,15 @@
-# Ledger — SaaS backend scaffold (Approach A)
+# Ledger — SaaS backend (Approach A)
 
 This is a parallel build, not a replacement in place: the original repo (one
 directory up) keeps working unchanged with its Google Sheets / Supabase
 backends while this gets built out and validated. Nothing here is wired to a
 real AWS account yet — see "What's actually done" below before deploying
 anything.
+
+The backend is implemented and tested (40 passing tests against a real local
+Postgres, tenant isolation verified empirically, not just by reading the
+SQL) — what remains is deploy-time configuration and two Cognito behaviors
+that can only be confirmed against a real AWS account.
 
 ## Why this exists
 
@@ -37,6 +42,15 @@ Aurora Serverless v2 (Postgres, via RDS Data API)
   │  Row-Level Security scopes every query to current_setting('app.tenant_id')
 ```
 
+**A real bug was found and fixed while building the test suite:** Postgres
+table _owners_ bypass their own RLS policies unless `FORCE ROW LEVEL
+SECURITY` is also set — and `template.yaml`'s Lambdas authenticate as the
+same master/owner credentials `DbCluster` was created with, so every RLS
+policy was silently a no-op until `FORCE ROW LEVEL SECURITY` was added to
+all seven tenant-owned tables in `db/schema.sql`. This is exactly the kind
+of thing that only surfaces when you actually run it against a real
+Postgres instance — see `db/init-nosuperuser.sql` and `backend/test/rls.test.js`.
+
 Full design rationale (why Aurora Serverless v2 + Data API over `pg` + VPC,
 why RLS over schema-per-tenant, why one Lambda over per-resource functions)
 was worked out in the brainstorming conversation that produced this scaffold
@@ -44,67 +58,103 @@ was worked out in the brainstorming conversation that produced this scaffold
 
 ## Layout
 
-- `frontend/` — the static site. `app.js`, `charts.js`, `xlsxio.js`,
-  `styles.css` are copied unchanged from the original project. `store.js` and
-  `config.js` are new: `store.js` keeps `LocalStore`/`MemoryStore` as
+- `frontend/` — the static site. `charts.js`, `xlsxio.js`, `styles.css` are
+  copied unchanged from the original project. `store.js`, `config.js`, and
+  `app.js` were adapted: `store.js` keeps `LocalStore`/`MemoryStore` as
   offline fallbacks and adds `ApiStore`, which speaks the same `{action,
-...}` POST contract the original `SheetsStore` used against `Code.gs` —
-  most of `app.js`'s data-layer code didn't need to change because of that.
-  The sign-in gate and Data-tab connection panel in `app.js` **were**
-  rewritten, since Cognito's Hosted UI redirect flow replaces Google Identity
-  Services entirely.
-- `backend/` — one Lambda (`src/handler.js`) behind API Gateway, routed
-  internally by `action`. `src/routes/*.js` hold the actual SQL per resource
-  (transactions, budget, balances, debts). `src/auth.js` verifies the Cognito
-  JWT; `src/db.js` wraps the RDS Data API with tenant-scoped transactions.
-  `src/postConfirmation.js` is a separate Lambda — a Cognito trigger that
-  provisions a new tenant (or joins an invited one) right after signup.
-  `template.yaml` is the AWS SAM template defining every resource.
+...}` POST contract the original `SheetsStore` used against `Code.gs`, plus
+  `getMembers`/`getInvites`/`getRole`/`createInvite`/`revokeInvite` for the
+  household/membership panel. The sign-in gate uses Cognito's Hosted UI
+  redirect flow (implicit grant — `template.yaml`'s `AllowedOAuthFlows` must
+  match `app.js`'s `cognitoAuthorizeUrl()`, or Cognito rejects every sign-in).
+  `app.js`'s Data tab has a "Household" panel: lists members, lets an
+  owner/admin send/copy/revoke invites.
+- `backend/src/` — one Lambda (`handler.js`) behind API Gateway, routed
+  internally by `action`. `routes/*.js` hold the actual SQL per resource
+  (`transactions`, `budget`, `balances`, `debts`, `tenants` — the last for
+  membership/invite management). `auth.js` verifies the Cognito JWT and
+  resolves the caller's tenant _only_ from the token's own `custom:tenant_id`
+  claim (an earlier `X-Tenant-Id` header override was removed — it let any
+  authenticated user impersonate any tenant with no validation). `db.js`
+  wraps the RDS Data API with tenant-scoped transactions
+  (`runInTenantTransaction`) and a separate provisioning-only path
+  (`runProvisioningTransaction`) for the one code path that legitimately runs
+  before any tenant context exists. `validate.js` validates/coerces every
+  client-supplied write (amount, date, type, required fields) before it ever
+  reaches SQL. `postConfirmation.js` is a separate Lambda — a Cognito trigger
+  that provisions a new tenant (or joins an invited one) right after signup.
+  `template.yaml` is the AWS SAM template defining every resource, including
+  a self-contained VPC/subnet group (no account-specific IDs needed).
+- `backend/test/` — 40 tests (`node --test`) against a real local Postgres
+  (`db/docker-compose.yml`), not mocks: RLS/tenant-isolation, the
+  provisioning bootstrap, JWT verification, transaction sequencing, the
+  membership/invite route, and input validation. `pg-harness.js`'s
+  `freshDb()`/`withTenant()`/`withProvisioning()` are the shared test
+  fixtures every other test file builds on.
+- `backend/migrate-to-api.mjs` — one-time script to pull the existing
+  household's data out of the original Sheets backend and push it into this
+  API as tenant #1, through the API's own write actions (so migrated data
+  gets the same validation real writes do).
 - `db/schema.sql` — `tenants`, `tenant_users`, `tenant_invites`,
-  `transactions`, `budget`, `balances`, `debts`, each tenant-owned table with
-  an RLS policy keyed on `app.tenant_id`.
+  `transactions`, `budget`, `balances`, `debts`. Every tenant-owned table has
+  `FORCE ROW LEVEL SECURITY` and an isolation policy keyed on
+  `app.tenant_id`; `tenants`/`tenant_users`/`tenant_invites` additionally
+  have narrow, explicitly-scoped provisioning policies (see the comment
+  block in the schema) for the one bootstrap case where no tenant context
+  exists yet — creating the very first tenant.
+- `.github/workflows/ledger-new-ci.yml` — `node --check`, the backend test
+  suite (against a Postgres service container with the same superuser-bit
+  stripping `db/init-nosuperuser.sql` does locally, replicated as a
+  post-checkout step since service containers start before checkout), and
+  `sam build`. The `deploy` job is gated off (`if: false`) until real AWS
+  credentials exist.
 
 ## What's actually done vs. what's left
 
-**Done:** the shape of every piece — schema with RLS, Lambda routing that
-mirrors the original action contract, JWT verification, tenant provisioning,
-IaC for every resource, and a frontend that parses and points at the new
-backend instead of Sheets/Supabase.
+**Done — implemented and tested:**
+
+- Schema with RLS, correctly enforced (`FORCE ROW LEVEL SECURITY` on all
+  seven tenant tables — see the callout in "Architecture" above), including
+  the narrow provisioning-bootstrap policies needed to create the very first
+  tenant before any `app.tenant_id` context exists.
+- Lambda routing that mirrors the original `{action, ...}` contract, with
+  server-side input validation on every write (`validate.js`).
+- JWT verification and tenant resolution _only_ from the token's own claim
+  — no client-supplied header can override it.
+- Tenant provisioning and invite-based signup (`postConfirmation.js`).
+- A full membership/invite flow: backend route (`routes/tenants.js`) plus a
+  frontend "Household" panel (list members, send/copy/revoke invites).
+- IaC for every resource, including self-contained VPC/subnet networking (no
+  account-specific IDs needed) — `sam deploy --guided` only needs the values
+  in item 1 below.
+- CI: `node --check`, the full backend test suite (against a properly
+  RLS-hardened Postgres service container), and `sam build` on every push.
+- A data migration script (`migrate-to-api.mjs`) to bring the existing
+  household's data in as tenant #1.
+- 40 tests, run against a real local Postgres, not mocks — tenant isolation,
+  the provisioning bootstrap, JWT verification, transaction sequencing, the
+  membership/invite route, and input validation are all exercised for real.
 
 **Not done — needed before this deploys or runs for real:**
 
-1. **`template.yaml`'s networking is now self-contained** (VPC, subnets, DB
-   subnet group are created by the template itself — no account-specific IDs
-   needed). What's left is supplying real values at `sam deploy --guided`
-   time for the things that genuinely can't be generated: `GoogleClientId`/
-   `GoogleClientSecret` (reuse the existing Google Cloud OAuth app the
-   original project already has, or create one scoped to this API) and
-   `FrontendUrl` (the exact URL the frontend will be served from — Cognito
-   rejects a wildcard here, unlike the CORS `AllowedOrigin` parameter).
-2. **Tests exist now, and they need Docker.** `backend/npm test` runs the
-   whole suite against a local Postgres (`docker compose -f db/docker-compose.yml
-   up -d`) with `db/schema.sql` applied fresh per test, so RLS is exercised
-   for real rather than assumed. `db/init-nosuperuser.sql` strips the test
-   role's superuser bit at container bootstrap — without that, the role
-   bypasses RLS unconditionally (superusers are exempt even from `FORCE ROW
-   LEVEL SECURITY`) and every isolation test passes vacuously. CI replicates
-   that same stripping against its Postgres service container.
-3. **CI runs; deploy is still a manual gate.**
-   `.github/workflows/ledger-new-ci.yml` does `node --check`, the backend
-   test suite, and `sam build`. The `deploy` job is deliberately `if: false`
-   until real AWS credentials and the Google OAuth secrets exist.
-4. **No data migration script.** Moving the existing household's data from
-   Sheets/Supabase into this schema as "tenant #1" is straightforward
-   (same shape as `migrate.mjs` in the original repo) but not written yet.
-5. **Billing/plans are schema-ready, not built.** `tenants.plan`/`.status`
+1. **Deploy-time secrets.** `sam deploy --guided` needs real values for
+   `GoogleClientId`/`GoogleClientSecret` (reuse the existing Google Cloud
+   OAuth app the original project already has, or create one scoped to this
+   API) and `FrontendUrl` (the exact URL the frontend will be served from —
+   Cognito rejects a wildcard here, unlike the CORS `AllowedOrigin`
+   parameter).
+2. **Billing/plans are schema-ready, not built.** `tenants.plan`/`.status`
    exist as columns; no Stripe integration, no plan enforcement anywhere.
    Deliberately deferred — see the "pre-validation stage" decision this
    scaffold was built against.
-6. **Frontend copy still says things like "Data" tab labels generically** —
-   worth a pass once there's a real multi-tenant UI concern (switching
-   tenants, inviting members) that the original single-household app never
-   needed.
-7. **Two Cognito assumptions are MUST-VERIFY-AGAINST-REAL-AWS before the
+3. **Tenant-switching UI is deferred by design.** Every user belongs to
+   exactly one tenant, set once at signup (either a brand-new tenant, or the
+   tenant of the invite token they signed up with) — there's no code path
+   today for an _already-registered_ user to join a second tenant, so a
+   switcher has nothing to switch between yet. `auth.js`'s tenant resolution
+   would need to change (safely, with real membership validation) if this
+   becomes a real requirement.
+4. **Two Cognito assumptions are MUST-VERIFY-AGAINST-REAL-AWS before the
    first deploy.** Neither can be checked from this repo, by reading docs,
    or by any test here — both need a deployed User Pool and a real
    Google-federated signup walked end to end. If either turns out false,
@@ -134,6 +184,21 @@ backend instead of Sheets/Supabase.
    Deliberately not "fixed" here: guessing at AWS behaviour and rewriting
    working-looking code against the guess would be worse than leaving both
    flagged.
+
+## Running tests locally
+
+```bash
+cd db && docker compose up -d && cd ../backend
+npm install
+npm test
+```
+
+`db/init-nosuperuser.sql` runs automatically on first container start (via
+Postgres's `docker-entrypoint-initdb.d`) and strips the test role's
+superuser bit — without that, `FORCE ROW LEVEL SECURITY` has no effect on
+that role and every isolation test would pass vacuously. If you've already
+started the container once before this mattered, reset the volume first:
+`docker compose -f db/docker-compose.yml down -v && docker compose -f db/docker-compose.yml up -d`.
 
 ## Deploying (once the TODOs above are filled in)
 
