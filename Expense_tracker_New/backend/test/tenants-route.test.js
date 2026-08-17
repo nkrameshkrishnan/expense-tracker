@@ -7,7 +7,9 @@ test("listMembers/getMembership/createInvite/revokeInvite round-trip", async () 
   const client = await freshDb();
   try {
     const tenantId = await withProvisioning(client, "seed-user", async (c) => {
-      const { rows } = await c.query(`insert into tenants (name) values ('Household') returning id`);
+      const { rows } = await c.query(
+        `insert into tenants (name) values ('Household') returning id`,
+      );
       return rows[0].id;
     });
 
@@ -22,8 +24,12 @@ test("listMembers/getMembership/createInvite/revokeInvite round-trip", async () 
     execute.rows = async (sql, params) => (await execute(sql, params)).rows;
 
     await client.query("begin");
-    await client.query("select set_config('app.tenant_id', $1, true)", [String(tenantId)]);
-    await client.query("select set_config('app.user_id', $1, true)", ["owner-sub"]);
+    await client.query("select set_config('app.tenant_id', $1, true)", [
+      String(tenantId),
+    ]);
+    await client.query("select set_config('app.user_id', $1, true)", [
+      "owner-sub",
+    ]);
 
     await execute(
       `insert into tenant_users (user_sub, tenant_id, email, role) values (:sub, :tenantId, :email, 'owner')`,
@@ -36,7 +42,10 @@ test("listMembers/getMembership/createInvite/revokeInvite round-trip", async () 
     const members = await tenants.listMembers(execute);
     assert.equal(members.length, 1);
 
-    const invite = await tenants.createInvite(execute, { email: "new@x.com", role: "member" });
+    const invite = await tenants.createInvite(execute, {
+      email: "new@x.com",
+      role: "member",
+    });
     assert.equal(invite.email, "new@x.com");
     assert.ok(invite.token);
 

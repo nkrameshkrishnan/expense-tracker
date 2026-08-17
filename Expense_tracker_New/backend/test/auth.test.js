@@ -8,7 +8,8 @@ import { createAuthChecker, AuthError } from "../src/auth.js";
 function fakeVerifier(claims) {
   return {
     verify: async (token) => {
-      if (token !== "valid-token") throw new Error("signature verification failed");
+      if (token !== "valid-token")
+        throw new Error("signature verification failed");
       return claims;
     },
   };
@@ -49,7 +50,10 @@ test("an X-Tenant-Id header is IGNORED, not honoured as a tenant override", asyn
     fakeVerifier({ sub: "u1", email: "a@x.com", "custom:tenant_id": "t1" }),
   );
   const user = await requireUser({
-    headers: { authorization: "Bearer valid-token", "x-tenant-id": "someone-elses-tenant" },
+    headers: {
+      authorization: "Bearer valid-token",
+      "x-tenant-id": "someone-elses-tenant",
+    },
   });
   assert.equal(user.tenantId, "t1");
 });
@@ -70,7 +74,9 @@ test("resolves sub/email/tenantId from a valid token's custom:tenant_id claim", 
   const requireUser = createAuthChecker(
     fakeVerifier({ sub: "u1", email: "a@x.com", "custom:tenant_id": "t1" }),
   );
-  const user = await requireUser({ headers: { authorization: "Bearer valid-token" } });
+  const user = await requireUser({
+    headers: { authorization: "Bearer valid-token" },
+  });
   assert.deepEqual(user, { sub: "u1", email: "a@x.com", tenantId: "t1" });
 });
 
@@ -79,7 +85,10 @@ test("the CORS allow-list does not advertise x-tenant-id", async () => {
   // two places a browser would learn the header is acceptable; both must
   // stay in sync with auth.js ignoring it.
   const here = path.dirname(fileURLToPath(import.meta.url));
-  const handlerSrc = readFileSync(path.join(here, "..", "src", "handler.js"), "utf8");
+  const handlerSrc = readFileSync(
+    path.join(here, "..", "src", "handler.js"),
+    "utf8",
+  );
   const template = readFileSync(path.join(here, "..", "template.yaml"), "utf8");
   assert.ok(
     !/Allow-Headers"?:\s*"[^"]*x-tenant-id/.test(handlerSrc),

@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { freshDb, withTenant, withProvisioning, makeExecute } from "./pg-harness.js";
+import {
+  freshDb,
+  withTenant,
+  withProvisioning,
+  makeExecute,
+} from "./pg-harness.js";
 import * as tenants from "../src/routes/tenants.js";
 
 test("a brand-new tenant can be created with no app.tenant_id set", async () => {
@@ -28,9 +33,15 @@ test("an invite can be looked up and marked used with no app.tenant_id set", asy
       return rows[0].id;
     });
     await withTenant(client, tenantId, "owner-sub", async (c) => {
-      await c.query(`insert into tenant_users (user_sub, tenant_id, email, role)
-                      values ('owner-sub', $1, 'owner@x.com', 'owner')`, [tenantId]);
-      await c.query(`insert into tenant_invites (tenant_id, email) values ($1, 'new@x.com')`, [tenantId]);
+      await c.query(
+        `insert into tenant_users (user_sub, tenant_id, email, role)
+                      values ('owner-sub', $1, 'owner@x.com', 'owner')`,
+        [tenantId],
+      );
+      await c.query(
+        `insert into tenant_invites (tenant_id, email) values ($1, 'new@x.com')`,
+        [tenantId],
+      );
     });
 
     // Now the provisioning-path query: no app.tenant_id set at all.
@@ -62,11 +73,15 @@ test("listPendingInvites never returns another tenant's invites", async () => {
   const client = await freshDb();
   try {
     const tenantA = await withProvisioning(client, "seed-a", async (c) => {
-      const { rows } = await c.query(`insert into tenants (name) values ('Household A') returning id`);
+      const { rows } = await c.query(
+        `insert into tenants (name) values ('Household A') returning id`,
+      );
       return rows[0].id;
     });
     const tenantB = await withProvisioning(client, "seed-b", async (c) => {
-      const { rows } = await c.query(`insert into tenants (name) values ('Household B') returning id`);
+      const { rows } = await c.query(
+        `insert into tenants (name) values ('Household B') returning id`,
+      );
       return rows[0].id;
     });
 
@@ -76,14 +91,20 @@ test("listPendingInvites never returns another tenant's invites", async () => {
         `insert into tenant_users (user_sub, tenant_id, email, role) values ('a-owner', $1, 'a@x.com', 'owner')`,
         [tenantA],
       );
-      await tenants.createInvite(makeExecute(c), { email: "invited-a@x.com", role: "member" });
+      await tenants.createInvite(makeExecute(c), {
+        email: "invited-a@x.com",
+        role: "member",
+      });
     });
     const bToken = await withTenant(client, tenantB, "b-owner", async (c) => {
       await c.query(
         `insert into tenant_users (user_sub, tenant_id, email, role) values ('b-owner', $1, 'b@x.com', 'owner')`,
         [tenantB],
       );
-      const invite = await tenants.createInvite(makeExecute(c), { email: "invited-b@x.com", role: "member" });
+      const invite = await tenants.createInvite(makeExecute(c), {
+        email: "invited-b@x.com",
+        role: "member",
+      });
       return invite.token;
     });
 
@@ -114,15 +135,21 @@ test("revokeInvite cannot delete another tenant's invite", async () => {
   const client = await freshDb();
   try {
     const tenantA = await withProvisioning(client, "seed-a", async (c) => {
-      const { rows } = await c.query(`insert into tenants (name) values ('Household A') returning id`);
+      const { rows } = await c.query(
+        `insert into tenants (name) values ('Household A') returning id`,
+      );
       return rows[0].id;
     });
     const tenantB = await withProvisioning(client, "seed-b", async (c) => {
-      const { rows } = await c.query(`insert into tenants (name) values ('Household B') returning id`);
+      const { rows } = await c.query(
+        `insert into tenants (name) values ('Household B') returning id`,
+      );
       return rows[0].id;
     });
     const bToken = await withTenant(client, tenantB, "b-owner", async (c) => {
-      const invite = await tenants.createInvite(makeExecute(c), { email: "invited-b@x.com" });
+      const invite = await tenants.createInvite(makeExecute(c), {
+        email: "invited-b@x.com",
+      });
       return invite.token;
     });
 
@@ -144,11 +171,16 @@ test("provisioning policies do NOT allow reading another tenant's data", async (
   const client = await freshDb();
   try {
     const tenantId = await withProvisioning(client, "seed-user", async (c) => {
-      const { rows } = await c.query(`insert into tenants (name) values ('Household B') returning id`);
+      const { rows } = await c.query(
+        `insert into tenants (name) values ('Household B') returning id`,
+      );
       return rows[0].id;
     });
     await withTenant(client, tenantId, "owner-sub", async (c) => {
-      await c.query(`insert into transactions (tenant_id, date, amount) values ($1, '2026-01-01', 10)`, [tenantId]);
+      await c.query(
+        `insert into transactions (tenant_id, date, amount) values ($1, '2026-01-01', 10)`,
+        [tenantId],
+      );
     });
     // No app.tenant_id set - transactions has no provisioning carve-out, so this must see nothing.
     const { rows } = await client.query(`select * from transactions`);

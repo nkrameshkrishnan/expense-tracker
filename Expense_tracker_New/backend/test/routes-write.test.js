@@ -184,9 +184,27 @@ test("addDebt/importDebts write rows stamped with the caller's tenant_id", async
       });
 
       const summary = await debts.importDebts(execute, [
-        { fileRef: 1, kind: "Debt", name: "Line of credit", amount: 900, date: "2026-02-01" },
-        { parentFileRef: 1, kind: "Payment", name: "LOC payment", amount: 100, date: "2026-03-01" },
-        { parentFileRef: 99, kind: "Payment", name: "Orphan", amount: 5, date: "2026-03-01" },
+        {
+          fileRef: 1,
+          kind: "Debt",
+          name: "Line of credit",
+          amount: 900,
+          date: "2026-02-01",
+        },
+        {
+          parentFileRef: 1,
+          kind: "Payment",
+          name: "LOC payment",
+          amount: 100,
+          date: "2026-03-01",
+        },
+        {
+          parentFileRef: 99,
+          kind: "Payment",
+          name: "Orphan",
+          amount: 5,
+          date: "2026-03-01",
+        },
       ]);
       assert.deepEqual(summary, { debts: 1, payments: 1, skipped: 1 });
 

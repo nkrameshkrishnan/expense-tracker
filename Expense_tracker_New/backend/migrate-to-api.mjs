@@ -33,7 +33,8 @@ for (const required of ["source-endpoint", "api-endpoint", "id-token"]) {
 async function fetchSourceData() {
   const url = `${args["source-endpoint"]}?idToken=${encodeURIComponent(args["id-token"])}`;
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`Source Sheets endpoint responded ${res.status}`);
+  if (!res.ok)
+    throw new Error(`Source Sheets endpoint responded ${res.status}`);
   return res.json();
 }
 
@@ -78,14 +79,18 @@ async function main() {
     for (const b of source.balances) (byDate[b.date] ||= []).push(b);
     for (const [date, entries] of Object.entries(byDate))
       await postToApi("setBalances", { date, entries });
-    console.log(`Balances migrated (${Object.keys(byDate).length} snapshot dates).`);
+    console.log(
+      `Balances migrated (${Object.keys(byDate).length} snapshot dates).`,
+    );
   }
 
   if (source.debts?.length) {
     const { debts, payments, skipped } = await postToApi("importDebts", {
       records: source.debts,
     });
-    console.log(`Debts migrated: ${debts} debts, ${payments} payments, ${skipped} skipped.`);
+    console.log(
+      `Debts migrated: ${debts} debts, ${payments} payments, ${skipped} skipped.`,
+    );
   }
 
   console.log("Migration complete.");

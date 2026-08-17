@@ -75,16 +75,23 @@ async function handleGet(user, event) {
   const txYear = qs.txYear !== undefined ? Number(qs.txYear) : undefined;
 
   return runInTenantTransaction(user.tenantId, user.sub, async (execute) => {
-    const [transactions, budgetRows, balanceRows, debtRows, years, membership, members] =
-      await Promise.all([
-        tx.listTransactions(execute, { txYear }),
-        budget.getBudgetRows(execute, year || new Date().getFullYear()),
-        balances.listBalances(execute),
-        debts.listDebts(execute),
-        tx.listTransactionYears(execute),
-        tenants.getMembership(execute, user.sub),
-        tenants.listMembers(execute),
-      ]);
+    const [
+      transactions,
+      budgetRows,
+      balanceRows,
+      debtRows,
+      years,
+      membership,
+      members,
+    ] = await Promise.all([
+      tx.listTransactions(execute, { txYear }),
+      budget.getBudgetRows(execute, year || new Date().getFullYear()),
+      balances.listBalances(execute),
+      debts.listDebts(execute),
+      tx.listTransactionYears(execute),
+      tenants.getMembership(execute, user.sub),
+      tenants.listMembers(execute),
+    ]);
     const role = membership?.role || "member";
     const invites =
       role === "owner" || role === "admin"
@@ -163,7 +170,10 @@ async function handlePost(user, event) {
       case "createInvite": {
         const membership = await tenants.getMembership(execute, user.sub);
         assertManagesInvites(membership);
-        return { ok: true, invite: await tenants.createInvite(execute, payload) };
+        return {
+          ok: true,
+          invite: await tenants.createInvite(execute, payload),
+        };
       }
       case "revokeInvite": {
         const membership = await tenants.getMembership(execute, user.sub);

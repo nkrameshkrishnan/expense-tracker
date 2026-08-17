@@ -1,8 +1,4 @@
-import {
-  isoDate,
-  validateBalanceEntry,
-  ValidationError,
-} from "../validate.js";
+import { isoDate, validateBalanceEntry, ValidationError } from "../validate.js";
 
 export async function listBalances(execute) {
   return execute.rows(`select * from balances order by date desc`);

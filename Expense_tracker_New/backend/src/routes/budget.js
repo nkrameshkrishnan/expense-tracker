@@ -1,9 +1,4 @@
-import {
-  money,
-  text,
-  validateYear,
-  ValidationError,
-} from "../validate.js";
+import { money, text, validateYear, ValidationError } from "../validate.js";
 
 export async function getBudgetRows(execute, year) {
   return execute.rows(`select * from budget where year = :year`, { year });

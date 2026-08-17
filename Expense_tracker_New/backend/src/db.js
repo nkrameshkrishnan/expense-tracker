@@ -58,15 +58,24 @@ async function withDataApiTransaction(setup, fn) {
         includeResultMetadata: true,
       }),
     );
-  execute.rows = async (sql, params = {}) => recordsToObjects(await execute(sql, params));
+  execute.rows = async (sql, params = {}) =>
+    recordsToObjects(await execute(sql, params));
   try {
     await setup(execute);
     const result = await fn(execute);
-    await client.send(new CommitTransactionCommand({ resourceArn, secretArn, transactionId }));
+    await client.send(
+      new CommitTransactionCommand({ resourceArn, secretArn, transactionId }),
+    );
     return result;
   } catch (err) {
     await client
-      .send(new RollbackTransactionCommand({ resourceArn, secretArn, transactionId }))
+      .send(
+        new RollbackTransactionCommand({
+          resourceArn,
+          secretArn,
+          transactionId,
+        }),
+      )
       .catch(() => {});
     throw err;
   }

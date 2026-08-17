@@ -1,7 +1,10 @@
 import { test, mock, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { RDSDataClient } from "@aws-sdk/client-rds-data";
-import { runInTenantTransaction, runProvisioningTransaction } from "../src/db.js";
+import {
+  runInTenantTransaction,
+  runProvisioningTransaction,
+} from "../src/db.js";
 
 let calls;
 

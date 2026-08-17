@@ -12,7 +12,11 @@ test("freshDb applies schema.sql - every tenant-owned table has RLS enabled", as
     );
     assert.equal(rows.length, 7);
     for (const row of rows)
-      assert.equal(row.relrowsecurity, true, `${row.relname} should have RLS enabled`);
+      assert.equal(
+        row.relrowsecurity,
+        true,
+        `${row.relname} should have RLS enabled`,
+      );
   } finally {
     await client.end();
   }
