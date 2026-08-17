@@ -16,8 +16,8 @@
 - **Every new/modified JS file must pass `node --check`**, matching the original repo's CI pattern (see the root repo's `.github/workflows/deploy.yml`).
 - **All new backend actions follow the existing `{action, ...}` POST / query-param GET contract** already used by `handler.js` and mirrored by `ApiStore` in `store.js` — no new endpoints, no new transport shape.
 - **Billing is explicitly out of scope for this plan.** `tenants.plan`/`tenants.status` columns already exist in `db/schema.sql` for future use; no Stripe integration, no plan enforcement, no tasks for it here. This matches the user's own pre-validation-stage decision recorded in `Expense_tracker_New/README.md`.
-- **Tenant-switching UI is explicitly out of scope for this plan.** Every user belongs to exactly one tenant, set once at signup by `postConfirmation.js` (either a brand-new tenant, or the tenant of the invite token they signed up with). There is no code path today for an *already-registered* user to join a second tenant, so a switcher has nothing to switch between yet. `auth.js`'s optional `X-Tenant-Id` header stays in place for future multi-membership work, but nothing sets it and this plan doesn't change that.
-- **RLS correctness is the highest-priority fix in this plan.** While preparing the test tasks below, a real bug was found: Postgres table *owners* bypass their own RLS policies unless `FORCE ROW LEVEL SECURITY` is also set, and `backend/template.yaml`'s `DataFunction`/`PostConfirmationFunction` both authenticate via `DbSecret` — the same master/owner credentials `DbCluster` was created with. Without `FORCE ROW LEVEL SECURITY`, every RLS policy in `db/schema.sql` is currently a no-op in production. Tasks 2–3 fix this.
+- **Tenant-switching UI is explicitly out of scope for this plan.** Every user belongs to exactly one tenant, set once at signup by `postConfirmation.js` (either a brand-new tenant, or the tenant of the invite token they signed up with). There is no code path today for an _already-registered_ user to join a second tenant, so a switcher has nothing to switch between yet. `auth.js`'s optional `X-Tenant-Id` header stays in place for future multi-membership work, but nothing sets it and this plan doesn't change that.
+- **RLS correctness is the highest-priority fix in this plan.** While preparing the test tasks below, a real bug was found: Postgres table _owners_ bypass their own RLS policies unless `FORCE ROW LEVEL SECURITY` is also set, and `backend/template.yaml`'s `DataFunction`/`PostConfirmationFunction` both authenticate via `DbSecret` — the same master/owner credentials `DbCluster` was created with. Without `FORCE ROW LEVEL SECURITY`, every RLS policy in `db/schema.sql` is currently a no-op in production. Tasks 2–3 fix this.
 
 ---
 
@@ -55,12 +55,14 @@ Modified files: `Expense_tracker_New/db/schema.sql` (Tasks 2–3), `Expense_trac
 ### Task 1: Local Postgres test harness
 
 **Files:**
+
 - Create: `Expense_tracker_New/db/docker-compose.yml`
 - Create: `Expense_tracker_New/backend/test/pg-harness.js`
 - Create: `Expense_tracker_New/backend/test/pg-harness.test.js`
 - Modify: `Expense_tracker_New/backend/package.json`
 
 **Interfaces:**
+
 - Produces: `freshDb(): Promise<pg.Client>` — connects to the local test Postgres, drops/recreates the `public` schema, applies `db/schema.sql`, returns a connected client the caller must `.end()`.
 - Produces: `withTenant(client: pg.Client, tenantId: string, userSub: string, fn: (client) => Promise<T>): Promise<T>` — mirrors `db.js`'s `runInTenantTransaction`, but against a plain `pg` client instead of the Data API, so RLS policies can be exercised directly.
 - Produces: `withProvisioning(client: pg.Client, userSub: string, fn: (client) => Promise<T>): Promise<T>` — mirrors `db.js`'s `runProvisioningTransaction` (Task 2): sets only `app.user_id`, leaves `app.tenant_id` genuinely unset. **This is the only correct way to seed a "first tenant" fixture row in any test** — never call `withTenant(client, "<placeholder>", ...)` for that purpose; see the doc comment on this function for why a placeholder string breaks differently (and worse) than leaving the var unset.
@@ -126,7 +128,11 @@ test("freshDb applies schema.sql - every tenant-owned table has RLS enabled", as
     );
     assert.equal(rows.length, 7);
     for (const row of rows)
-      assert.equal(row.relrowsecurity, true, `${row.relname} should have RLS enabled`);
+      assert.equal(
+        row.relrowsecurity,
+        true,
+        `${row.relname} should have RLS enabled`,
+      );
   } finally {
     await client.end();
   }
@@ -257,15 +263,17 @@ git commit -m "test: add local Postgres harness for RLS/schema tests"
 
 ### Task 2: Fix the RLS provisioning bootstrap gap
 
-**Context:** Creating a brand-new tenant, or consuming an invite, necessarily happens *before* any `app.tenant_id` session var can exist — there's nothing to scope to yet. The scaffold's `postConfirmation.js` papered over this with a placeholder tenant id string (`"__provisioning__"`), which only "worked" because the owner-bypass bug (fixed in Task 3) made RLS a no-op anyway. Fixing that bug without also fixing this would break signups outright. This task adds narrow, explicitly-scoped policies for exactly the provisioning path, and removes the placeholder-string hack.
+**Context:** Creating a brand-new tenant, or consuming an invite, necessarily happens _before_ any `app.tenant_id` session var can exist — there's nothing to scope to yet. The scaffold's `postConfirmation.js` papered over this with a placeholder tenant id string (`"__provisioning__"`), which only "worked" because the owner-bypass bug (fixed in Task 3) made RLS a no-op anyway. Fixing that bug without also fixing this would break signups outright. This task adds narrow, explicitly-scoped policies for exactly the provisioning path, and removes the placeholder-string hack.
 
 **Files:**
+
 - Modify: `Expense_tracker_New/db/schema.sql`
 - Modify: `Expense_tracker_New/backend/src/db.js`
 - Modify: `Expense_tracker_New/backend/src/postConfirmation.js`
 - Create: `Expense_tracker_New/backend/test/provisioning.test.js`
 
 **Interfaces:**
+
 - Consumes: `freshDb`, `withTenant` from `./pg-harness.js` (Task 1)
 - Produces: `runProvisioningTransaction(userSub: string, fn: (execute) => Promise<T>): Promise<T>` in `db.js`, alongside the existing `runInTenantTransaction`.
 
@@ -303,9 +311,15 @@ test("an invite can be looked up and marked used with no app.tenant_id set", asy
       return rows[0].id;
     });
     await withTenant(client, tenantId, "owner-sub", async (c) => {
-      await c.query(`insert into tenant_users (user_sub, tenant_id, email, role)
-                      values ('owner-sub', $1, 'owner@x.com', 'owner')`, [tenantId]);
-      await c.query(`insert into tenant_invites (tenant_id, email) values ($1, 'new@x.com')`, [tenantId]);
+      await c.query(
+        `insert into tenant_users (user_sub, tenant_id, email, role)
+                      values ('owner-sub', $1, 'owner@x.com', 'owner')`,
+        [tenantId],
+      );
+      await c.query(
+        `insert into tenant_invites (tenant_id, email) values ($1, 'new@x.com')`,
+        [tenantId],
+      );
     });
 
     // Now the provisioning-path query: no app.tenant_id set at all.
@@ -328,11 +342,16 @@ test("provisioning policies do NOT allow reading another tenant's data", async (
   const client = await freshDb();
   try {
     const tenantId = await withProvisioning(client, "seed-user", async (c) => {
-      const { rows } = await c.query(`insert into tenants (name) values ('Household B') returning id`);
+      const { rows } = await c.query(
+        `insert into tenants (name) values ('Household B') returning id`,
+      );
       return rows[0].id;
     });
     await withTenant(client, tenantId, "owner-sub", async (c) => {
-      await c.query(`insert into transactions (tenant_id, date, amount) values ($1, '2026-01-01', 10)`, [tenantId]);
+      await c.query(
+        `insert into transactions (tenant_id, date, amount) values ($1, '2026-01-01', 10)`,
+        [tenantId],
+      );
     });
     // No app.tenant_id set - transactions has no provisioning carve-out, so this must see nothing.
     const { rows } = await client.query(`select * from transactions`);
@@ -404,7 +423,7 @@ create policy tenant_invites_provisioning_update on tenant_invites
 
 - [ ] **Step 4: Run it again to confirm it still fails, then add FORCE**
 
-At this point `alter table tenants enable row level security;` etc. are already present, but since `DbCluster`'s master user OWNS these tables, RLS is currently a no-op for it regardless of the policies just added — so the third test ("provisioning policies do NOT allow reading another tenant's data") will currently FAIL (it'll see the row, because RLS isn't actually enforced yet against the owner). This is expected and is exactly the Task 3 bug — leave it failing for now; Task 3 makes it pass. Confirm the first two tests pass and the third fails for the *documented* reason:
+At this point `alter table tenants enable row level security;` etc. are already present, but since `DbCluster`'s master user OWNS these tables, RLS is currently a no-op for it regardless of the policies just added — so the third test ("provisioning policies do NOT allow reading another tenant's data") will currently FAIL (it'll see the row, because RLS isn't actually enforced yet against the owner). This is expected and is exactly the Task 3 bug — leave it failing for now; Task 3 makes it pass. Confirm the first two tests pass and the third fails for the _documented_ reason:
 
 ```bash
 node --test test/provisioning.test.js
@@ -433,15 +452,24 @@ async function withDataApiTransaction(setup, fn) {
         includeResultMetadata: true,
       }),
     );
-  execute.rows = async (sql, params = {}) => recordsToObjects(await execute(sql, params));
+  execute.rows = async (sql, params = {}) =>
+    recordsToObjects(await execute(sql, params));
   try {
     await setup(execute);
     const result = await fn(execute);
-    await client.send(new CommitTransactionCommand({ resourceArn, secretArn, transactionId }));
+    await client.send(
+      new CommitTransactionCommand({ resourceArn, secretArn, transactionId }),
+    );
     return result;
   } catch (err) {
     await client
-      .send(new RollbackTransactionCommand({ resourceArn, secretArn, transactionId }))
+      .send(
+        new RollbackTransactionCommand({
+          resourceArn,
+          secretArn,
+          transactionId,
+        }),
+      )
       .catch(() => {});
     throw err;
   }
@@ -494,10 +522,10 @@ return runProvisioningTransaction(sub, async (execute) => {
 (replacing the old `return runInTenantTransaction("__provisioning__", sub, async (execute) => {`). Also delete the comment block above that line that explains the `"__provisioning__"` placeholder and "relies on TenantAdmin policies being permissive" — it's no longer accurate; replace it with:
 
 ```js
-  // Runs with NO app.tenant_id set at all - there is no tenant yet. Relies
-  // entirely on the narrow provisioning-* policies in db/schema.sql; see
-  // db.js's runProvisioningTransaction for why this is the one legitimate
-  // caller of that carve-out.
+// Runs with NO app.tenant_id set at all - there is no tenant yet. Relies
+// entirely on the narrow provisioning-* policies in db/schema.sql; see
+// db.js's runProvisioningTransaction for why this is the one legitimate
+// caller of that carve-out.
 ```
 
 - [ ] **Step 7: Run the provisioning tests again**
@@ -522,10 +550,12 @@ git commit -m "fix: add explicit RLS bootstrap policies for tenant/invite provis
 **Context:** As found while writing Task 2: Postgres table owners bypass their own RLS policies unless `FORCE ROW LEVEL SECURITY` is set, and the Lambdas connect as the table-owning master user. Every `alter table X enable row level security;` in `db/schema.sql` is currently unenforced for the app's own connection. This task fixes it and proves it with a cross-tenant isolation test on the four "business" tables.
 
 **Files:**
+
 - Modify: `Expense_tracker_New/db/schema.sql`
 - Create: `Expense_tracker_New/backend/test/rls.test.js`
 
 **Interfaces:**
+
 - Consumes: `freshDb`, `withTenant` from `./pg-harness.js` (Task 1)
 
 - [ ] **Step 1: Write the failing test**
@@ -539,7 +569,10 @@ import { freshDb, withTenant, withProvisioning } from "./pg-harness.js";
 
 async function seedTenant(client, name) {
   return withProvisioning(client, "seed-user", async (c) => {
-    const { rows } = await c.query(`insert into tenants (name) values ($1) returning id`, [name]);
+    const { rows } = await c.query(
+      `insert into tenants (name) values ($1) returning id`,
+      [name],
+    );
     return rows[0].id;
   });
 }
@@ -551,10 +584,16 @@ test("a tenant cannot see another tenant's transactions", async () => {
     const tenantB = await seedTenant(client, "Household B");
 
     await withTenant(client, tenantA, "a-user", async (c) => {
-      await c.query(`insert into transactions (tenant_id, date, amount) values ($1, '2026-01-01', 100)`, [tenantA]);
+      await c.query(
+        `insert into transactions (tenant_id, date, amount) values ($1, '2026-01-01', 100)`,
+        [tenantA],
+      );
     });
     await withTenant(client, tenantB, "b-user", async (c) => {
-      await c.query(`insert into transactions (tenant_id, date, amount) values ($1, '2026-01-01', 200)`, [tenantB]);
+      await c.query(
+        `insert into transactions (tenant_id, date, amount) values ($1, '2026-01-01', 200)`,
+        [tenantB],
+      );
     });
 
     const seenByA = await withTenant(client, tenantA, "a-user", async (c) => {
@@ -575,7 +614,10 @@ test("a tenant cannot insert a row tagged with a different tenant_id", async () 
     const tenantB = await seedTenant(client, "Household D");
     await assert.rejects(
       withTenant(client, tenantA, "a-user", async (c) => {
-        await c.query(`insert into transactions (tenant_id, date, amount) values ($1, '2026-01-01', 50)`, [tenantB]);
+        await c.query(
+          `insert into transactions (tenant_id, date, amount) values ($1, '2026-01-01', 50)`,
+          [tenantB],
+        );
       }),
       /row-level security/,
     );
@@ -589,14 +631,30 @@ test("no session context at all sees zero rows across every business table", asy
   try {
     const tenantA = await seedTenant(client, "Household E");
     await withTenant(client, tenantA, "a-user", async (c) => {
-      await c.query(`insert into transactions (tenant_id, date, amount) values ($1, '2026-01-01', 10)`, [tenantA]);
-      await c.query(`insert into budget (tenant_id, year, category, month, amount) values ($1, 2026, 'Groceries', 1, 500)`, [tenantA]);
-      await c.query(`insert into balances (tenant_id, date, account, amount) values ($1, '2026-01-01', 'Chequing', 1000)`, [tenantA]);
-      await c.query(`insert into debts (tenant_id, name, amount) values ($1, 'Car loan', 5000)`, [tenantA]);
+      await c.query(
+        `insert into transactions (tenant_id, date, amount) values ($1, '2026-01-01', 10)`,
+        [tenantA],
+      );
+      await c.query(
+        `insert into budget (tenant_id, year, category, month, amount) values ($1, 2026, 'Groceries', 1, 500)`,
+        [tenantA],
+      );
+      await c.query(
+        `insert into balances (tenant_id, date, account, amount) values ($1, '2026-01-01', 'Chequing', 1000)`,
+        [tenantA],
+      );
+      await c.query(
+        `insert into debts (tenant_id, name, amount) values ($1, 'Car loan', 5000)`,
+        [tenantA],
+      );
     });
     for (const table of ["transactions", "budget", "balances", "debts"]) {
       const { rows } = await client.query(`select * from ${table}`);
-      assert.equal(rows.length, 0, `${table} should be invisible with no session context set`);
+      assert.equal(
+        rows.length,
+        0,
+        `${table} should be invisible with no session context set`,
+      );
     }
   } finally {
     await client.end();
@@ -683,10 +741,12 @@ git commit -m "fix: force RLS so the owner-credentialed backend connection is ac
 ### Task 4: `auth.js` — testable JWT verification
 
 **Files:**
+
 - Modify: `Expense_tracker_New/backend/src/auth.js`
 - Create: `Expense_tracker_New/backend/test/auth.test.js`
 
 **Interfaces:**
+
 - Produces: `createAuthChecker(verifier: { verify(token: string): Promise<object> }): (event) => Promise<{sub, email, tenantId}>` — factory so tests can inject a fake verifier instead of hitting Cognito's real JWKS endpoint.
 - Produces: `requireUser` — unchanged export name/signature, now built via `createAuthChecker(realCognitoVerifier)`. `handler.js`'s existing `import { requireUser, AuthError } from "./auth.js"` needs no changes.
 
@@ -702,7 +762,8 @@ import { createAuthChecker, AuthError } from "../src/auth.js";
 function fakeVerifier(claims) {
   return {
     verify: async (token) => {
-      if (token !== "valid-token") throw new Error("signature verification failed");
+      if (token !== "valid-token")
+        throw new Error("signature verification failed");
       return claims;
     },
   };
@@ -735,7 +796,9 @@ test("resolves sub/email/tenantId from a valid token's custom:tenant_id claim", 
   const requireUser = createAuthChecker(
     fakeVerifier({ sub: "u1", email: "a@x.com", "custom:tenant_id": "t1" }),
   );
-  const user = await requireUser({ headers: { authorization: "Bearer valid-token" } });
+  const user = await requireUser({
+    headers: { authorization: "Bearer valid-token" },
+  });
   assert.deepEqual(user, { sub: "u1", email: "a@x.com", tenantId: "t1" });
 });
 
@@ -848,9 +911,11 @@ git commit -m "refactor: make auth.js's JWT check testable via an injectable ver
 ### Task 5: `db.js` — transaction sequencing unit tests
 
 **Files:**
+
 - Create: `Expense_tracker_New/backend/test/db.test.js`
 
 **Interfaces:**
+
 - Consumes: `runInTenantTransaction`, `runProvisioningTransaction` from `../src/db.js` (Task 2)
 - No production code changes — `RDSDataClient.prototype.send` is mocked directly, so `db.js` needs no dependency-injection refactor.
 
@@ -862,7 +927,10 @@ git commit -m "refactor: make auth.js's JWT check testable via an injectable ver
 import { test, mock, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { RDSDataClient } from "@aws-sdk/client-rds-data";
-import { runInTenantTransaction, runProvisioningTransaction } from "../src/db.js";
+import {
+  runInTenantTransaction,
+  runProvisioningTransaction,
+} from "../src/db.js";
 
 let calls;
 
@@ -934,12 +1002,14 @@ git commit -m "test: cover db.js's transaction sequencing with a mocked RDS Data
 ### Task 6: Membership & invites — backend route
 
 **Files:**
+
 - Create: `Expense_tracker_New/backend/src/routes/tenants.js`
 - Modify: `Expense_tracker_New/backend/src/handler.js`
 - Create: `Expense_tracker_New/backend/test/tenants-route.test.js`
 - Create: `Expense_tracker_New/backend/test/handler-gating.test.js`
 
 **Interfaces:**
+
 - Produces (`routes/tenants.js`): `getMembership(execute, userSub): Promise<{role}|null>`, `listMembers(execute): Promise<Array<{user_sub,email,role,created_at}>>`, `listPendingInvites(execute): Promise<Array<{token,email,role,created_at,expires_at}>>`, `createInvite(execute, {email, role}): Promise<{token,email,role,expires_at}>`, `revokeInvite(execute, token): Promise<void>`.
 - Produces (`handler.js`): `assertManagesInvites(membership)` — throws unless `membership?.role` is `"owner"` or `"admin"`.
 - Consumes: `freshDb`, `withTenant` from `./pg-harness.js` (Task 1).
@@ -958,7 +1028,9 @@ test("listMembers/getMembership/createInvite/revokeInvite round-trip", async () 
   const client = await freshDb();
   try {
     const tenantId = await withProvisioning(client, "seed-user", async (c) => {
-      const { rows } = await c.query(`insert into tenants (name) values ('Household') returning id`);
+      const { rows } = await c.query(
+        `insert into tenants (name) values ('Household') returning id`,
+      );
       return rows[0].id;
     });
 
@@ -973,8 +1045,12 @@ test("listMembers/getMembership/createInvite/revokeInvite round-trip", async () 
     execute.rows = async (sql, params) => (await execute(sql, params)).rows;
 
     await client.query("begin");
-    await client.query("select set_config('app.tenant_id', $1, true)", [String(tenantId)]);
-    await client.query("select set_config('app.user_id', $1, true)", ["owner-sub"]);
+    await client.query("select set_config('app.tenant_id', $1, true)", [
+      String(tenantId),
+    ]);
+    await client.query("select set_config('app.user_id', $1, true)", [
+      "owner-sub",
+    ]);
 
     await execute(
       `insert into tenant_users (user_sub, tenant_id, email, role) values (:sub, :tenantId, :email, 'owner')`,
@@ -987,7 +1063,10 @@ test("listMembers/getMembership/createInvite/revokeInvite round-trip", async () 
     const members = await tenants.listMembers(execute);
     assert.equal(members.length, 1);
 
-    const invite = await tenants.createInvite(execute, { email: "new@x.com", role: "member" });
+    const invite = await tenants.createInvite(execute, {
+      email: "new@x.com",
+      role: "member",
+    });
     assert.equal(invite.email, "new@x.com");
     assert.ok(invite.token);
 
@@ -1129,16 +1208,23 @@ async function handleGet(user, event) {
   const txYear = qs.txYear !== undefined ? Number(qs.txYear) : undefined;
 
   return runInTenantTransaction(user.tenantId, user.sub, async (execute) => {
-    const [transactions, budgetRows, balanceRows, debtRows, years, membership, members] =
-      await Promise.all([
-        tx.listTransactions(execute, { txYear }),
-        budget.getBudgetRows(execute, year || new Date().getFullYear()),
-        balances.listBalances(execute),
-        debts.listDebts(execute),
-        tx.listTransactionYears(execute),
-        tenants.getMembership(execute, user.sub),
-        tenants.listMembers(execute),
-      ]);
+    const [
+      transactions,
+      budgetRows,
+      balanceRows,
+      debtRows,
+      years,
+      membership,
+      members,
+    ] = await Promise.all([
+      tx.listTransactions(execute, { txYear }),
+      budget.getBudgetRows(execute, year || new Date().getFullYear()),
+      balances.listBalances(execute),
+      debts.listDebts(execute),
+      tx.listTransactionYears(execute),
+      tenants.getMembership(execute, user.sub),
+      tenants.listMembers(execute),
+    ]);
     const role = membership?.role || "member";
     const invites =
       role === "owner" || role === "admin"
@@ -1205,9 +1291,11 @@ git commit -m "feat: add tenant membership/invite backend route"
 ### Task 7: Frontend `store.js` — membership/invite methods
 
 **Files:**
+
 - Modify: `Expense_tracker_New/frontend/assets/store.js`
 
 **Interfaces:**
+
 - Consumes: the enriched GET `/data` response and `createInvite`/`revokeInvite` POST actions from Task 6.
 - Produces on `ApiStore`: `getMembers(): Promise<Array>`, `getInvites(): Promise<Array>`, `getRole(): Promise<string>`, `createInvite(email, role): Promise<object>`, `revokeInvite(token): Promise<void>`.
 - Produces: `cognitoAuthorizeUrl` gains an optional invite-token parameter — actually implemented in `app.js` (Task 8), not here; this task only adds the cache fields it reads.
@@ -1217,8 +1305,8 @@ git commit -m "feat: add tenant membership/invite backend route"
 In `Expense_tracker_New/frontend/assets/store.js`, inside `class ApiStore`'s `_fill(d)` method, add after the existing `this.user = d.user || null;` line:
 
 ```js
-    this.cache.members = d.members || [];
-    this.cache.invites = d.invites || [];
+this.cache.members = d.members || [];
+this.cache.invites = d.invites || [];
 ```
 
 - [ ] **Step 2: Add the new methods**
@@ -1284,9 +1372,11 @@ git commit -m "feat: add membership/invite methods to ApiStore"
 ### Task 8: Frontend `app.js` — Household panel + invite-aware sign-in
 
 **Files:**
+
 - Modify: `Expense_tracker_New/frontend/assets/app.js`
 
 **Interfaces:**
+
 - Consumes: `ApiStore.getMembers/getInvites/getRole/createInvite/revokeInvite` (Task 7).
 
 - [ ] **Step 1: Make `cognitoAuthorizeUrl` invite-aware**
@@ -1312,18 +1402,18 @@ function cognitoAuthorizeUrl(inviteToken) {
 Find where `showGate()` wires up the click handler:
 
 ```js
-  $("#cognito-signin").onclick = () => {
-    location.href = cognitoAuthorizeUrl();
-  };
+$("#cognito-signin").onclick = () => {
+  location.href = cognitoAuthorizeUrl();
+};
 ```
 
 Replace with a version that reads an invite token from the URL if present (e.g. someone followed an invite link like `.../#invite=abc123`):
 
 ```js
-  $("#cognito-signin").onclick = () => {
-    const inviteMatch = location.hash.match(/invite=([\w-]+)/);
-    location.href = cognitoAuthorizeUrl(inviteMatch?.[1]);
-  };
+$("#cognito-signin").onclick = () => {
+  const inviteMatch = location.hash.match(/invite=([\w-]+)/);
+  location.href = cognitoAuthorizeUrl(inviteMatch?.[1]);
+};
 ```
 
 - [ ] **Step 2: Populate `state.members`/`state.invites`/`state.role` in `refresh()`, then add a "Household" panel to the Data tab**
@@ -1333,9 +1423,9 @@ Every other view function in this codebase reads data through top-level `state.*
 Find `refresh()` in `app.js` and add three lines immediately after the existing `state.debts = (await state.store.getDebts?.()) || [];` line:
 
 ```js
-  state.members = (await state.store.getMembers?.()) || [];
-  state.invites = (await state.store.getInvites?.()) || [];
-  state.role = (await state.store.getRole?.()) || "member";
+state.members = (await state.store.getMembers?.()) || [];
+state.invites = (await state.store.getInvites?.()) || [];
+state.role = (await state.store.getRole?.()) || "member";
 ```
 
 (The `?.()` optional-call matches the existing `getBalances?.()`/`getDebts?.()` lines exactly — `LocalStore`/`MemoryStore` don't implement `getMembers`/`getInvites`/`getRole` at all, so these correctly no-op to `undefined` → `[]`/`"member"` for those backends, the same graceful-degradation the balances/debts lines already rely on.)
@@ -1343,46 +1433,53 @@ Find `refresh()` in `app.js` and add three lines immediately after the existing 
 In `renderData()`, after the closing `</div>` of the "People" panel and before the "Danger zone" `eyebrow`, insert a new panel. First read the current members/invites/role at the top of `renderData()` — add these lines right after the existing `const who = state.store.user?.email || "";`:
 
 ```js
-  const members = state.members || [];
-  const invites = state.invites || [];
-  const myRole = state.role || "member";
-  const canManageInvites = myRole === "owner" || myRole === "admin";
+const members = state.members || [];
+const invites = state.invites || [];
+const myRole = state.role || "member";
+const canManageInvites = myRole === "owner" || myRole === "admin";
 ```
 
 Then insert this block into the template literal (right before the `<div class="eyebrow">Danger zone</div>` line):
 
 ```html
-  <div class="eyebrow">Household</div>
-  <div class="panel stack">
-    <p class="note" style="margin:0">Your role: <b>${esc(myRole)}</b>. ${members.length} member${members.length === 1 ? "" : "s"}.</p>
-    <ul class="stack" style="margin:0;padding-left:1.2em">
-      ${members.map((m) => `<li>${esc(m.email)} — ${esc(m.role)}</li>`).join("")}
-    </ul>
-    ${
-      canManageInvites
-        ? `
-    <div class="stack" style="max-width:420px">
-      <label class="f"><span>Invite by email</span>
-        <input id="invite-email" type="email" placeholder="name@example.com"></label>
-      <div class="actions"><button class="btn" id="send-invite">Send invite</button></div>
+<div class="eyebrow">Household</div>
+<div class="panel stack">
+  <p class="note" style="margin:0">
+    Your role: <b>${esc(myRole)}</b>. ${members.length} member${members.length
+    === 1 ? "" : "s"}.
+  </p>
+  <ul class="stack" style="margin:0;padding-left:1.2em">
+    ${members.map((m) => `
+    <li>${esc(m.email)} — ${esc(m.role)}</li>
+    `).join("")}
+  </ul>
+  ${ canManageInvites ? `
+  <div class="stack" style="max-width:420px">
+    <label class="f"
+      ><span>Invite by email</span>
+      <input id="invite-email" type="email" placeholder="name@example.com"
+    /></label>
+    <div class="actions">
+      <button class="btn" id="send-invite">Send invite</button>
     </div>
-    ${
-      invites.length
-        ? `<p class="note" style="margin:0">Pending invites:</p>
-    <ul class="stack" style="margin:0;padding-left:1.2em">
-      ${invites
-        .map(
-          (inv) => `<li>${esc(inv.email)}
-            <button class="btn ghost" data-copy-invite="${esc(inv.token)}">Copy link</button>
-            <button class="btn ghost" data-revoke-invite="${esc(inv.token)}">Revoke</button></li>`,
-        )
-        .join("")}
-    </ul>`
-        : ""
-    }`
-        : ""
-    }
   </div>
+  ${ invites.length ? `
+  <p class="note" style="margin:0">Pending invites:</p>
+  <ul class="stack" style="margin:0;padding-left:1.2em">
+    ${invites .map( (inv) => `
+    <li>
+      ${esc(inv.email)}
+      <button class="btn ghost" data-copy-invite="${esc(inv.token)}">
+        Copy link
+      </button>
+      <button class="btn ghost" data-revoke-invite="${esc(inv.token)}">
+        Revoke
+      </button>
+    </li>
+    `, ) .join("")}
+  </ul>
+  ` : "" }` : "" }
+</div>
 ```
 
 - [ ] **Step 3: Wire the new panel's handlers**
@@ -1392,41 +1489,41 @@ After `createInvite`/`revokeInvite` succeed, also refresh the top-level state so
 Immediately after the existing `$("#data-signout")?.addEventListener("click", signOut);` line in `renderData()`, add:
 
 ```js
-  $("#send-invite")?.addEventListener("click", async () => {
-    const email = $("#invite-email").value.trim();
-    if (!email) return notice("Enter an email address.", "bad");
-    const done = await withBusy("Sending invite", async () => {
-      await state.store.createInvite(email, "member");
+$("#send-invite")?.addEventListener("click", async () => {
+  const email = $("#invite-email").value.trim();
+  if (!email) return notice("Enter an email address.", "bad");
+  const done = await withBusy("Sending invite", async () => {
+    await state.store.createInvite(email, "member");
+    await refresh();
+  });
+  if (done) {
+    notice(`Invited ${email}.`, "ok");
+    renderData();
+  }
+});
+
+view.querySelectorAll("[data-copy-invite]").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const token = btn.dataset.copyInvite;
+    const link = `${location.origin}${location.pathname}#invite=${token}`;
+    await navigator.clipboard.writeText(link);
+    notice("Invite link copied.", "ok");
+  });
+});
+
+view.querySelectorAll("[data-revoke-invite]").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const token = btn.dataset.revokeInvite;
+    const done = await withBusy("Revoking invite", async () => {
+      await state.store.revokeInvite(token);
       await refresh();
     });
     if (done) {
-      notice(`Invited ${email}.`, "ok");
+      notice("Invite revoked.", "ok");
       renderData();
     }
   });
-
-  view.querySelectorAll("[data-copy-invite]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const token = btn.dataset.copyInvite;
-      const link = `${location.origin}${location.pathname}#invite=${token}`;
-      await navigator.clipboard.writeText(link);
-      notice("Invite link copied.", "ok");
-    });
-  });
-
-  view.querySelectorAll("[data-revoke-invite]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const token = btn.dataset.revokeInvite;
-      const done = await withBusy("Revoking invite", async () => {
-        await state.store.revokeInvite(token);
-        await refresh();
-      });
-      if (done) {
-        notice("Invite revoked.", "ok");
-        renderData();
-      }
-    });
-  });
+});
 ```
 
 - [ ] **Step 4: Syntax-check and manual smoke test**
@@ -1450,6 +1547,7 @@ git commit -m "feat: add Household member/invite panel to the Data tab"
 ### Task 9: CI workflow
 
 **Files:**
+
 - Create: `.github/workflows/ledger-new-ci.yml`
 
 - [ ] **Step 1: Write the workflow**
@@ -1543,6 +1641,7 @@ git commit -m "ci: add test/build workflow for Expense_tracker_New"
 ### Task 10: Data migration script
 
 **Files:**
+
 - Create: `Expense_tracker_New/backend/migrate-to-api.mjs`
 
 **Context:** Reads the existing household's data from the original repo's Google Sheets backend (`Code.gs`) — the household's actual current backend per `CLAUDE.md`; the Supabase path was a parallel experiment, not what's live — creates "tenant #1" via a one-off admin call, and posts every transaction/budget/balance/debt row through the new API's existing actions (`bulk`, `setBudget`, `setBalances`, `importDebts`). This intentionally reuses the API's own write paths rather than writing directly to Postgres, so the migrated data goes through the exact same validation (`normalise()`-equivalent) production writes do.
@@ -1587,7 +1686,8 @@ for (const required of ["source-endpoint", "api-endpoint", "id-token"]) {
 async function fetchSourceData() {
   const url = `${args["source-endpoint"]}?idToken=${encodeURIComponent(args["id-token"])}`;
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`Source Sheets endpoint responded ${res.status}`);
+  if (!res.ok)
+    throw new Error(`Source Sheets endpoint responded ${res.status}`);
   return res.json();
 }
 
@@ -1632,14 +1732,18 @@ async function main() {
     for (const b of source.balances) (byDate[b.date] ||= []).push(b);
     for (const [date, entries] of Object.entries(byDate))
       await postToApi("setBalances", { date, entries });
-    console.log(`Balances migrated (${Object.keys(byDate).length} snapshot dates).`);
+    console.log(
+      `Balances migrated (${Object.keys(byDate).length} snapshot dates).`,
+    );
   }
 
   if (source.debts?.length) {
     const { debts, payments, skipped } = await postToApi("importDebts", {
       records: source.debts,
     });
-    console.log(`Debts migrated: ${debts} debts, ${payments} payments, ${skipped} skipped.`);
+    console.log(
+      `Debts migrated: ${debts} debts, ${payments} payments, ${skipped} skipped.`,
+    );
   }
 
   console.log("Migration complete.");
