@@ -102,23 +102,28 @@ export function isoDate(value, field = "date", { required = true } = {}) {
   }
   if (typeof value !== "string" && !(value instanceof Date))
     throw new ValidationError(`${field} must be a YYYY-MM-DD string.`);
-  const text = (value instanceof Date ? value.toISOString() : value).slice(
+  // Named `ymd`, not `text` — a local `const text` here would shadow this
+  // module's own exported text() helper inside this function. Harmless
+  // today only because isoDate() happens not to call it; the equivalent
+  // shadow already caused a real "boot is not a function" bug in the
+  // frontend's app.js, so it is not repeated here.
+  const ymd = (value instanceof Date ? value.toISOString() : value).slice(
     0,
     10,
   );
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(text))
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd))
     throw new ValidationError(
       `${field} must be a YYYY-MM-DD date, got "${value}".`,
     );
-  const [y, m, d] = text.split("-").map(Number);
+  const [y, m, d] = ymd.split("-").map(Number);
   const probe = new Date(Date.UTC(y, m - 1, d));
   if (
     probe.getUTCFullYear() !== y ||
     probe.getUTCMonth() !== m - 1 ||
     probe.getUTCDate() !== d
   )
-    throw new ValidationError(`${field} is not a real date: "${text}".`);
-  return text;
+    throw new ValidationError(`${field} is not a real date: "${ymd}".`);
+  return ymd;
 }
 
 /** Free text. Objects and arrays are rejected rather than stringified —
