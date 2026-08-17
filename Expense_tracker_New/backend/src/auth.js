@@ -28,14 +28,30 @@ export function createAuthChecker(verifier) {
       throw new AuthError(`Invalid token: ${err.message}`);
     }
 
-    // Which tenant this request acts as. A user can belong to more than one
-    // tenant (tenant_users has no uniqueness constraint on user_sub alone),
-    // so the active one is either explicit (X-Tenant-Id header, validated
-    // against membership by the caller) or the token's own default claim set
-    // at signup — see postConfirmation.js. Route modules never accept a
-    // tenant id from the request body; only from here.
-    const requestedTenantId = event.headers?.["x-tenant-id"];
-    const tenantId = requestedTenantId || claims["custom:tenant_id"];
+    // Which tenant this request acts as. This comes from the VERIFIED token
+    // and nothing else — `custom:tenant_id` is set on the user at signup by
+    // postConfirmation.js and is covered by the JWT signature checked above.
+    // Route modules never accept a tenant id from the request body either;
+    // only from here.
+    //
+    // This used to also honour an `X-Tenant-Id` request header, on the
+    // theory that a user belonging to more than one tenant needs a way to
+    // say which one they are acting as. Nothing ever validated that header
+    // against tenant_users, so any authenticated user could read and write
+    // any other tenant's data by setting one header — every downstream
+    // control (RLS, the invite roles, the whole isolation model) keys off
+    // this value. Removed rather than patched, because nothing sends it:
+    // the frontend never set it, and multi-tenant switching is out of scope.
+    //
+    // FUTURE WORK, do not build now: re-introducing tenant switching means
+    // a real membership check BEFORE this value is trusted — inside a
+    // transaction, query tenant_users for (user_sub = claims.sub, tenant_id
+    // = requested) and reject with AuthError when there is no row. That
+    // lookup needs a DB round trip, so it belongs in a provisioning-style
+    // transaction here (or in handler.js before runInTenantTransaction),
+    // not in a header read. Until that exists, a client-supplied tenant id
+    // must never reach this function's return value.
+    const tenantId = claims["custom:tenant_id"];
     if (!tenantId) throw new AuthError("No tenant associated with this user.");
 
     return {

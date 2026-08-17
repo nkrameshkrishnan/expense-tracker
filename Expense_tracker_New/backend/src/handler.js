@@ -16,7 +16,11 @@ import * as tenants from "./routes/tenants.js";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": process.env.ALLOWED_ORIGIN || "*",
-  "Access-Control-Allow-Headers": "authorization,content-type,x-tenant-id",
+  // No x-tenant-id here (nor in template.yaml's CorsConfiguration): auth.js
+  // resolves the tenant from the verified token only, so there is no
+  // legitimate reason for a browser to send that header. Keep the two lists
+  // in sync if this ever changes.
+  "Access-Control-Allow-Headers": "authorization,content-type",
   "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
 };
 
