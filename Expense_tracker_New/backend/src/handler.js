@@ -14,6 +14,8 @@ import * as budget from "./routes/budget.js";
 import * as balances from "./routes/balances.js";
 import * as debts from "./routes/debts.js";
 import * as tenants from "./routes/tenants.js";
+import { createCheckoutSession, createPortalSession } from "./routes/billing.js";
+import { stripe } from "./stripe.js";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": process.env.ALLOWED_ORIGIN || "*",
@@ -180,6 +182,28 @@ async function handlePost(user, event) {
         assertManagesInvites(membership);
         await tenants.revokeInvite(execute, payload.token);
         return { ok: true };
+      }
+      case "createCheckoutSession": {
+        const membership = await tenants.getMembership(execute, user.sub);
+        if (!membership || membership.role !== "owner")
+          throw new Error("Only the owner can manage billing.");
+        if (!/^https:\/\//.test(payload.successUrl) || !/^https:\/\//.test(payload.cancelUrl))
+          throw new Error("successUrl/cancelUrl must be https:// URLs.");
+        return {
+          ok: true,
+          ...(await createCheckoutSession(execute, stripe, user.tenantId, payload)),
+        };
+      }
+      case "createPortalSession": {
+        const membership = await tenants.getMembership(execute, user.sub);
+        if (!membership || membership.role !== "owner")
+          throw new Error("Only the owner can manage billing.");
+        if (!/^https:\/\//.test(payload.returnUrl))
+          throw new Error("returnUrl must be an https:// URL.");
+        return {
+          ok: true,
+          ...(await createPortalSession(execute, stripe, user.tenantId, payload)),
+        };
       }
       default:
         throw new Error(`Unknown action: ${action}`);
