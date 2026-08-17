@@ -114,6 +114,19 @@ create policy tenants_provisioning_insert on tenants
 -- Scoped to "no app.tenant_id set" for the reason spelled out above.
 create policy tenants_provisioning_select on tenants
   for select using (nullif(current_setting('app.tenant_id', true), '') is null);
+-- Needed by src/stripeWebhook.js: Stripe webhook events identify a tenant
+-- only by stripe_customer_id, never by tenant_id, so those handlers run
+-- under runProvisioningTransaction the same way postConfirmation.js does -
+-- no app.tenant_id is set. Without this policy, an
+-- `update tenants ... where stripe_customer_id = ...` issued in that
+-- session matches zero rows under FORCE ROW LEVEL SECURITY (tenants_isolation
+-- alone rejects it, and there is no provisioning UPDATE policy to OR in) -
+-- the write silently no-ops instead of erroring. Mirrors
+-- tenant_invites_provisioning_update's shape exactly, just for this table.
+-- Scoped to "no app.tenant_id set" for the reason spelled out above.
+create policy tenants_provisioning_update on tenants
+  for update using (nullif(current_setting('app.tenant_id', true), '') is null)
+  with check (nullif(current_setting('app.tenant_id', true), '') is null);
 create policy tenant_users_provisioning_insert on tenant_users
   for insert with check (nullif(current_setting('app.tenant_id', true), '') is null);
 create policy tenant_invites_provisioning_select on tenant_invites
