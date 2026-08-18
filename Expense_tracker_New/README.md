@@ -185,6 +185,79 @@ was worked out in the brainstorming conversation that produced this scaffold
    working-looking code against the guess would be worse than leaving both
    flagged.
 
+## Billing setup
+
+Billing is only half code. The five steps below are all manual, all done in
+the Stripe or AWS consoles, and the feature is either broken or quietly
+wrong without them. Nothing in this repo can detect that they were skipped,
+so treat them as part of the deploy rather than as optional polish.
+
+**1. Create the three Products/Prices, then transcribe each price id twice.**
+Create a recurring monthly Price for Pro, Family and Business in the Stripe
+Dashboard. Each resulting `price_...` id has to be copied into **two
+independent places**:
+
+- `frontend/assets/config.js` — `STRIPE_PRICE_ID_PRO` / `_FAMILY` /
+  `_BUSINESS`, which is what the Billing panel's plan buttons send up as
+  `priceId`.
+- the SAM deploy parameters `StripePriceIdPro` / `StripePriceIdFamily` /
+  `StripePriceIdBusiness`, which is what `planFromPriceId`
+  (`backend/src/plans.js`) maps back to a plan name when the webhook
+  arrives.
+
+Nothing keeps those two copies in sync. They must match exactly, and they
+must come from the **same mode** — a test-mode id on one side and a
+live-mode id on the other is the easiest way to break this feature.
+`handler.js` validates the incoming `priceId` against the backend's own
+three before creating a Checkout Session, so a mismatch fails the request
+outright instead of charging a card the webhook then cannot interpret; the
+failure is loud, but it is still a misconfiguration only you can fix.
+
+**2. Register the webhook endpoint and copy its signing secret.** In
+Stripe → Developers → Webhooks, add an endpoint pointing at the stack's
+`{ApiUrl}/webhooks/stripe`, subscribed to at least
+`checkout.session.completed`, `customer.subscription.updated` and
+`customer.subscription.deleted`. Copy that endpoint's signing secret
+(`whsec_...`) into the `StripeWebhookSecret` deploy parameter. Until this
+exists, checkout completes and takes the customer's money but the tenant is
+never moved off the free plan — this webhook is the app's *only* channel
+for learning that anyone paid.
+
+**3. Set Stripe's failed-payment retries to 30 days before cancel.** In
+Stripe → Settings → Billing → Subscriptions and emails → "Manage failed
+payments", configure the retry schedule to run for 30 days and then cancel
+the subscription. **That Dashboard setting IS the 30-day grace period this
+app promises.** The past-due email in `backend/src/notify.js` tells the
+customer they have 30 days to fix their card; no application code anywhere
+enforces, tracks or extends that window. Set it shorter and the app is
+lying to customers; leave it at the account default and a failed payment
+behaves however that default happens to be configured.
+
+**4. Configure the Customer Portal with plan switching DISABLED.** In
+Stripe → Settings → Billing → Customer portal, allow payment-method
+updates, invoice history and cancellation, but turn **off** "Customers can
+switch plans". `handleSubscriptionUpdated` derives only `status` from
+`customer.subscription.updated`; it never re-derives `plan` from the
+subscription's current price. A portal that let a customer move from
+Business to Pro themselves would leave them billed for one plan and
+entitled to another indefinitely, with nothing in the app aware of the
+drift. Mid-subscription plan changes are intentionally unsupported — the
+customer cancels and re-subscribes through Checkout, which is also why the
+Billing panel hides the plan buttons while a subscription exists.
+
+**5. Verify the SES sender identity and leave the SES sandbox.** Billing
+notifications (past-due, downgraded-to-free) are sent through SES from the
+address in the `SesFromAddress` parameter. That identity must be verified,
+and while the account is in the SES sandbox SES will only deliver to *other
+verified addresses* — so every notification to a real customer fails. Those
+failures are deliberately swallowed: `stripeWebhook.js`'s
+`notifyBestEffort` logs and continues, so an SES outage can never roll back
+the tenant-state DB write the webhook just made. The practical consequence
+is that an unverified sender or a sandboxed account produces **no error
+anywhere you or the customer would notice** — just a CloudWatch log line,
+and a customer who never hears that their payment failed. Check the logs
+after the first real past-due event.
+
 ## Running tests locally
 
 ```bash
