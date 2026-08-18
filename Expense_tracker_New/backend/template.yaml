@@ -41,6 +41,21 @@ Parameters:
       https://nkrameshkrishnan.github.io/Expense_tracker_New/frontend/).
       Unlike AllowedOrigin, Cognito's CallbackURLs/LogoutURLs reject "*"
       outright — this must be a real, reachable URL, required (no default).
+  StripeSecretKey:
+    Type: String
+    NoEcho: true
+  StripeWebhookSecret:
+    Type: String
+    NoEcho: true
+  StripePriceIdPro:
+    Type: String
+  StripePriceIdFamily:
+    Type: String
+  StripePriceIdBusiness:
+    Type: String
+  SesFromAddress:
+    Type: String
+    Description: Verified SES sender address for billing notification emails.
 
 Globals:
   Function:
@@ -55,6 +70,11 @@ Globals:
         COGNITO_USER_POOL_ID: !Ref UserPool
         COGNITO_CLIENT_ID: !Ref UserPoolClient
         ALLOWED_ORIGIN: !Ref AllowedOrigin
+        STRIPE_SECRET_KEY: !Ref StripeSecretKey
+        STRIPE_PRICE_ID_PRO: !Ref StripePriceIdPro
+        STRIPE_PRICE_ID_FAMILY: !Ref StripePriceIdFamily
+        STRIPE_PRICE_ID_BUSINESS: !Ref StripePriceIdBusiness
+        SES_FROM_ADDRESS: !Ref SesFromAddress
 
 Resources:
   # --------------------------------------------------------------- Compute
@@ -115,6 +135,37 @@ Resources:
             - Effect: Allow
               Action: cognito-idp:AdminUpdateUserAttributes
               Resource: !GetAtt UserPool.Arn
+
+  StripeWebhookFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: stripeWebhook.handler
+      Environment:
+        Variables:
+          STRIPE_WEBHOOK_SECRET: !Ref StripeWebhookSecret
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - rds-data:ExecuteStatement
+                - rds-data:BeginTransaction
+                - rds-data:CommitTransaction
+                - rds-data:RollbackTransaction
+              Resource: !GetAtt DbCluster.DBClusterArn
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref DbSecret
+            - Effect: Allow
+              Action: ses:SendEmail
+              Resource: "*"
+      Events:
+        Post:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /webhooks/stripe
+            Method: POST
 
   HttpApi:
     Type: AWS::Serverless::HttpApi
