@@ -3,8 +3,12 @@
    Authenticity comes entirely from Stripe's own signature scheme
    (stripe.webhooks.constructEvent), checked before anything touches the
    database. Every handler below is written to be safe to process the
-   same event twice - Stripe redelivers on any non-2xx response, and an
-   `update ... where stripe_customer_id = ...` is naturally idempotent.
+   same event twice - Stripe redelivers on any non-2xx response, and every
+   handler below is a single `update ... where <stripe ids>` that lands on
+   the same final state however many times it runs. The subscription
+   handlers additionally key on stripe_subscription_id, not just
+   stripe_customer_id, so a LATE redelivery of a superseded subscription's
+   event matches nothing instead of clobbering the live one.
 
    handleCheckoutCompleted/handleSubscriptionUpdated/handleSubscriptionDeleted
    take `execute` as their first parameter - same shape as
@@ -37,24 +41,39 @@ export const handler = async (event) => {
   }
 
   try {
-    await runProvisioningTransaction("stripe-webhook", async (execute) => {
-      switch (stripeEvent.type) {
-        case "checkout.session.completed":
-          await handleCheckoutCompleted(execute, stripeEvent.data.object);
-          break;
-        case "customer.subscription.updated":
-          await handleSubscriptionUpdated(execute, stripeEvent.data.object);
-          break;
-        case "customer.subscription.deleted":
-          await handleSubscriptionDeleted(execute, stripeEvent.data.object);
-          break;
-        default:
-          // Unhandled event types are a normal, expected state (Stripe sends
-          // many more event types than this app acts on) - 200 tells Stripe
-          // not to retry, silently ignoring is correct here.
-          break;
+    // A transaction is opened per handled event type rather than around the
+    // whole switch: `default:` is a no-op, and opening (then committing) a
+    // Data API transaction for every unhandled event type Stripe sends is
+    // pure latency and lock churn for nothing.
+    switch (stripeEvent.type) {
+      case "checkout.session.completed": {
+        // listLineItems is an outbound HTTPS round-trip to Stripe. It runs
+        // BEFORE the transaction opens, deliberately: inside one, a slow
+        // Stripe response would hold the tenants-row lock open for the
+        // length of a third-party request, up to the Lambda's own timeout.
+        const session = stripeEvent.data.object;
+        const priceId = await fetchCheckoutPriceId(session);
+        await runProvisioningTransaction("stripe-webhook", (execute) =>
+          handleCheckoutCompleted(execute, session, priceId),
+        );
+        break;
       }
-    });
+      case "customer.subscription.updated":
+        await runProvisioningTransaction("stripe-webhook", (execute) =>
+          handleSubscriptionUpdated(execute, stripeEvent.data.object),
+        );
+        break;
+      case "customer.subscription.deleted":
+        await runProvisioningTransaction("stripe-webhook", (execute) =>
+          handleSubscriptionDeleted(execute, stripeEvent.data.object),
+        );
+        break;
+      default:
+        // Unhandled event types are a normal, expected state (Stripe sends
+        // many more event types than this app acts on) - 200 tells Stripe
+        // not to retry, silently ignoring is correct here.
+        break;
+    }
     return { statusCode: 200, body: "ok" };
   } catch (err) {
     console.error(`Webhook handling failed for ${stripeEvent.type}:`, err.message, err.stack);
@@ -70,16 +89,44 @@ export const handler = async (event) => {
     existing insert/select provisioning policies - see that policy's
     comment for why an update issued here would otherwise silently match
     zero rows. */
-export async function handleCheckoutCompleted(execute, session) {
-  const lineItems = await stripe.checkout.sessions.listLineItems(session.id);
-  const priceId = lineItems.data[0]?.price?.id;
+export async function handleCheckoutCompleted(execute, session, priceId) {
   const plan = planFromPriceId(priceId);
 
-  await execute(
+  const result = await execute(
     `update tenants set plan = :plan, status = 'active', stripe_subscription_id = :subscriptionId
      where stripe_customer_id = :customerId`,
     { plan, subscriptionId: session.subscription, customerId: session.customer },
   );
+  warnIfNoTenantMatched(result, session.customer);
+}
+
+/** The Stripe-side half of checkout.session.completed, split out so the
+    HTTPS call can happen before the DB transaction opens (see the switch
+    above). Kept exported so tests can drive the same two-step sequence the
+    real handler does. */
+export async function fetchCheckoutPriceId(session) {
+  const lineItems = await stripe.checkout.sessions.listLineItems(session.id);
+  return lineItems.data[0]?.price?.id;
+}
+
+/** Every UPDATE below is keyed on Stripe-supplied ids, not on a tenant id
+    this code looked up - so "matched zero rows" is indistinguishable from
+    success at the SQL level and would otherwise fail completely silently
+    (200 to Stripe, no retry, no alert) if the tenants_provisioning_update
+    RLS policy were ever missing/stale, or if a customer id drifted out of
+    sync. Returns whether anything matched so callers can also skip the
+    follow-up email a no-op update must not send.
+
+    Handles both `execute` shapes this file runs against: the RDS Data API's
+    numberOfRecordsUpdated (production, see db.js) and node-pg's rowCount
+    (test/pg-harness.js). */
+function warnIfNoTenantMatched(result, customerId) {
+  const rows = result?.numberOfRecordsUpdated ?? result?.rowCount ?? 0;
+  if (rows === 0) {
+    console.error(`Webhook matched no tenant for customer ${customerId}`);
+    return false;
+  }
+  return true;
 }
 
 /** Looks up the email of the tenant's `owner`-role member from a
@@ -135,10 +182,22 @@ export async function handleSubscriptionUpdated(execute, subscription) {
   // 'active' rather than an unrecognized value the rest of the code doesn't
   // know how to handle.
   const status = subscription.status === "past_due" ? "past_due" : "active";
-  await execute(`update tenants set status = :status where stripe_customer_id = :customerId`, {
-    status,
-    customerId: subscription.customer,
-  });
+  // Scoped to the subscription ON FILE, not just the customer. Stripe
+  // delivery is at-least-once and unordered: a retry of an OLD
+  // subscription's event can land after the customer has already cancelled
+  // and resubscribed, and a customer-only WHERE would let that stale event
+  // overwrite the live subscription's state (mark a healthy subscription
+  // past_due, or clear a genuine past_due). Keying on both means a stale
+  // event matches zero rows and is logged, not applied.
+  const result = await execute(
+    `update tenants set status = :status
+     where stripe_customer_id = :customerId and stripe_subscription_id = :subscriptionId`,
+    { status, customerId: subscription.customer, subscriptionId: subscription.id },
+  );
+  // No row matched -> this event is about a subscription this tenant is no
+  // longer on. Returning early also stops a false "your payment failed"
+  // email going to a customer whose current subscription is fine.
+  if (!warnIfNoTenantMatched(result, subscription.customer)) return;
   if (status === "past_due") {
     const ownerEmail = await ownerEmailForCustomer(execute, subscription.customer);
     if (ownerEmail) await notifyBestEffort(sendPastDueEmail, ownerEmail);
@@ -146,11 +205,15 @@ export async function handleSubscriptionUpdated(execute, subscription) {
 }
 
 export async function handleSubscriptionDeleted(execute, subscription) {
-  await execute(
+  // Same both-keys scoping as handleSubscriptionUpdated, for the same
+  // reason: a redelivered `deleted` for a subscription the customer has
+  // already replaced must not downgrade the replacement to free.
+  const result = await execute(
     `update tenants set plan = 'free', status = 'active', stripe_subscription_id = null
-     where stripe_customer_id = :customerId`,
-    { customerId: subscription.customer },
+     where stripe_customer_id = :customerId and stripe_subscription_id = :subscriptionId`,
+    { customerId: subscription.customer, subscriptionId: subscription.id },
   );
+  if (!warnIfNoTenantMatched(result, subscription.customer)) return;
   const ownerEmail = await ownerEmailForCustomer(execute, subscription.customer);
   if (ownerEmail) await notifyBestEffort(sendDowngradedEmail, ownerEmail);
 }

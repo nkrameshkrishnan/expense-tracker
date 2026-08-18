@@ -16,7 +16,7 @@ import * as debts from "./routes/debts.js";
 import * as tenants from "./routes/tenants.js";
 import { createCheckoutSession, createPortalSession } from "./routes/billing.js";
 import { stripe } from "./stripe.js";
-import { FEATURES } from "./plans.js";
+import { FEATURES, planFromPriceId } from "./plans.js";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": process.env.ALLOWED_ORIGIN || "*",
@@ -39,6 +39,23 @@ function json(status, body) {
 export function assertManagesInvites(membership) {
   if (!membership || !["owner", "admin"].includes(membership.role))
     throw new Error("Only owners or admins can manage invites.");
+}
+
+/** The priceId in a createCheckoutSession request is client-supplied - it
+    comes straight from frontend/assets/config.js, which is hand-transcribed
+    from the Stripe Dashboard independently of the backend's own
+    StripePriceId* parameters. If those two ever drift (or a caller simply
+    makes one up), Stripe would happily charge the card for a price this app
+    cannot map to a plan, and the resulting checkout.session.completed
+    webhook would then throw `Unrecognized Stripe price id` on every single
+    redelivery, forever, leaving a paying customer on the free plan.
+    planFromPriceId is the exact same mapping the webhook will later apply,
+    so calling it HERE - before any Stripe API call - turns that silent,
+    money-has-already-moved failure into a request that fails before a
+    charge is possible. The return value is deliberately discarded; this is
+    called purely for its validation throw. */
+export function assertKnownPriceId(priceId) {
+  planFromPriceId(priceId);
 }
 
 export const handler = async (event) => {
@@ -207,6 +224,7 @@ async function handlePost(user, event) {
           throw new Error("Only the owner can manage billing.");
         if (!/^https:\/\//.test(payload.successUrl) || !/^https:\/\//.test(payload.cancelUrl))
           throw new Error("successUrl/cancelUrl must be https:// URLs.");
+        assertKnownPriceId(payload.priceId); // must precede createCheckoutSession - see above
         return {
           ok: true,
           ...(await createCheckoutSession(execute, stripe, user.tenantId, payload)),

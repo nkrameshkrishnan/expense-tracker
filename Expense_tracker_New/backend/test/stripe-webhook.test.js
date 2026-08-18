@@ -6,6 +6,7 @@ import { freshDb, withProvisioning, makeExecute } from "./pg-harness.js";
 import { stripe } from "../src/stripe.js";
 import {
   handler,
+  fetchCheckoutPriceId,
   handleCheckoutCompleted,
   handleSubscriptionUpdated,
   handleSubscriptionDeleted,
@@ -63,12 +64,15 @@ test("rejects a request with an invalid signature", async () => {
 });
 
 test("accepts a valid signature and returns 200 for an unhandled event type", async () => {
-  // No real DB write happens for this event type (falls through to the
-  // `default:` no-op branch), but runProvisioningTransaction still opens
-  // and commits a transaction around it - mock the Data API the same way
-  // db.test.js does, purely to prove the signature-verified dispatch path
-  // returns 200 without needing a real AWS-backed transaction.
+  // This event type falls through to the `default:` no-op branch, which
+  // deliberately opens no transaction at all. The Data API is still mocked
+  // (the same way db.test.js does) so that a regression re-introducing a
+  // transaction around the whole switch fails loudly here on an unexpected
+  // AWS call rather than hanging on real credentials - and `sends` proves
+  // the current no-transaction behaviour directly.
+  const sends = [];
   mock.method(RDSDataClient.prototype, "send", async (command) => {
+    sends.push(command.constructor.name);
     if (command.constructor.name === "BeginTransactionCommand") return { transactionId: "tx-1" };
     if (command.constructor.name === "ExecuteStatementCommand")
       return { records: [], columnMetadata: [] };
@@ -78,6 +82,7 @@ test("accepts a valid signature and returns 200 for an unhandled event type", as
   const event = fakeEvent("customer.created", { id: "cus_test123" });
   const res = await handler(event);
   assert.equal(res.statusCode, 200);
+  assert.deepEqual(sends, []); // no transaction opened for an unhandled type
 });
 
 // --- Business logic: exercised directly against real Postgres/RLS.
@@ -90,12 +95,13 @@ test("checkout.session.completed sets plan from the price id and status active",
       data: [{ price: { id: "price_pro_test" } }],
     }));
 
+    // Two steps, mirroring the real handler: the Stripe HTTPS lookup runs
+    // BEFORE the provisioning transaction opens, so the price id is passed
+    // into the DB half rather than fetched from inside it.
+    const session = { id: "sess_test123", customer: "cus_test123", subscription: "sub_test123" };
+    const priceId = await fetchCheckoutPriceId(session);
     await withProvisioning(client, "stripe-webhook", (c) =>
-      handleCheckoutCompleted(makeExecute(c), {
-        id: "sess_test123",
-        customer: "cus_test123",
-        subscription: "sub_test123",
-      }),
+      handleCheckoutCompleted(makeExecute(c), session, priceId),
     );
 
     const { rows } = await client.query(`select plan, status, stripe_subscription_id from tenants where id = $1`, [tenantId]);
@@ -110,10 +116,18 @@ test("checkout.session.completed sets plan from the price id and status active",
 test("customer.subscription.updated with status past_due sets tenants.status", async () => {
   const client = await freshDb();
   try {
-    const tenantId = await seedTenant(client, { plan: "pro", status: "active" });
+    const tenantId = await seedTenant(client, {
+      plan: "pro",
+      status: "active",
+      stripeSubscriptionId: "sub_test123",
+    });
 
     await withProvisioning(client, "stripe-webhook", (c) =>
-      handleSubscriptionUpdated(makeExecute(c), { customer: "cus_test123", status: "past_due" }),
+      handleSubscriptionUpdated(makeExecute(c), {
+        id: "sub_test123",
+        customer: "cus_test123",
+        status: "past_due",
+      }),
     );
 
     const { rows } = await client.query(`select status from tenants where id = $1`, [tenantId]);
@@ -133,7 +147,7 @@ test("customer.subscription.deleted reverts to free/active and clears subscripti
     });
 
     await withProvisioning(client, "stripe-webhook", (c) =>
-      handleSubscriptionDeleted(makeExecute(c), { customer: "cus_test123" }),
+      handleSubscriptionDeleted(makeExecute(c), { id: "sub_test123", customer: "cus_test123" }),
     );
 
     const { rows } = await client.query(`select plan, status, stripe_subscription_id from tenants where id = $1`, [tenantId]);
@@ -148,8 +162,12 @@ test("customer.subscription.deleted reverts to free/active and clears subscripti
 test("processing the same event twice is safe (idempotent)", async () => {
   const client = await freshDb();
   try {
-    const tenantId = await seedTenant(client, { plan: "pro", status: "active" });
-    const subscription = { customer: "cus_test123", status: "past_due" };
+    const tenantId = await seedTenant(client, {
+      plan: "pro",
+      status: "active",
+      stripeSubscriptionId: "sub_test123",
+    });
+    const subscription = { id: "sub_test123", customer: "cus_test123", status: "past_due" };
 
     // Two separate provisioning transactions, mirroring two separate
     // Lambda invocations receiving the same redelivered Stripe event.
@@ -179,7 +197,11 @@ test("processing the same event twice is safe (idempotent)", async () => {
 test("customer.subscription.updated to past_due sends the past-due email to the owner", async () => {
   const client = await freshDb();
   try {
-    const tenantId = await seedTenant(client, { plan: "pro", status: "active" });
+    const tenantId = await seedTenant(client, {
+      plan: "pro",
+      status: "active",
+      stripeSubscriptionId: "sub_test123",
+    });
     await withProvisioning(client, "owner-sub", async (c) => {
       await c.query(
         `insert into tenant_users (user_sub, tenant_id, email, role) values ('owner-sub', $1, 'owner@x.com', 'owner')`,
@@ -193,7 +215,11 @@ test("customer.subscription.updated to past_due sends the past-due email to the 
     });
 
     await withProvisioning(client, "stripe-webhook", (c) =>
-      handleSubscriptionUpdated(makeExecute(c), { customer: "cus_test123", status: "past_due" }),
+      handleSubscriptionUpdated(makeExecute(c), {
+        id: "sub_test123",
+        customer: "cus_test123",
+        status: "past_due",
+      }),
     );
 
     assert.equal(sent.length, 1);
@@ -207,7 +233,11 @@ test("customer.subscription.updated to past_due sends the past-due email to the 
 test("customer.subscription.deleted sends the downgraded email to the owner", async () => {
   const client = await freshDb();
   try {
-    const tenantId = await seedTenant(client, { plan: "family", status: "active" });
+    const tenantId = await seedTenant(client, {
+      plan: "family",
+      status: "active",
+      stripeSubscriptionId: "sub_test123",
+    });
     await withProvisioning(client, "owner-sub", async (c) => {
       await c.query(
         `insert into tenant_users (user_sub, tenant_id, email, role) values ('owner-sub', $1, 'owner@x.com', 'owner')`,
@@ -221,7 +251,7 @@ test("customer.subscription.deleted sends the downgraded email to the owner", as
     });
 
     await withProvisioning(client, "stripe-webhook", (c) =>
-      handleSubscriptionDeleted(makeExecute(c), { customer: "cus_test123" }),
+      handleSubscriptionDeleted(makeExecute(c), { id: "sub_test123", customer: "cus_test123" }),
     );
 
     assert.equal(sent.length, 1);
@@ -235,7 +265,11 @@ test("customer.subscription.deleted sends the downgraded email to the owner", as
 test("customer.subscription.updated NOT reaching past_due does not send any email", async () => {
   const client = await freshDb();
   try {
-    const tenantId = await seedTenant(client, { plan: "pro", status: "past_due" });
+    const tenantId = await seedTenant(client, {
+      plan: "pro",
+      status: "past_due",
+      stripeSubscriptionId: "sub_test123",
+    });
     await withProvisioning(client, "owner-sub", async (c) => {
       await c.query(
         `insert into tenant_users (user_sub, tenant_id, email, role) values ('owner-sub', $1, 'owner@x.com', 'owner')`,
@@ -252,7 +286,11 @@ test("customer.subscription.updated NOT reaching past_due does not send any emai
     // past_due branch should ever email - a recovering subscription must
     // not trigger a past-due (or any) notification.
     await withProvisioning(client, "stripe-webhook", (c) =>
-      handleSubscriptionUpdated(makeExecute(c), { customer: "cus_test123", status: "active" }),
+      handleSubscriptionUpdated(makeExecute(c), {
+        id: "sub_test123",
+        customer: "cus_test123",
+        status: "active",
+      }),
     );
 
     assert.equal(sent.length, 0);
@@ -268,11 +306,13 @@ test("an SES failure does not roll back the tenant status/plan DB write", async 
       plan: "pro",
       status: "active",
       stripeCustomerId: "cus_update_fail",
+      stripeSubscriptionId: "sub_update_fail",
     });
     const deletedTenantId = await seedTenant(client, {
       plan: "family",
       status: "active",
       stripeCustomerId: "cus_delete_fail",
+      stripeSubscriptionId: "sub_delete_fail",
     });
     for (const [tenantId, customerId] of [
       [updatedTenantId, "cus_update_fail"],
@@ -293,10 +333,17 @@ test("an SES failure does not roll back the tenant status/plan DB write", async 
     // an error out of the handler, and (more importantly, see below) must
     // not have rolled back the update that already ran.
     await withProvisioning(client, "stripe-webhook", (c) =>
-      handleSubscriptionUpdated(makeExecute(c), { customer: "cus_update_fail", status: "past_due" }),
+      handleSubscriptionUpdated(makeExecute(c), {
+        id: "sub_update_fail",
+        customer: "cus_update_fail",
+        status: "past_due",
+      }),
     );
     await withProvisioning(client, "stripe-webhook", (c) =>
-      handleSubscriptionDeleted(makeExecute(c), { customer: "cus_delete_fail" }),
+      handleSubscriptionDeleted(makeExecute(c), {
+        id: "sub_delete_fail",
+        customer: "cus_delete_fail",
+      }),
     );
 
     const updated = await client.query(`select status from tenants where id = $1`, [updatedTenantId]);
@@ -308,6 +355,118 @@ test("an SES failure does not roll back the tenant status/plan DB write", async 
     assert.equal(deleted.rows[0].plan, "free");
     assert.equal(deleted.rows[0].status, "active");
     assert.equal(deleted.rows[0].stripe_subscription_id, null);
+  } finally {
+    await client.end();
+  }
+});
+
+// --- Late / out-of-order redelivery of a SUPERSEDED subscription's events.
+// Stripe delivery is at-least-once and unordered, so a retry of an event
+// belonging to a subscription the customer has since cancelled and replaced
+// can land at any time. Both handlers key on stripe_subscription_id as well
+// as stripe_customer_id precisely so those stale events match nothing; with
+// a customer-only WHERE clause both tests below would clobber the live
+// subscription's state.
+
+test("a stale customer.subscription.deleted does not downgrade the tenant's CURRENT subscription", async () => {
+  const client = await freshDb();
+  try {
+    // Tenant resubscribed: checkout completed for sub_B, so that is what is
+    // on file. sub_A is the older, already-gone subscription.
+    const tenantId = await seedTenant(client, { plan: "free", status: "active" });
+    mock.method(stripe.checkout.sessions, "listLineItems", async () => ({
+      data: [{ price: { id: "price_family_test" } }],
+    }));
+    const session = { id: "sess_B", customer: "cus_test123", subscription: "sub_B" };
+    const priceId = await fetchCheckoutPriceId(session);
+    await withProvisioning(client, "stripe-webhook", (c) =>
+      handleCheckoutCompleted(makeExecute(c), session, priceId),
+    );
+
+    const sent = [];
+    mock.method(SESClient.prototype, "send", async (command) => {
+      sent.push(command.input);
+      return {};
+    });
+
+    await withProvisioning(client, "stripe-webhook", (c) =>
+      handleSubscriptionDeleted(makeExecute(c), { id: "sub_A", customer: "cus_test123" }),
+    );
+
+    const { rows } = await client.query(
+      `select plan, status, stripe_subscription_id from tenants where id = $1`,
+      [tenantId],
+    );
+    assert.equal(rows[0].plan, "family");
+    assert.equal(rows[0].status, "active");
+    assert.equal(rows[0].stripe_subscription_id, "sub_B");
+    // And no "you're back on the Free plan" email for a downgrade that
+    // never happened.
+    assert.equal(sent.length, 0);
+  } finally {
+    await client.end();
+  }
+});
+
+test("a stale customer.subscription.updated does not mark a live subscription past_due", async () => {
+  const client = await freshDb();
+  try {
+    const tenantId = await seedTenant(client, { plan: "free", status: "active" });
+    mock.method(stripe.checkout.sessions, "listLineItems", async () => ({
+      data: [{ price: { id: "price_pro_test" } }],
+    }));
+    const session = { id: "sess_B", customer: "cus_test123", subscription: "sub_B" };
+    const priceId = await fetchCheckoutPriceId(session);
+    await withProvisioning(client, "stripe-webhook", (c) =>
+      handleCheckoutCompleted(makeExecute(c), session, priceId),
+    );
+
+    const sent = [];
+    mock.method(SESClient.prototype, "send", async (command) => {
+      sent.push(command.input);
+      return {};
+    });
+
+    await withProvisioning(client, "stripe-webhook", (c) =>
+      handleSubscriptionUpdated(makeExecute(c), {
+        id: "sub_A",
+        customer: "cus_test123",
+        status: "past_due",
+      }),
+    );
+
+    const { rows } = await client.query(
+      `select plan, status, stripe_subscription_id from tenants where id = $1`,
+      [tenantId],
+    );
+    assert.equal(rows[0].plan, "pro");
+    assert.equal(rows[0].status, "active");
+    assert.equal(rows[0].stripe_subscription_id, "sub_B");
+    assert.equal(sent.length, 0); // no false "payment failed" email either
+  } finally {
+    await client.end();
+  }
+});
+
+test("an UPDATE that matches no tenant is logged rather than passing silently", async () => {
+  const client = await freshDb();
+  const errors = [];
+  mock.method(console, "error", (...args) => errors.push(args.join(" ")));
+  try {
+    await seedTenant(client, { plan: "pro", status: "active", stripeSubscriptionId: "sub_B" });
+
+    await withProvisioning(client, "stripe-webhook", (c) =>
+      handleSubscriptionUpdated(makeExecute(c), {
+        id: "sub_A",
+        customer: "cus_unknown",
+        status: "past_due",
+      }),
+    );
+
+    assert.ok(
+      errors.some((e) => /Webhook matched no tenant for customer cus_unknown/.test(e)),
+      `expected a no-tenant-matched console.error, got: ${JSON.stringify(errors)}`,
+    );
   } finally {
     await client.end();
   }

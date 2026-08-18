@@ -56,7 +56,7 @@ async function resolveTenant({ sub, email, inviteToken }) {
       if (invites[0]) {
         const { tenant_id, role } = invites[0];
         const [{ plan }] = await execute.rows(
-          `select plan from tenants where id = :tenantId`,
+          `select plan from tenants where id = cast(:tenantId as uuid)`,
           { tenantId: tenant_id },
         );
         // cast(... as int) rather than `::int`: same reason as
@@ -64,7 +64,7 @@ async function resolveTenant({ sub, email, inviteToken }) {
         // indistinguishable from a `:name` bind param to the RDS Data
         // API's named-parameter parser.
         const [{ count: memberCount }] = await execute.rows(
-          `select cast(count(*) as int) as count from tenant_users where tenant_id = :tenantId`,
+          `select cast(count(*) as int) as count from tenant_users where tenant_id = cast(:tenantId as uuid)`,
           { tenantId: tenant_id },
         );
         // Hard, authoritative check: state can have changed (plan

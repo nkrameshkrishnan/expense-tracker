@@ -16,11 +16,20 @@ create table tenants (
   id          uuid primary key default gen_random_uuid(),
   name        text not null,
   plan        text not null default 'free',
-  status      text not null default 'active', -- active | suspended
+  status      text not null default 'active', -- active | past_due
   stripe_customer_id     text,
   stripe_subscription_id text,
   created_at  timestamptz not null default now()
 );
+
+-- The Stripe webhook handler's only route back to a tenant is this column
+-- (no app.tenant_id exists on that code path - see
+-- backend/src/stripeWebhook.js), which makes it both the hot WHERE-clause
+-- path and a correctness boundary: two tenants sharing a customer id would
+-- let one webhook silently update both. Partial, because the column stays
+-- null for every tenant that has never reached checkout.
+create unique index tenants_stripe_customer_idx on tenants (stripe_customer_id)
+  where stripe_customer_id is not null;
 
 -- One row per (Cognito user, tenant). A user could belong to more than one
 -- tenant later (e.g. accepting an invite to a second household); role is

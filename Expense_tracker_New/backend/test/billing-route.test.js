@@ -73,6 +73,53 @@ test("createCheckoutSession reuses an existing Stripe customer id, doesn't creat
   }
 });
 
+test("createCheckoutSession refuses to start a SECOND subscription for a tenant that already has one", async () => {
+  const client = await freshDb();
+  try {
+    const tenantId = await seedTenant(client, "Household");
+    await withTenant(client, tenantId, "owner-sub", (c) =>
+      c.query(
+        `update tenants set plan = 'pro', stripe_customer_id = 'cus_existing', stripe_subscription_id = 'sub_existing' where id = $1`,
+        [tenantId],
+      ),
+    );
+
+    // Checkout creates a NEW subscription; an existing subscriber changing
+    // plans has to go through the Portal, or they end up billed twice.
+    const calls = [];
+    mock.method(stripe.customers, "create", async () => {
+      calls.push("customers.create");
+      return { id: "cus_should_not_be_used" };
+    });
+    mock.method(stripe.checkout.sessions, "create", async () => {
+      calls.push("checkout.sessions.create");
+      return { url: "https://checkout.stripe.com/should-not-happen" };
+    });
+
+    await assert.rejects(
+      () =>
+        withTenant(client, tenantId, "owner-sub", (c) =>
+          createCheckoutSession(makeExecute(c), stripe, tenantId, {
+            priceId: "price_family_test",
+            successUrl: "https://example.com/success",
+            cancelUrl: "https://example.com/cancel",
+          }),
+        ),
+      /already has an active subscription/,
+    );
+    assert.deepEqual(calls, []); // rejected before any Stripe call
+
+    const { rows } = await client.query(
+      `select plan, stripe_subscription_id from tenants where id = $1`,
+      [tenantId],
+    );
+    assert.equal(rows[0].plan, "pro");
+    assert.equal(rows[0].stripe_subscription_id, "sub_existing");
+  } finally {
+    await client.end();
+  }
+});
+
 test("createPortalSession uses the tenant's existing Stripe customer id", async () => {
   const client = await freshDb();
   try {

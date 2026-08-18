@@ -7,6 +7,23 @@
    RLS regardless. */
 
 export async function createCheckoutSession(execute, stripe, tenantId, { priceId, successUrl, cancelUrl }) {
+  // Checkout CREATES a subscription; it never modifies an existing one. A
+  // tenant that already has one on file would end up billed twice, with the
+  // app only ever tracking whichever subscription's webhook landed last and
+  // no handle at all on the other. Changing or cancelling an existing
+  // subscription is the Customer Portal's job (createPortalSession below),
+  // which is why the Billing panel hides the plan-choice buttons once a
+  // subscription exists - this is the server-side half of that rule, since
+  // the frontend is not a trust boundary.
+  const [tenant] = await execute.rows(
+    `select stripe_subscription_id from tenants where id = cast(:tenantId as uuid)`,
+    { tenantId },
+  );
+  if (tenant?.stripe_subscription_id)
+    throw new Error(
+      "This household already has an active subscription. Use Manage billing to change or cancel it.",
+    );
+
   const customerId = await ensureStripeCustomer(execute, stripe, tenantId);
   const session = await stripe.checkout.sessions.create({
     customer: customerId,
