@@ -23,3 +23,12 @@ export const COGNITO_USER_POOL_ID = "";
 export const COGNITO_CLIENT_ID = "";
 export const COGNITO_DOMAIN = ""; // e.g. ledger-dev-123456789012.auth.us-east-1.amazoncognito.com
 export const COGNITO_REGION = "";
+
+/* Stripe Price ids for the paid plans (Pro/Family/Business). Not secrets -
+   a Price id only identifies which subscription tier a Checkout Session is
+   for - but they are deploy-specific (different per Stripe account/mode),
+   so they reach the frontend the same build-time-injection way API_ENDPOINT
+   does rather than being hardcoded. */
+export const STRIPE_PRICE_ID_PRO = "";
+export const STRIPE_PRICE_ID_FAMILY = "";
+export const STRIPE_PRICE_ID_BUSINESS = "";

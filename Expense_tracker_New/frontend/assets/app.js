@@ -23,6 +23,11 @@ import {
   ApiStore,
 } from "./store.js";
 import {
+  STRIPE_PRICE_ID_PRO,
+  STRIPE_PRICE_ID_FAMILY,
+  STRIPE_PRICE_ID_BUSINESS,
+} from "./config.js";
+import {
   aggregate,
   money,
   pct,
@@ -317,6 +322,23 @@ function renderPeopleSwitch() {
   );
 }
 
+/** Cosmetic only - the server already returns an empty balances array for
+    Free-tier tenants (getBalances, Task 6) regardless of what this does, so
+    a stale label here after a plan change (before the next refresh()) is
+    harmless. Locks the nav button rather than removing it outright, so a
+    Free-tier user sees WHY the tab is unavailable instead of it just
+    vanishing. */
+function updateNetWorthGate() {
+  const btn = document.querySelector('#tabs button[data-tab="networth"]');
+  if (!btn) return;
+  const locked = state.tenant?.plan === "free";
+  btn.disabled = locked;
+  btn.textContent = locked ? "\u{1F512} Net worth" : "Net worth";
+  btn.title = locked ? "Upgrade to unlock Net worth" : "";
+  btn.style.opacity = locked ? "0.5" : "";
+  btn.style.cursor = locked ? "not-allowed" : "";
+}
+
 let busy = false;
 /** Wraps a write so the UI cannot fire two overlapping sheet writes. */
 async function withBusy(label, fn) {
@@ -376,8 +398,10 @@ async function refresh() {
   state.members = (await state.store.getMembers?.()) || [];
   state.invites = (await state.store.getInvites?.()) || [];
   state.role = (await state.store.getRole?.()) || "member";
+  state.tenant = (await state.store.getTenant?.()) || { plan: "free", status: "active" };
   $("#foot-count").textContent = `${state.rows.length} transactions stored`;
   renderPeopleSwitch();
+  updateNetWorthGate();
   const c = $("#conn");
   const label = {
     api: "\u25cf ledger api",
@@ -2973,6 +2997,14 @@ function renderData() {
   const invites = state.invites || [];
   const myRole = state.role || "member";
   const canManageInvites = myRole === "owner" || myRole === "admin";
+  const tenant = state.tenant || { plan: "free", status: "active" };
+  const PLANS = [
+    { id: "free", label: "Free", price: "$0/mo", priceId: null },
+    { id: "pro", label: "Pro", price: "$7/mo CAD", priceId: STRIPE_PRICE_ID_PRO },
+    { id: "family", label: "Family", price: "$13/mo CAD", priceId: STRIPE_PRICE_ID_FAMILY },
+    { id: "business", label: "Business", price: "$24/mo CAD", priceId: STRIPE_PRICE_ID_BUSINESS },
+  ];
+  const showDowngradeBanner = tenant.plan === "free" && !!tenant.hasStripeCustomer;
 
   view.innerHTML = `
   <div class="head"><div><h1>Data</h1><p class="sub">Where your data lives, and how to get it in and out.</p></div></div>
@@ -3079,6 +3111,37 @@ function renderData() {
     }
   </div>
 
+  <div class="eyebrow">Billing</div>
+  <div class="panel stack">
+    <p class="note" style="margin:0">Current plan: <b>${esc(tenant.plan)}</b>${tenant.status === "past_due" ? ' \u2014 <b style="color:var(--danger,#c00)">payment failed</b>' : ""}.</p>
+    ${
+      showDowngradeBanner
+        ? `<p class="note" style="margin:0">Your subscription was canceled after a failed payment \u2014 you're on the Free plan. <button class="btn ghost" id="resubscribe">Resubscribe</button></p>`
+        : ""
+    }
+    <div class="actions" style="flex-wrap:wrap">
+      ${PLANS.map(
+        (p) => `
+        <div class="panel" style="min-width:160px">
+          <b>${esc(p.label)}</b><br>
+          <span class="muted">${esc(p.price)}</span><br>
+          ${
+            p.id === tenant.plan
+              ? '<span class="muted">Current plan</span>'
+              : p.priceId
+                ? `<button class="btn ghost" data-upgrade-plan="${esc(p.priceId)}">Choose ${esc(p.label)}</button>`
+                : ""
+          }
+        </div>`,
+      ).join("")}
+    </div>
+    ${
+      tenant.plan !== "free"
+        ? '<div class="actions"><button class="btn ghost" id="manage-billing">Manage billing</button></div>'
+        : ""
+    }
+  </div>
+
   <div class="eyebrow">Danger zone</div>
   <div class="panel"><div class="actions">
     <button class="btn danger" id="wipe">Delete every row${live ? " from the server" : ""}</button>
@@ -3130,6 +3193,36 @@ function renderData() {
   };
 
   $("#data-signout")?.addEventListener("click", signOut);
+
+  view.querySelectorAll("[data-upgrade-plan]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const base = location.origin + location.pathname;
+      const done = await withBusy("Starting checkout", async () => {
+        const { url } = await state.store.createCheckoutSession(
+          btn.dataset.upgradePlan,
+          `${base}#data`,
+          `${base}#data`,
+        );
+        location.href = url;
+      });
+      if (!done) notice("Could not start checkout.", "bad");
+    });
+  });
+
+  $("#manage-billing")?.addEventListener("click", async () => {
+    const returnUrl = location.origin + location.pathname;
+    const done = await withBusy("Opening billing portal", async () => {
+      const { url } = await state.store.createPortalSession(returnUrl);
+      location.href = url;
+    });
+    if (!done) notice("Could not open billing portal.", "bad");
+  });
+
+  $("#resubscribe")?.addEventListener("click", () => {
+    // Scrolls to / re-renders the same panel's plan cards - resubscribing
+    // is just choosing a plan again, no separate flow needed.
+    renderData();
+  });
 
   $("#send-invite")?.addEventListener("click", async () => {
     const email = $("#invite-email").value.trim();
@@ -3405,6 +3498,16 @@ async function boot() {
   await seedIfEmpty();
   await refresh();
   revealApp();
+  if (state.tenant?.status === "past_due") {
+    notice("Your payment failed — update your card to keep full access.", "bad", {
+      label: "Manage billing →",
+      onClick: async () => {
+        const returnUrl = location.origin + location.pathname;
+        const { url } = await state.store.createPortalSession(returnUrl);
+        location.href = url;
+      },
+    });
+  }
   // A configured endpoint that still failed to connect (as opposed to no
   // endpoint being saved at all, which is a normal, expected state) is the
   // one case worth a real recovery action, not just informational text. The
