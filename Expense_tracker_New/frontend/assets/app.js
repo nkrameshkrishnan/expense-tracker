@@ -2998,6 +2998,17 @@ function renderData() {
   const myRole = state.role || "member";
   const canManageInvites = myRole === "owner" || myRole === "admin";
   const tenant = state.tenant || { plan: "free", status: "active" };
+  // Billing is owner-only (the backend enforces the same rule on both
+  // billing actions), and it is a narrower rule than canManageInvites -
+  // an admin can invite people but cannot spend the household's money.
+  // Same shape as the Household panel above: the read-only summary stays
+  // visible to everyone, only the actions are gated.
+  const canManageBilling = myRole === "owner";
+  // Checkout can only CREATE a subscription. Once one exists, changing or
+  // cancelling it belongs to the Customer Portal - showing "Choose <other
+  // plan>" here would start a second, separately-billed subscription
+  // (routes/billing.js rejects it server-side too).
+  const hasSubscription = tenant.plan !== "free";
   const PLANS = [
     { id: "free", label: "Free", price: "$0/mo", priceId: null },
     { id: "pro", label: "Pro", price: "$7/mo CAD", priceId: STRIPE_PRICE_ID_PRO },
@@ -3116,7 +3127,7 @@ function renderData() {
     <p class="note" style="margin:0">Current plan: <b>${esc(tenant.plan)}</b>${tenant.status === "past_due" ? ' \u2014 <b style="color:var(--danger,#c00)">payment failed</b>' : ""}.</p>
     ${
       showDowngradeBanner
-        ? `<p class="note" style="margin:0">Your subscription was canceled after a failed payment \u2014 you're on the Free plan. <button class="btn ghost" id="resubscribe">Resubscribe</button></p>`
+        ? `<p class="note" style="margin:0">Your subscription was canceled after a failed payment \u2014 you're on the Free plan.${canManageBilling ? ' <button class="btn ghost" id="resubscribe">Resubscribe</button>' : ""}</p>`
         : ""
     }
     <div class="actions" style="flex-wrap:wrap">
@@ -3128,17 +3139,23 @@ function renderData() {
           ${
             p.id === tenant.plan
               ? '<span class="muted">Current plan</span>'
-              : p.priceId
-                ? `<button class="btn ghost" data-upgrade-plan="${esc(p.priceId)}">Choose ${esc(p.label)}</button>`
-                : ""
+              : !canManageBilling || hasSubscription || !p.priceId
+                ? ""
+                : `<button class="btn ghost" data-upgrade-plan="${esc(p.priceId)}">Choose ${esc(p.label)}</button>`
           }
         </div>`,
       ).join("")}
     </div>
     ${
-      tenant.plan !== "free"
-        ? '<div class="actions"><button class="btn ghost" id="manage-billing">Manage billing</button></div>'
+      hasSubscription && canManageBilling
+        ? `<p class="note" style="margin:0">Switching plans, updating your card and cancelling all happen in the Stripe billing portal \u2014 starting a second checkout here would bill you twice.</p>
+    <div class="actions"><button class="btn ghost" id="manage-billing">Manage billing</button></div>`
         : ""
+    }
+    ${
+      canManageBilling
+        ? ""
+        : '<p class="note" style="margin:0">Only the household owner can change the plan or manage payment details.</p>'
     }
   </div>
 
@@ -3333,16 +3350,21 @@ function renderData() {
         return;
       }
       const dest = backendLabel(state.store);
+      const replacing = $("#replace").checked;
       if (
         !confirm(
-          `Import ${rows.length} rows from "${sheet}" into ${dest}?${skipped ? `\n\n${skipped} rows will be skipped (no valid date or amount).` : ""}`,
+          `Import ${rows.length} rows from "${sheet}" into ${dest}?${skipped ? `\n\n${skipped} rows will be skipped (no valid date or amount).` : ""}${
+            replacing
+              ? `\n\n"Replace everything first" is checked: every existing transaction will be deleted before the import.${hiddenHistoryWarning()}`
+              : ""
+          }`,
         )
       ) {
         out.textContent = "Cancelled.";
         return;
       }
       const done = await withBusy(`Writing ${rows.length} rows`, async () => {
-        if ($("#replace").checked) await state.store.clear();
+        if (replacing) await state.store.clear(); // the same flag the confirmation above described
         await state.store.bulkAdd(rows, (n, total) => {
           notice(`Writing to the sheet\u2026 ${n} of ${total} rows`);
         });
@@ -3361,7 +3383,7 @@ function renderData() {
     const where = backendLabel(state.store);
     if (
       !confirm(
-        `Delete all ${state.rows.length} transactions from ${where}?\n\nThis cannot be undone.`,
+        `Delete all ${state.rows.length} transactions from ${where}?\n\nThis cannot be undone.${hiddenHistoryWarning()}`,
       )
     )
       return;
@@ -3492,6 +3514,21 @@ const backendLabel = (s) =>
       ? "this session only (nothing will be saved after reload)"
       : "this browser only";
 
+// A tenant that downgraded to Free still HAS its older transactions on the
+// server - the Free plan's 12-month window only hides them from what the
+// API returns (see backend/src/plans.js's FEATURES.historyMonths). The
+// destructive flows below, though, clear the table server-side with no date
+// filter at all, so they delete those hidden rows too, and neither the
+// "Delete all N transactions" count nor the import's "Replace everything
+// first" wording would otherwise account for them. Only a tenant that has
+// been through checkout (hasStripeCustomer) can have rows outside the
+// window, so the warning is scoped to exactly that case rather than shown
+// to every Free user.
+const hiddenHistoryWarning = () =>
+  state.tenant?.plan === "free" && state.tenant?.hasStripeCustomer
+    ? "\n\nWARNING: your account is on the Free plan, which only shows the last 12 months. Older transactions that are currently hidden from you will ALSO be permanently deleted, and they are not in the counts above or in an export taken now."
+    : "";
+
 async function boot() {
   startBootMessages();
   state.store = await openStore(notice);
@@ -3501,10 +3538,17 @@ async function boot() {
   if (state.tenant?.status === "past_due") {
     notice("Your payment failed — update your card to keep full access.", "bad", {
       label: "Manage billing →",
+      // Same withBusy + notice shape as the #manage-billing handler in
+      // renderData(). Without it, a failed createPortalSession (expired
+      // token, API down, a non-owner reaching the banner) rejected into
+      // nothing: the click looked like it did nothing at all.
       onClick: async () => {
         const returnUrl = location.origin + location.pathname;
-        const { url } = await state.store.createPortalSession(returnUrl);
-        location.href = url;
+        const done = await withBusy("Opening billing portal", async () => {
+          const { url } = await state.store.createPortalSession(returnUrl);
+          location.href = url;
+        });
+        if (!done) notice("Could not open billing portal.", "bad");
       },
     });
   }
