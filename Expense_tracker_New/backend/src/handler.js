@@ -14,7 +14,10 @@ import * as budget from "./routes/budget.js";
 import * as balances from "./routes/balances.js";
 import * as debts from "./routes/debts.js";
 import * as tenants from "./routes/tenants.js";
-import { createCheckoutSession, createPortalSession } from "./routes/billing.js";
+import {
+  createCheckoutSession,
+  createPortalSession,
+} from "./routes/billing.js";
 import { stripe } from "./stripe.js";
 import { FEATURES, planFromPriceId } from "./plans.js";
 
@@ -222,12 +225,20 @@ async function handlePost(user, event) {
         const membership = await tenants.getMembership(execute, user.sub);
         if (!membership || membership.role !== "owner")
           throw new Error("Only the owner can manage billing.");
-        if (!/^https:\/\//.test(payload.successUrl) || !/^https:\/\//.test(payload.cancelUrl))
+        if (
+          !/^https:\/\//.test(payload.successUrl) ||
+          !/^https:\/\//.test(payload.cancelUrl)
+        )
           throw new Error("successUrl/cancelUrl must be https:// URLs.");
         assertKnownPriceId(payload.priceId); // must precede createCheckoutSession - see above
         return {
           ok: true,
-          ...(await createCheckoutSession(execute, stripe, user.tenantId, payload)),
+          ...(await createCheckoutSession(
+            execute,
+            stripe,
+            user.tenantId,
+            payload,
+          )),
         };
       }
       case "createPortalSession": {
@@ -238,7 +249,12 @@ async function handlePost(user, event) {
           throw new Error("returnUrl must be an https:// URL.");
         return {
           ok: true,
-          ...(await createPortalSession(execute, stripe, user.tenantId, payload)),
+          ...(await createPortalSession(
+            execute,
+            stripe,
+            user.tenantId,
+            payload,
+          )),
         };
       }
       default:

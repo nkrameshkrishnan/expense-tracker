@@ -92,7 +92,11 @@ test("transactions round-trip: bulk insert, list, years, update, delete, clear",
       const years = await tx.listTransactionYears(execute, FEATURES.business);
       assert.deepEqual(years, [2026, 2025]);
 
-      const scoped = await tx.listTransactions(execute, { txYear: 2026 }, FEATURES.business);
+      const scoped = await tx.listTransactions(
+        execute,
+        { txYear: 2026 },
+        FEATURES.business,
+      );
       assert.equal(scoped.length, 1);
       assert.equal(Number(scoped[0].amount), 20);
 
@@ -106,10 +110,16 @@ test("transactions round-trip: bulk insert, list, years, update, delete, clear",
       assert.equal(Number(updated.amount), 99.99);
 
       await tx.deleteTransaction(execute, scoped[0].id);
-      assert.equal((await tx.listTransactions(execute, {}, FEATURES.business)).length, 1);
+      assert.equal(
+        (await tx.listTransactions(execute, {}, FEATURES.business)).length,
+        1,
+      );
 
       await tx.clearTransactions(execute);
-      assert.equal((await tx.listTransactions(execute, {}, FEATURES.business)).length, 0);
+      assert.equal(
+        (await tx.listTransactions(execute, {}, FEATURES.business)).length,
+        0,
+      );
     });
   } finally {
     await client.end();
@@ -153,7 +163,10 @@ test("setBalances writes rows stamped with the caller's tenant_id", async () => 
       for (const r of rows) assert.equal(r.tenant_id, tenantId);
 
       await balances.deleteBalanceDate(execute, "2026-02-28");
-      assert.equal((await balances.listBalances(execute, FEATURES.business)).length, 0);
+      assert.equal(
+        (await balances.listBalances(execute, FEATURES.business)).length,
+        0,
+      );
     });
   } finally {
     await client.end();

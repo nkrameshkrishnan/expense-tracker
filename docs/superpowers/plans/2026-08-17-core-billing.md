@@ -4,7 +4,7 @@
 
 **Goal:** Add Stripe Checkout + webhook billing to Ledger's multi-tenant backend — four pricing tiers (Free/Pro/Family/Business), seat-cap and feature-gate enforcement, a 30-day past-due grace period, SES + in-app notifications, and a frontend Billing panel.
 
-**Architecture:** Stripe Checkout/Customer Portal (redirect-based, no embedded payment form) for the money-moving UI; a webhook Lambda, separate from the authenticated `DataFunction`, receives Stripe's server-to-server events and is the source of truth for `tenants.plan`/`tenants.status`. `createCheckoutSession`/`createPortalSession` are two new actions on the *existing* authenticated `{action, ...}` contract — no new Lambda needed for those, only the webhook is a new entry point.
+**Architecture:** Stripe Checkout/Customer Portal (redirect-based, no embedded payment form) for the money-moving UI; a webhook Lambda, separate from the authenticated `DataFunction`, receives Stripe's server-to-server events and is the source of truth for `tenants.plan`/`tenants.status`. `createCheckoutSession`/`createPortalSession` are two new actions on the _existing_ authenticated `{action, ...}` contract — no new Lambda needed for those, only the webhook is a new entry point.
 
 **Tech Stack:** `stripe` npm SDK (Node), `@aws-sdk/client-ses` (matches the project's existing AWS SDK v3 pattern), Node's built-in `node:test` (mocked Stripe/SES clients for unit tests, real Postgres via the existing `pg-harness.js` for integration tests).
 
@@ -50,10 +50,12 @@ Modified files: `db/schema.sql` (Task 1), `backend/package.json` (Tasks 3, 7 —
 ### Task 1: Schema — Stripe identifiers on `tenants`
 
 **Files:**
+
 - Modify: `Expense_tracker_New/db/schema.sql`
 - Modify: `Expense_tracker_New/backend/test/pg-harness.test.js`
 
 **Interfaces:**
+
 - Produces: `tenants.stripe_customer_id text`, `tenants.stripe_subscription_id text` (both nullable — a Free tenant that's never checked out has neither).
 
 - [ ] **Step 1: Write the failing test**
@@ -129,10 +131,12 @@ git commit -m "feat: add Stripe customer/subscription id columns to tenants"
 ### Task 2: Shared plan constants
 
 **Files:**
+
 - Create: `Expense_tracker_New/backend/src/plans.js`
 - Create: `Expense_tracker_New/backend/test/plans.test.js`
 
 **Interfaces:**
+
 - Produces: `SEAT_CAPS: {free:1, pro:2, family:5, business:Infinity}`, `FEATURES: {free:{netWorth:false,historyMonths:12}, pro:{...}, family:{...}, business:{...}}` (all four with `netWorth:true, historyMonths:null`), `planFromPriceId(priceId: string): string` — throws if the price id isn't recognized.
 - Consumes: `process.env.STRIPE_PRICE_ID_PRO`/`STRIPE_PRICE_ID_FAMILY`/`STRIPE_PRICE_ID_BUSINESS` for `planFromPriceId`'s lookup table.
 
@@ -148,10 +152,16 @@ process.env.STRIPE_PRICE_ID_PRO = "price_pro_test";
 process.env.STRIPE_PRICE_ID_FAMILY = "price_family_test";
 process.env.STRIPE_PRICE_ID_BUSINESS = "price_business_test";
 
-const { SEAT_CAPS, FEATURES, planFromPriceId } = await import("../src/plans.js");
+const { SEAT_CAPS, FEATURES, planFromPriceId } =
+  await import("../src/plans.js");
 
 test("SEAT_CAPS has all four tiers with the spec's caps", () => {
-  assert.deepEqual(SEAT_CAPS, { free: 1, pro: 2, family: 5, business: Infinity });
+  assert.deepEqual(SEAT_CAPS, {
+    free: 1,
+    pro: 2,
+    family: 5,
+    business: Infinity,
+  });
 });
 
 test("FEATURES: only free restricts net worth and history", () => {
@@ -170,7 +180,10 @@ test("planFromPriceId maps configured price ids to plan names", () => {
 });
 
 test("planFromPriceId throws on an unrecognized price id", () => {
-  assert.throws(() => planFromPriceId("price_unknown"), /Unrecognized Stripe price/);
+  assert.throws(
+    () => planFromPriceId("price_unknown"),
+    /Unrecognized Stripe price/,
+  );
 });
 ```
 
@@ -245,6 +258,7 @@ git commit -m "feat: add shared plan/seat-cap/feature-gate constants"
 ### Task 3: Checkout & Portal actions
 
 **Files:**
+
 - Create: `Expense_tracker_New/backend/src/stripe.js`
 - Create: `Expense_tracker_New/backend/src/routes/billing.js`
 - Create: `Expense_tracker_New/backend/test/billing-route.test.js`
@@ -252,6 +266,7 @@ git commit -m "feat: add shared plan/seat-cap/feature-gate constants"
 - Modify: `Expense_tracker_New/backend/package.json`
 
 **Interfaces:**
+
 - Consumes: `planFromPriceId` is NOT needed here (only the webhook needs it); `assertManagesInvites`-style role gate pattern from `handler.js`.
 - Produces: `routes/billing.js`'s `createCheckoutSession(execute, stripe, tenantId, { priceId, successUrl, cancelUrl }): Promise<{url}>` and `createPortalSession(execute, stripe, tenantId, { returnUrl }): Promise<{url}>`. `stripe.js`'s `stripe` — a singleton Stripe client instance, `stripe.checkout.sessions.create`/`stripe.billingPortal.sessions.create`/`stripe.customers.create` used by `billing.js`.
 - New POST actions on the existing contract: `createCheckoutSession` (payload: `{priceId, successUrl, cancelUrl}`), `createPortalSession` (payload: `{returnUrl}`). Both owner-only.
@@ -275,15 +290,26 @@ npm install
 ```js
 import { test, mock, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { freshDb, withProvisioning, withTenant, makeExecute } from "./pg-harness.js";
+import {
+  freshDb,
+  withProvisioning,
+  withTenant,
+  makeExecute,
+} from "./pg-harness.js";
 import { stripe } from "../src/stripe.js";
-import { createCheckoutSession, createPortalSession } from "../src/routes/billing.js";
+import {
+  createCheckoutSession,
+  createPortalSession,
+} from "../src/routes/billing.js";
 
 afterEach(() => mock.restoreAll());
 
 async function seedTenant(client, name) {
   return withProvisioning(client, "seed-user", async (c) => {
-    const { rows } = await c.query(`insert into tenants (name) values ($1) returning id`, [name]);
+    const { rows } = await c.query(
+      `insert into tenants (name) values ($1) returning id`,
+      [name],
+    );
     return rows[0].id;
   });
 }
@@ -292,7 +318,9 @@ test("createCheckoutSession creates a Stripe customer on first use and stores it
   const client = await freshDb();
   try {
     const tenantId = await seedTenant(client, "Household");
-    mock.method(stripe.customers, "create", async () => ({ id: "cus_test123" }));
+    mock.method(stripe.customers, "create", async () => ({
+      id: "cus_test123",
+    }));
     mock.method(stripe.checkout.sessions, "create", async (args) => {
       assert.equal(args.customer, "cus_test123");
       assert.equal(args.mode, "subscription");
@@ -309,7 +337,10 @@ test("createCheckoutSession creates a Stripe customer on first use and stores it
     );
 
     assert.equal(result.url, "https://checkout.stripe.com/test-session");
-    const { rows } = await client.query(`select stripe_customer_id from tenants where id = $1`, [tenantId]);
+    const { rows } = await client.query(
+      `select stripe_customer_id from tenants where id = $1`,
+      [tenantId],
+    );
     assert.equal(rows[0].stripe_customer_id, "cus_test123");
   } finally {
     await client.end();
@@ -320,7 +351,10 @@ test("createCheckoutSession reuses an existing Stripe customer id, doesn't creat
   const client = await freshDb();
   try {
     const tenantId = await seedTenant(client, "Household");
-    await client.query(`update tenants set stripe_customer_id = 'cus_existing' where id = $1`, [tenantId]);
+    await client.query(
+      `update tenants set stripe_customer_id = 'cus_existing' where id = $1`,
+      [tenantId],
+    );
 
     let createCalled = false;
     mock.method(stripe.customers, "create", async () => {
@@ -350,7 +384,10 @@ test("createPortalSession uses the tenant's existing Stripe customer id", async 
   const client = await freshDb();
   try {
     const tenantId = await seedTenant(client, "Household");
-    await client.query(`update tenants set stripe_customer_id = 'cus_existing' where id = $1`, [tenantId]);
+    await client.query(
+      `update tenants set stripe_customer_id = 'cus_existing' where id = $1`,
+      [tenantId],
+    );
     mock.method(stripe.billingPortal.sessions, "create", async (args) => {
       assert.equal(args.customer, "cus_existing");
       assert.equal(args.return_url, "https://example.com/data");
@@ -391,7 +428,9 @@ Expected: FAIL — `../src/stripe.js` and `../src/routes/billing.js` don't exist
    commands do. */
 import Stripe from "stripe";
 
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "sk_test_placeholder");
+export const stripe = new Stripe(
+  process.env.STRIPE_SECRET_KEY || "sk_test_placeholder",
+);
 ```
 
 - [ ] **Step 5: Implement `routes/billing.js`**
@@ -407,7 +446,12 @@ export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "sk_test_place
    the customer-lookup UPDATE below needs to target the right row under
    RLS regardless. */
 
-export async function createCheckoutSession(execute, stripe, tenantId, { priceId, successUrl, cancelUrl }) {
+export async function createCheckoutSession(
+  execute,
+  stripe,
+  tenantId,
+  { priceId, successUrl, cancelUrl },
+) {
   const customerId = await ensureStripeCustomer(execute, stripe, tenantId);
   const session = await stripe.checkout.sessions.create({
     customer: customerId,
@@ -419,7 +463,12 @@ export async function createCheckoutSession(execute, stripe, tenantId, { priceId
   return { url: session.url };
 }
 
-export async function createPortalSession(execute, stripe, tenantId, { returnUrl }) {
+export async function createPortalSession(
+  execute,
+  stripe,
+  tenantId,
+  { returnUrl },
+) {
   const customerId = await ensureStripeCustomer(execute, stripe, tenantId);
   const session = await stripe.billingPortal.sessions.create({
     customer: customerId,
@@ -465,7 +514,10 @@ Expected: PASS, all three tests.
 Add the import near the other route imports:
 
 ```js
-import { createCheckoutSession, createPortalSession } from "./routes/billing.js";
+import {
+  createCheckoutSession,
+  createPortalSession,
+} from "./routes/billing.js";
 import { stripe } from "./stripe.js";
 ```
 
@@ -517,10 +569,12 @@ git commit -m "feat: add Stripe Checkout/Portal session actions"
 ### Task 4: Stripe webhook handler
 
 **Files:**
+
 - Create: `Expense_tracker_New/backend/src/stripeWebhook.js`
 - Create: `Expense_tracker_New/backend/test/stripe-webhook.test.js`
 
 **Interfaces:**
+
 - Consumes: `stripe` from `./stripe.js`, `planFromPriceId` from `./plans.js`.
 - Produces: `export const handler` — a Lambda handler with the same `(event) => response` shape as `handler.js`'s `handler`, but with NO `requireUser()` call — Stripe calls this directly with no Cognito JWT. Not called from `handler.js`; this is its own file/Lambda entry point (wired in `template.yaml` in Task 10).
 
@@ -562,7 +616,11 @@ async function seedTenant(client, overrides = {}) {
 }
 
 function fakeEvent(type, data) {
-  const payload = JSON.stringify({ id: "evt_test", type, data: { object: data } });
+  const payload = JSON.stringify({
+    id: "evt_test",
+    type,
+    data: { object: data },
+  });
   const header = stripe.webhooks.generateTestHeaderString({
     payload,
     secret: process.env.STRIPE_WEBHOOK_SECRET,
@@ -596,7 +654,10 @@ test("checkout.session.completed sets plan from the price id and status active",
     const res = await handler(event);
     assert.equal(res.statusCode, 200);
 
-    const { rows } = await client.query(`select plan, status, stripe_subscription_id from tenants where id = $1`, [tenantId]);
+    const { rows } = await client.query(
+      `select plan, status, stripe_subscription_id from tenants where id = $1`,
+      [tenantId],
+    );
     assert.equal(rows[0].plan, "pro");
     assert.equal(rows[0].status, "active");
     assert.equal(rows[0].stripe_subscription_id, "sub_test123");
@@ -608,7 +669,10 @@ test("checkout.session.completed sets plan from the price id and status active",
 test("customer.subscription.updated with status past_due sets tenants.status", async () => {
   const client = await freshDb();
   try {
-    const tenantId = await seedTenant(client, { plan: "pro", status: "active" });
+    const tenantId = await seedTenant(client, {
+      plan: "pro",
+      status: "active",
+    });
     const event = fakeEvent("customer.subscription.updated", {
       customer: "cus_test123",
       status: "past_due",
@@ -616,7 +680,10 @@ test("customer.subscription.updated with status past_due sets tenants.status", a
 
     await handler(event);
 
-    const { rows } = await client.query(`select status from tenants where id = $1`, [tenantId]);
+    const { rows } = await client.query(
+      `select status from tenants where id = $1`,
+      [tenantId],
+    );
     assert.equal(rows[0].status, "past_due");
   } finally {
     await client.end();
@@ -631,11 +698,16 @@ test("customer.subscription.deleted reverts to free/active and clears subscripti
       status: "past_due",
       stripeSubscriptionId: "sub_test123",
     });
-    const event = fakeEvent("customer.subscription.deleted", { customer: "cus_test123" });
+    const event = fakeEvent("customer.subscription.deleted", {
+      customer: "cus_test123",
+    });
 
     await handler(event);
 
-    const { rows } = await client.query(`select plan, status, stripe_subscription_id from tenants where id = $1`, [tenantId]);
+    const { rows } = await client.query(
+      `select plan, status, stripe_subscription_id from tenants where id = $1`,
+      [tenantId],
+    );
     assert.equal(rows[0].plan, "free");
     assert.equal(rows[0].status, "active");
     assert.equal(rows[0].stripe_subscription_id, null);
@@ -647,7 +719,10 @@ test("customer.subscription.deleted reverts to free/active and clears subscripti
 test("processing the same event twice is safe (idempotent)", async () => {
   const client = await freshDb();
   try {
-    const tenantId = await seedTenant(client, { plan: "pro", status: "active" });
+    const tenantId = await seedTenant(client, {
+      plan: "pro",
+      status: "active",
+    });
     const event = fakeEvent("customer.subscription.updated", {
       customer: "cus_test123",
       status: "past_due",
@@ -656,7 +731,10 @@ test("processing the same event twice is safe (idempotent)", async () => {
     await handler(event);
     await handler(event); // redeliver
 
-    const { rows } = await client.query(`select status from tenants where id = $1`, [tenantId]);
+    const { rows } = await client.query(
+      `select status from tenants where id = $1`,
+      [tenantId],
+    );
     assert.equal(rows[0].status, "past_due");
   } finally {
     await client.end();
@@ -690,7 +768,8 @@ import { planFromPriceId } from "./plans.js";
 import { runProvisioningTransaction } from "./db.js";
 
 export const handler = async (event) => {
-  const signature = event.headers?.["stripe-signature"] || event.headers?.["Stripe-Signature"];
+  const signature =
+    event.headers?.["stripe-signature"] || event.headers?.["Stripe-Signature"];
   let stripeEvent;
   try {
     stripeEvent = stripe.webhooks.constructEvent(
@@ -699,7 +778,10 @@ export const handler = async (event) => {
       process.env.STRIPE_WEBHOOK_SECRET,
     );
   } catch (err) {
-    return { statusCode: 400, body: `Webhook signature verification failed: ${err.message}` };
+    return {
+      statusCode: 400,
+      body: `Webhook signature verification failed: ${err.message}`,
+    };
   }
 
   try {
@@ -721,7 +803,11 @@ export const handler = async (event) => {
     }
     return { statusCode: 200, body: "ok" };
   } catch (err) {
-    console.error(`Webhook handling failed for ${stripeEvent.type}:`, err.message, err.stack);
+    console.error(
+      `Webhook handling failed for ${stripeEvent.type}:`,
+      err.message,
+      err.stack,
+    );
     return { statusCode: 500, body: "Webhook handler error" }; // Stripe retries on 5xx
   }
 };
@@ -743,7 +829,11 @@ async function handleCheckoutCompleted(session) {
     await execute(
       `update tenants set plan = :plan, status = 'active', stripe_subscription_id = :subscriptionId
        where stripe_customer_id = :customerId`,
-      { plan, subscriptionId: session.subscription, customerId: session.customer },
+      {
+        plan,
+        subscriptionId: session.subscription,
+        customerId: session.customer,
+      },
     );
   });
 }
@@ -757,10 +847,13 @@ async function handleSubscriptionUpdated(subscription) {
   // know how to handle.
   const status = subscription.status === "past_due" ? "past_due" : "active";
   await withCustomerLookup(async (execute) => {
-    await execute(`update tenants set status = :status where stripe_customer_id = :customerId`, {
-      status,
-      customerId: subscription.customer,
-    });
+    await execute(
+      `update tenants set status = :status where stripe_customer_id = :customerId`,
+      {
+        status,
+        customerId: subscription.customer,
+      },
+    );
   });
 }
 
@@ -802,11 +895,13 @@ git commit -m "feat: add Stripe webhook handler (checkout, subscription updated/
 ### Task 5: Seat-cap enforcement
 
 **Files:**
+
 - Modify: `Expense_tracker_New/backend/src/routes/tenants.js`
 - Modify: `Expense_tracker_New/backend/src/postConfirmation.js`
 - Create: `Expense_tracker_New/backend/test/seat-cap.test.js`
 
 **Interfaces:**
+
 - Consumes: `SEAT_CAPS` from `./plans.js`.
 - Produces: `createInvite` now throws if the tenant is already at its seat cap (counting current members + pending invites). `postConfirmation.js`'s invite-redemption path re-checks the cap at the moment of actual join.
 
@@ -817,7 +912,12 @@ git commit -m "feat: add Stripe webhook handler (checkout, subscription updated/
 ```js
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { freshDb, withProvisioning, withTenant, makeExecute } from "./pg-harness.js";
+import {
+  freshDb,
+  withProvisioning,
+  withTenant,
+  makeExecute,
+} from "./pg-harness.js";
 import { createInvite } from "../src/routes/tenants.js";
 
 async function seedTenant(client, plan = "free") {
@@ -862,7 +962,10 @@ test("createInvite counts pending invites toward the cap, not just members", asy
         [tenantId],
       );
       // One already-pending invite fills the second seat.
-      await c.query(`insert into tenant_invites (tenant_id, email) values ($1, 'pending@x.com')`, [tenantId]);
+      await c.query(
+        `insert into tenant_invites (tenant_id, email) values ($1, 'pending@x.com')`,
+        [tenantId],
+      );
     });
 
     await assert.rejects(
@@ -964,40 +1067,42 @@ import { SEAT_CAPS } from "./plans.js";
 In `resolveTenant`'s `if (invites[0])` branch, add the check right before the `insert into tenant_users` call:
 
 ```js
-      if (invites[0]) {
-        const { tenant_id, role } = invites[0];
-        const [{ plan }] = await execute.rows(
-          `select plan from tenants where id = :tenantId`,
-          { tenantId: tenant_id },
-        );
-        const [{ count: memberCount }] = await execute.rows(
-          `select count(*)::int as count from tenant_users where tenant_id = :tenantId`,
-          { tenantId: tenant_id },
-        );
-        // Hard, authoritative check: state can have changed (plan
-        // downgraded, another invite redeemed) since this invite was
-        // created - createInvite's check above is only a soft, best-effort
-        // warning at send time. Falling through to "create a new tenant"
-        // here would silently strand the invitee in the wrong household,
-        // so this rejects outright instead - same reasoning as an
-        // expired/invalid token, but the failure mode is different enough
-        // (the invite IS valid, the household just doesn't have room) that
-        // it deserves its own message when this ever gets surfaced to a
-        // user-facing flow.
-        if (memberCount >= SEAT_CAPS[plan]) {
-          throw new Error(`Household is at its ${SEAT_CAPS[plan]}-seat limit for its current plan.`);
-        }
-        await execute(
-          `insert into tenant_users (user_sub, tenant_id, email, role)
+if (invites[0]) {
+  const { tenant_id, role } = invites[0];
+  const [{ plan }] = await execute.rows(
+    `select plan from tenants where id = :tenantId`,
+    { tenantId: tenant_id },
+  );
+  const [{ count: memberCount }] = await execute.rows(
+    `select count(*)::int as count from tenant_users where tenant_id = :tenantId`,
+    { tenantId: tenant_id },
+  );
+  // Hard, authoritative check: state can have changed (plan
+  // downgraded, another invite redeemed) since this invite was
+  // created - createInvite's check above is only a soft, best-effort
+  // warning at send time. Falling through to "create a new tenant"
+  // here would silently strand the invitee in the wrong household,
+  // so this rejects outright instead - same reasoning as an
+  // expired/invalid token, but the failure mode is different enough
+  // (the invite IS valid, the household just doesn't have room) that
+  // it deserves its own message when this ever gets surfaced to a
+  // user-facing flow.
+  if (memberCount >= SEAT_CAPS[plan]) {
+    throw new Error(
+      `Household is at its ${SEAT_CAPS[plan]}-seat limit for its current plan.`,
+    );
+  }
+  await execute(
+    `insert into tenant_users (user_sub, tenant_id, email, role)
            values (:sub, :tenantId, :email, :role)`,
-          { sub, tenantId: tenant_id, email, role },
-        );
-        await execute(
-          `update tenant_invites set used_at = now() where token = :token`,
-          { token: inviteToken },
-        );
-        return tenant_id;
-      }
+    { sub, tenantId: tenant_id, email, role },
+  );
+  await execute(
+    `update tenant_invites set used_at = now() where token = :token`,
+    { token: inviteToken },
+  );
+  return tenant_id;
+}
 ```
 
 - [ ] **Step 6: `node --check` and full suite**
@@ -1019,12 +1124,14 @@ git commit -m "feat: enforce seat caps at invite creation and redemption"
 ### Task 6: Feature-gate enforcement
 
 **Files:**
+
 - Modify: `Expense_tracker_New/backend/src/handler.js`
 - Modify: `Expense_tracker_New/backend/src/routes/balances.js`
 - Modify: `Expense_tracker_New/backend/src/routes/transactions.js`
 - Create: `Expense_tracker_New/backend/test/feature-gate.test.js`
 
 **Interfaces:**
+
 - Consumes: `FEATURES` from `./plans.js`.
 - Produces: `getBalances(execute, features)` (signature change — was `getBalances(execute)`), `listTransactions(execute, {txYear}, features)` and `listTransactionYears(execute, features)` (signature changes — both gain a `features` parameter). `handleGet` in `handler.js` resolves `tenant.plan`/`FEATURES[plan]` once and passes it to these calls, the same way `user`/`membership` are already resolved once and threaded through.
 
@@ -1035,14 +1142,25 @@ git commit -m "feat: enforce seat caps at invite creation and redemption"
 ```js
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { freshDb, withProvisioning, withTenant, makeExecute } from "./pg-harness.js";
+import {
+  freshDb,
+  withProvisioning,
+  withTenant,
+  makeExecute,
+} from "./pg-harness.js";
 import { listBalances } from "../src/routes/balances.js";
-import { listTransactions, listTransactionYears } from "../src/routes/transactions.js";
+import {
+  listTransactions,
+  listTransactionYears,
+} from "../src/routes/transactions.js";
 import { FEATURES } from "../src/plans.js";
 
 async function seedTenantWithData(client, plan) {
   return withProvisioning(client, "seed-user", async (c) => {
-    const { rows } = await c.query(`insert into tenants (name, plan) values ($1, $2) returning id`, ["Household", plan]);
+    const { rows } = await c.query(
+      `insert into tenants (name, plan) values ($1, $2) returning id`,
+      ["Household", plan],
+    );
     const tenantId = rows[0].id;
     return tenantId;
   });
@@ -1053,7 +1171,10 @@ test("getBalances returns nothing for Free tier, even if rows exist", async () =
   try {
     const tenantId = await seedTenantWithData(client, "free");
     await withTenant(client, tenantId, "owner-sub", async (c) => {
-      await c.query(`insert into balances (tenant_id, date, account, amount) values ($1, '2026-01-01', 'Chequing', 1000)`, [tenantId]);
+      await c.query(
+        `insert into balances (tenant_id, date, account, amount) values ($1, '2026-01-01', 'Chequing', 1000)`,
+        [tenantId],
+      );
     });
 
     const result = await withTenant(client, tenantId, "owner-sub", (c) =>
@@ -1070,7 +1191,10 @@ test("getBalances returns real data for Pro tier", async () => {
   try {
     const tenantId = await seedTenantWithData(client, "pro");
     await withTenant(client, tenantId, "owner-sub", async (c) => {
-      await c.query(`insert into balances (tenant_id, date, account, amount) values ($1, '2026-01-01', 'Chequing', 1000)`, [tenantId]);
+      await c.query(
+        `insert into balances (tenant_id, date, account, amount) values ($1, '2026-01-01', 'Chequing', 1000)`,
+        [tenantId],
+      );
     });
 
     const result = await withTenant(client, tenantId, "owner-sub", (c) =>
@@ -1153,8 +1277,12 @@ export async function listTransactions(execute, { txYear } = {}, features) {
   const historyFloor = features.historyMonths
     ? `and date >= (current_date - interval '1 month' * ${Number(features.historyMonths)})`
     : "";
-  const where = txYear ? `where date >= :start and date <= :end ${historyFloor}` : `where true ${historyFloor}`;
-  const params = txYear ? { start: `${txYear}-01-01`, end: `${txYear}-12-31` } : {};
+  const where = txYear
+    ? `where date >= :start and date <= :end ${historyFloor}`
+    : `where true ${historyFloor}`;
+  const params = txYear
+    ? { start: `${txYear}-01-01`, end: `${txYear}-12-31` }
+    : {};
   return execute.rows(
     `select * from transactions ${where} order by date desc, id desc`,
     params,
@@ -1282,12 +1410,14 @@ git commit -m "feat: enforce net-worth and transaction-history feature gates by 
 ### Task 7: SES notifications
 
 **Files:**
+
 - Create: `Expense_tracker_New/backend/src/notify.js`
 - Create: `Expense_tracker_New/backend/test/notify.test.js`
 - Modify: `Expense_tracker_New/backend/src/stripeWebhook.js`
 - Modify: `Expense_tracker_New/backend/package.json`
 
 **Interfaces:**
+
 - Produces: `sendPastDueEmail(toEmail: string): Promise<void>`, `sendDowngradedEmail(toEmail: string): Promise<void>`.
 - Consumes: `SESClient`/`SendEmailCommand` from `@aws-sdk/client-ses`. Wired into `stripeWebhook.js`'s `handleSubscriptionUpdated` (past_due branch) and `handleSubscriptionDeleted`.
 
@@ -1416,10 +1546,13 @@ Replace both functions:
 async function handleSubscriptionUpdated(subscription) {
   const status = subscription.status === "past_due" ? "past_due" : "active";
   const ownerEmail = await withCustomerLookup(async (execute) => {
-    await execute(`update tenants set status = :status where stripe_customer_id = :customerId`, {
-      status,
-      customerId: subscription.customer,
-    });
+    await execute(
+      `update tenants set status = :status where stripe_customer_id = :customerId`,
+      {
+        status,
+        customerId: subscription.customer,
+      },
+    );
     const rows = await execute.rows(
       `select tu.email from tenant_users tu
        join tenants t on t.id = tu.tenant_id
@@ -1456,7 +1589,10 @@ Add two tests to `test/stripe-webhook.test.js` confirming the emails fire (mock 
 test("customer.subscription.updated to past_due sends the past-due email to the owner", async () => {
   const client = await freshDb();
   try {
-    const tenantId = await seedTenant(client, { plan: "pro", status: "active" });
+    const tenantId = await seedTenant(client, {
+      plan: "pro",
+      status: "active",
+    });
     await withProvisioning(client, "owner-sub", async (c) => {
       await c.query(
         `insert into tenant_users (user_sub, tenant_id, email, role) values ('owner-sub', $1, 'owner@x.com', 'owner')`,
@@ -1469,7 +1605,12 @@ test("customer.subscription.updated to past_due sends the past-due email to the 
       return {};
     });
 
-    await handler(fakeEvent("customer.subscription.updated", { customer: "cus_test123", status: "past_due" }));
+    await handler(
+      fakeEvent("customer.subscription.updated", {
+        customer: "cus_test123",
+        status: "past_due",
+      }),
+    );
 
     assert.equal(sent.length, 1);
     assert.deepEqual(sent[0].Destination.ToAddresses, ["owner@x.com"]);
@@ -1481,7 +1622,10 @@ test("customer.subscription.updated to past_due sends the past-due email to the 
 test("customer.subscription.deleted sends the downgraded email to the owner", async () => {
   const client = await freshDb();
   try {
-    const tenantId = await seedTenant(client, { plan: "family", status: "active" });
+    const tenantId = await seedTenant(client, {
+      plan: "family",
+      status: "active",
+    });
     await withProvisioning(client, "owner-sub", async (c) => {
       await c.query(
         `insert into tenant_users (user_sub, tenant_id, email, role) values ('owner-sub', $1, 'owner@x.com', 'owner')`,
@@ -1494,7 +1638,9 @@ test("customer.subscription.deleted sends the downgraded email to the owner", as
       return {};
     });
 
-    await handler(fakeEvent("customer.subscription.deleted", { customer: "cus_test123" }));
+    await handler(
+      fakeEvent("customer.subscription.deleted", { customer: "cus_test123" }),
+    );
 
     assert.equal(sent.length, 1);
     assert.match(sent[0].Message.Subject.Data, /Free plan/);
@@ -1533,9 +1679,11 @@ git commit -m "feat: send SES notifications on past-due and downgrade"
 ### Task 8: Frontend `store.js` — billing methods
 
 **Files:**
+
 - Modify: `Expense_tracker_New/frontend/assets/store.js`
 
 **Interfaces:**
+
 - Produces on `ApiStore`: `getTenant(): Promise<{plan, status, hasStripeCustomer}>`, `createCheckoutSession(priceId, successUrl, cancelUrl): Promise<{url}>`, `createPortalSession(returnUrl): Promise<{url}>`.
 
 - [ ] **Step 1: Extend `_fill()` and `_refreshMeta()` to cache `tenant`**
@@ -1543,13 +1691,13 @@ git commit -m "feat: send SES notifications on past-due and downgrade"
 In `_fill()` (alongside the existing `this.cache.members`/`this.cache.invites` lines), add:
 
 ```js
-    this.cache.tenant = d.tenant || { plan: "free", status: "active" };
+this.cache.tenant = d.tenant || { plan: "free", status: "active" };
 ```
 
 In `_refreshMeta()` (alongside the existing equivalents), add:
 
 ```js
-    this.cache.tenant = d.tenant || this.cache.tenant;
+this.cache.tenant = d.tenant || this.cache.tenant;
 ```
 
 - [ ] **Step 2: Add the three new methods to `class ApiStore`**
@@ -1590,9 +1738,11 @@ git commit -m "feat: add billing methods to ApiStore"
 ### Task 9: Frontend `app.js` — Billing panel, banners, feature-gate UI
 
 **Files:**
+
 - Modify: `Expense_tracker_New/frontend/assets/app.js`
 
 **Interfaces:**
+
 - Consumes: `ApiStore.getTenant/createCheckoutSession/createPortalSession` (Task 8).
 
 - [ ] **Step 1: Populate `state.tenant` in `refresh()`**
@@ -1600,7 +1750,10 @@ git commit -m "feat: add billing methods to ApiStore"
 Add, immediately after the existing `state.role = (await state.store.getRole?.()) || "member";` line:
 
 ```js
-  state.tenant = (await state.store.getTenant?.()) || { plan: "free", status: "active" };
+state.tenant = (await state.store.getTenant?.()) || {
+  plan: "free",
+  status: "active",
+};
 ```
 
 - [ ] **Step 2: Global `past_due` banner in `boot()`**
@@ -1608,16 +1761,16 @@ Add, immediately after the existing `state.role = (await state.store.getRole?.()
 Immediately after the existing `revealApp();` line in `boot()`, before the connection-retry `notice()` block, add:
 
 ```js
-  if (state.tenant?.status === "past_due") {
-    notice("Your payment failed — update your card to keep full access.", "bad", {
-      label: "Manage billing →",
-      onClick: async () => {
-        const returnUrl = location.origin + location.pathname;
-        const { url } = await state.store.createPortalSession(returnUrl);
-        location.href = url;
-      },
-    });
-  }
+if (state.tenant?.status === "past_due") {
+  notice("Your payment failed — update your card to keep full access.", "bad", {
+    label: "Manage billing →",
+    onClick: async () => {
+      const returnUrl = location.origin + location.pathname;
+      const { url } = await state.store.createPortalSession(returnUrl);
+      location.href = url;
+    },
+  });
+}
 ```
 
 (This does not auto-hide — `notice()`'s existing auto-hide behavior only triggers for `kind === "ok"` with no action, and this call passes both `"bad"` and an action, so it persists until the user navigates away or triggers the action, matching the design's "persistent" requirement.)
@@ -1627,14 +1780,30 @@ Immediately after the existing `revealApp();` line in `boot()`, before the conne
 At the top of `renderData()`, alongside the existing `const members = state.members || [];` block, add:
 
 ```js
-  const tenant = state.tenant || { plan: "free", status: "active" };
-  const PLANS = [
-    { id: "free", label: "Free", price: "$0/mo", priceId: null },
-    { id: "pro", label: "Pro", price: "$7/mo CAD", priceId: "STRIPE_PRICE_ID_PRO_PLACEHOLDER" },
-    { id: "family", label: "Family", price: "$13/mo CAD", priceId: "STRIPE_PRICE_ID_FAMILY_PLACEHOLDER" },
-    { id: "business", label: "Business", price: "$24/mo CAD", priceId: "STRIPE_PRICE_ID_BUSINESS_PLACEHOLDER" },
-  ];
-  const showDowngradeBanner = tenant.plan === "free" && !!tenant.hasStripeCustomer;
+const tenant = state.tenant || { plan: "free", status: "active" };
+const PLANS = [
+  { id: "free", label: "Free", price: "$0/mo", priceId: null },
+  {
+    id: "pro",
+    label: "Pro",
+    price: "$7/mo CAD",
+    priceId: "STRIPE_PRICE_ID_PRO_PLACEHOLDER",
+  },
+  {
+    id: "family",
+    label: "Family",
+    price: "$13/mo CAD",
+    priceId: "STRIPE_PRICE_ID_FAMILY_PLACEHOLDER",
+  },
+  {
+    id: "business",
+    label: "Business",
+    price: "$24/mo CAD",
+    priceId: "STRIPE_PRICE_ID_BUSINESS_PLACEHOLDER",
+  },
+];
+const showDowngradeBanner =
+  tenant.plan === "free" && !!tenant.hasStripeCustomer;
 ```
 
 Note on the `priceId` placeholders: Stripe Price ids are not secrets, but they are deploy-specific (different per Stripe account/mode) — they need to reach the frontend the same way `API_ENDPOINT`/Cognito config already do. Add three new exports to `config.js` in this same step (`STRIPE_PRICE_ID_PRO`, `STRIPE_PRICE_ID_FAMILY`, `STRIPE_PRICE_ID_BUSINESS`, all empty strings, injected at deploy time the same way `API_ENDPOINT` is), import them into `app.js`, and use those imported values instead of the placeholder strings above.
@@ -1642,36 +1811,39 @@ Note on the `priceId` placeholders: Stripe Price ids are not secrets, but they a
 Insert this new panel into the template literal, right before `<div class="eyebrow">Danger zone</div>`:
 
 ```html
-  <div class="eyebrow">Billing</div>
-  <div class="panel stack">
-    <p class="note" style="margin:0">Current plan: <b>${esc(tenant.plan)}</b>${tenant.status === "past_due" ? ' — <b style="color:var(--danger,#c00)">payment failed</b>' : ""}.</p>
-    ${
-      showDowngradeBanner
-        ? `<p class="note" style="margin:0">Your subscription was canceled after a failed payment — you're on the Free plan. <button class="btn ghost" id="resubscribe">Resubscribe</button></p>`
-        : ""
-    }
-    <div class="actions" style="flex-wrap:wrap">
-      ${PLANS.map(
-        (p) => `
-        <div class="panel" style="min-width:160px">
-          <b>${esc(p.label)}</b><br>
-          <span class="muted">${esc(p.price)}</span><br>
-          ${
-            p.id === tenant.plan
-              ? '<span class="muted">Current plan</span>'
-              : p.priceId
-                ? `<button class="btn ghost" data-upgrade-plan="${esc(p.priceId)}">Choose ${esc(p.label)}</button>`
-                : ""
-          }
-        </div>`,
-      ).join("")}
+<div class="eyebrow">Billing</div>
+<div class="panel stack">
+  <p class="note" style="margin:0">
+    Current plan: <b>${esc(tenant.plan)}</b>${tenant.status === "past_due" ? ' —
+    <b style="color:var(--danger,#c00)">payment failed</b>' : ""}.
+  </p>
+  ${ showDowngradeBanner ? `
+  <p class="note" style="margin:0">
+    Your subscription was canceled after a failed payment — you're on the Free
+    plan. <button class="btn ghost" id="resubscribe">Resubscribe</button>
+  </p>
+  ` : "" }
+  <div class="actions" style="flex-wrap:wrap">
+    ${PLANS.map( (p) => `
+    <div class="panel" style="min-width:160px">
+      <b>${esc(p.label)}</b><br />
+      <span class="muted">${esc(p.price)}</span><br />
+      ${ p.id === tenant.plan ? '<span class="muted">Current plan</span>' :
+      p.priceId ? `<button
+        class="btn ghost"
+        data-upgrade-plan="${esc(p.priceId)}"
+      >
+        Choose ${esc(p.label)}</button
+      >` : "" }
     </div>
-    ${
-      tenant.plan !== "free"
-        ? '<div class="actions"><button class="btn ghost" id="manage-billing">Manage billing</button></div>'
-        : ""
-    }
+    `, ).join("")}
   </div>
+  ${ tenant.plan !== "free" ? '
+  <div class="actions">
+    <button class="btn ghost" id="manage-billing">Manage billing</button>
+  </div>
+  ' : "" }
+</div>
 ```
 
 - [ ] **Step 4: Wire the Billing panel's handlers**
@@ -1679,35 +1851,35 @@ Insert this new panel into the template literal, right before `<div class="eyebr
 Immediately after the existing `$("#data-signout")?.addEventListener("click", signOut);` line, add:
 
 ```js
-  view.querySelectorAll("[data-upgrade-plan]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const base = location.origin + location.pathname;
-      const done = await withBusy("Starting checkout", async () => {
-        const { url } = await state.store.createCheckoutSession(
-          btn.dataset.upgradePlan,
-          `${base}#data`,
-          `${base}#data`,
-        );
-        location.href = url;
-      });
-      if (!done) notice("Could not start checkout.", "bad");
-    });
-  });
-
-  $("#manage-billing")?.addEventListener("click", async () => {
-    const returnUrl = location.origin + location.pathname;
-    const done = await withBusy("Opening billing portal", async () => {
-      const { url } = await state.store.createPortalSession(returnUrl);
+view.querySelectorAll("[data-upgrade-plan]").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const base = location.origin + location.pathname;
+    const done = await withBusy("Starting checkout", async () => {
+      const { url } = await state.store.createCheckoutSession(
+        btn.dataset.upgradePlan,
+        `${base}#data`,
+        `${base}#data`,
+      );
       location.href = url;
     });
-    if (!done) notice("Could not open billing portal.", "bad");
+    if (!done) notice("Could not start checkout.", "bad");
   });
+});
 
-  $("#resubscribe")?.addEventListener("click", () => {
-    // Scrolls to / re-renders the same panel's plan cards - resubscribing
-    // is just choosing a plan again, no separate flow needed.
-    renderData();
+$("#manage-billing")?.addEventListener("click", async () => {
+  const returnUrl = location.origin + location.pathname;
+  const done = await withBusy("Opening billing portal", async () => {
+    const { url } = await state.store.createPortalSession(returnUrl);
+    location.href = url;
   });
+  if (!done) notice("Could not open billing portal.", "bad");
+});
+
+$("#resubscribe")?.addEventListener("click", () => {
+  // Scrolls to / re-renders the same panel's plan cards - resubscribing
+  // is just choosing a plan again, no separate flow needed.
+  renderData();
+});
 ```
 
 - [ ] **Step 5: Feature-gate UI — hide Net Worth nav for Free tier**
@@ -1736,6 +1908,7 @@ git commit -m "feat: add Billing panel, past-due banner, and downgrade banner"
 ### Task 10: `template.yaml` wiring
 
 **Files:**
+
 - Modify: `Expense_tracker_New/backend/template.yaml`
 
 - [ ] **Step 1: Add new Parameters**
@@ -1743,31 +1916,31 @@ git commit -m "feat: add Billing panel, past-due banner, and downgrade banner"
 After the existing `FrontendUrl` parameter:
 
 ```yaml
-  StripeSecretKey:
-    Type: String
-    NoEcho: true
-  StripeWebhookSecret:
-    Type: String
-    NoEcho: true
-  StripePriceIdPro:
-    Type: String
-  StripePriceIdFamily:
-    Type: String
-  StripePriceIdBusiness:
-    Type: String
-  SesFromAddress:
-    Type: String
-    Description: Verified SES sender address for billing notification emails.
+StripeSecretKey:
+  Type: String
+  NoEcho: true
+StripeWebhookSecret:
+  Type: String
+  NoEcho: true
+StripePriceIdPro:
+  Type: String
+StripePriceIdFamily:
+  Type: String
+StripePriceIdBusiness:
+  Type: String
+SesFromAddress:
+  Type: String
+  Description: Verified SES sender address for billing notification emails.
 ```
 
 - [ ] **Step 2: Add the new env vars to `Globals.Function.Environment.Variables`**
 
 ```yaml
-        STRIPE_SECRET_KEY: !Ref StripeSecretKey
-        STRIPE_PRICE_ID_PRO: !Ref StripePriceIdPro
-        STRIPE_PRICE_ID_FAMILY: !Ref StripePriceIdFamily
-        STRIPE_PRICE_ID_BUSINESS: !Ref StripePriceIdBusiness
-        SES_FROM_ADDRESS: !Ref SesFromAddress
+STRIPE_SECRET_KEY: !Ref StripeSecretKey
+STRIPE_PRICE_ID_PRO: !Ref StripePriceIdPro
+STRIPE_PRICE_ID_FAMILY: !Ref StripePriceIdFamily
+STRIPE_PRICE_ID_BUSINESS: !Ref StripePriceIdBusiness
+SES_FROM_ADDRESS: !Ref SesFromAddress
 ```
 
 (`STRIPE_WEBHOOK_SECRET` is intentionally NOT added here — only `StripeWebhookFunction` needs it, added directly on that resource in Step 4, so `DataFunction`/`PostConfirmationFunction` never hold a credential they don't use.)
@@ -1781,36 +1954,36 @@ After the existing `FrontendUrl` parameter:
 After the existing `PostConfirmationFunction` resource:
 
 ```yaml
-  StripeWebhookFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: src/
-      Handler: stripeWebhook.handler
-      Environment:
-        Variables:
-          STRIPE_WEBHOOK_SECRET: !Ref StripeWebhookSecret
-      Policies:
-        - Statement:
-            - Effect: Allow
-              Action:
-                - rds-data:ExecuteStatement
-                - rds-data:BeginTransaction
-                - rds-data:CommitTransaction
-                - rds-data:RollbackTransaction
-              Resource: !GetAtt DbCluster.DBClusterArn
-            - Effect: Allow
-              Action: secretsmanager:GetSecretValue
-              Resource: !Ref DbSecret
-            - Effect: Allow
-              Action: ses:SendEmail
-              Resource: "*"
-      Events:
-        Post:
-          Type: HttpApi
-          Properties:
-            ApiId: !Ref HttpApi
-            Path: /webhooks/stripe
-            Method: POST
+StripeWebhookFunction:
+  Type: AWS::Serverless::Function
+  Properties:
+    CodeUri: src/
+    Handler: stripeWebhook.handler
+    Environment:
+      Variables:
+        STRIPE_WEBHOOK_SECRET: !Ref StripeWebhookSecret
+    Policies:
+      - Statement:
+          - Effect: Allow
+            Action:
+              - rds-data:ExecuteStatement
+              - rds-data:BeginTransaction
+              - rds-data:CommitTransaction
+              - rds-data:RollbackTransaction
+            Resource: !GetAtt DbCluster.DBClusterArn
+          - Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: !Ref DbSecret
+          - Effect: Allow
+            Action: ses:SendEmail
+            Resource: "*"
+    Events:
+      Post:
+        Type: HttpApi
+        Properties:
+          ApiId: !Ref HttpApi
+          Path: /webhooks/stripe
+          Method: POST
 ```
 
 (No `Options`/CORS event — Stripe calls this server-to-server, never from a browser, so no preflight is ever issued against it. No `requireUser()`-equivalent either — deliberately, per Task 4's design; Stripe's signature check inside the handler is the only gate.)
@@ -1837,4 +2010,4 @@ git commit -m "feat: wire Stripe billing resources into template.yaml"
 - **Spec coverage:** Data model (Task 1), Stripe setup / plan constants (Task 2), Checkout+Portal flow (Task 3), webhook handler + all four event types (Tasks 4, 7), downgrade policy / seat caps (Task 5), feature enforcement (Task 6), notifications — SES + both banners (Tasks 7, 9), frontend Billing panel (Task 9), testing approach matching the spec (mocked SDKs + real Postgres, throughout), configuration (Task 10). Every section of the spec has a corresponding task.
 - **Type/interface consistency:** `listBalances`/`listTransactions`/`listTransactionYears` gain a `features` parameter in Task 6 — checked that Task 6's own new test calls match, and flagged in Step 7 that any pre-existing call site elsewhere in the test suite needs updating to pass `FEATURES.business` (the least-restrictive tier) so it doesn't need to change its own assertions. `tenant: {plan, status}` in the GET /data response (Task 6) matches exactly what Task 8's `getTenant()` and Task 9's `state.tenant` consume.
 - **Ambiguity fixed inline:** Task 9 Step 5 (hiding the Net Worth nav tab) couldn't be given an exact diff since the plan's file exploration didn't capture that specific markup — flagged explicitly as the one place needing the implementer's own judgment, with an explicit note that it's cosmetic-only and safe to get imperfect on the first pass, unlike every other step in this plan.
-- **Bug caught and fixed during self-review:** the original draft's downgrade-banner signal (Task 9) checked `stripe_subscription_id` for presence, but Task 4/7's webhook handler *clears* that exact column on cancellation (`handleSubscriptionDeleted`) — the signal could never be true for a tenant who was actually downgraded. Fixed by switching to `stripe_customer_id` (set once on first checkout, never cleared by any handler), threaded through as a new `hasStripeCustomer` field in Task 6's GET /data response, Task 8's `getTenant()`, and Task 9's banner condition. Would have shipped a downgrade banner that silently never appears.
+- **Bug caught and fixed during self-review:** the original draft's downgrade-banner signal (Task 9) checked `stripe_subscription_id` for presence, but Task 4/7's webhook handler _clears_ that exact column on cancellation (`handleSubscriptionDeleted`) — the signal could never be true for a tenant who was actually downgraded. Fixed by switching to `stripe_customer_id` (set once on first checkout, never cleared by any handler), threaded through as a new `hasStripeCustomer` field in Task 6's GET /data response, Task 8's `getTenant()`, and Task 9's banner condition. Would have shipped a downgrade banner that silently never appears.

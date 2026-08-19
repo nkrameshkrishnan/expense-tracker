@@ -2,7 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { RDSDataClient } from "@aws-sdk/client-rds-data";
 import { CognitoIdentityProviderClient } from "@aws-sdk/client-cognito-identity-provider";
-import { freshDb, withProvisioning, withTenant, makeExecute } from "./pg-harness.js";
+import {
+  freshDb,
+  withProvisioning,
+  withTenant,
+  makeExecute,
+} from "./pg-harness.js";
 import { createInvite } from "../src/routes/tenants.js";
 import { handler as postConfirmationHandler } from "../src/postConfirmation.js";
 import { SEAT_CAPS } from "../src/plans.js";
@@ -39,7 +44,10 @@ async function runPostConfirmation(client, t, { sub, email, inviteToken }) {
       const values = [];
       const converted = sql.replace(/:(\w+)/g, (_, paramName) => {
         const param = parameters.find((p) => p.name === paramName);
-        if (!param) throw new Error(`Missing bind param ":${paramName}" for query: ${sql}`);
+        if (!param)
+          throw new Error(
+            `Missing bind param ":${paramName}" for query: ${sql}`,
+          );
         const v = param.value;
         values.push(
           v.isNull
@@ -49,7 +57,9 @@ async function runPostConfirmation(client, t, { sub, email, inviteToken }) {
         return `$${values.length}`;
       });
       const result = await client.query(converted, values);
-      const columnMetadata = (result.fields || []).map((f) => ({ name: f.name }));
+      const columnMetadata = (result.fields || []).map((f) => ({
+        name: f.name,
+      }));
       const records = result.rows.map((row) =>
         result.fields.map((f) => {
           const v = row[f.name];
@@ -136,7 +146,10 @@ test("createInvite counts pending invites toward the cap, not just members", asy
         [tenantId],
       );
       // One already-pending invite fills the second seat.
-      await c.query(`insert into tenant_invites (tenant_id, email) values ($1, 'pending@x.com')`, [tenantId]);
+      await c.query(
+        `insert into tenant_invites (tenant_id, email) values ($1, 'pending@x.com')`,
+        [tenantId],
+      );
     });
 
     await assert.rejects(
@@ -185,7 +198,10 @@ test("postConfirmation.js's hard check rejects invite redemption once the tenant
     const after = await withTenant(client, tenantId, "owner-sub", (c) =>
       c.query(`select user_sub from tenant_users`),
     );
-    assert.deepEqual(after.rows.map((r) => r.user_sub), ["owner-sub"]);
+    assert.deepEqual(
+      after.rows.map((r) => r.user_sub),
+      ["owner-sub"],
+    );
     const invite = await withTenant(client, tenantId, "owner-sub", (c) =>
       c.query(`select used_at from tenant_invites where token = $1`, [token]),
     );
@@ -226,10 +242,10 @@ test("postConfirmation.js's hard check allows redemption when under cap, and the
     const members = await withTenant(client, tenantId, "owner-sub", (c) =>
       c.query(`select user_sub, role from tenant_users order by user_sub`),
     );
-    assert.deepEqual(
-      members.rows.map((r) => r.user_sub).sort(),
-      ["new-invitee-sub", "owner-sub"],
-    );
+    assert.deepEqual(members.rows.map((r) => r.user_sub).sort(), [
+      "new-invitee-sub",
+      "owner-sub",
+    ]);
     assert.equal(SEAT_CAPS.pro, 2);
 
     const invite = await withTenant(client, tenantId, "owner-sub", (c) =>

@@ -1,14 +1,25 @@
 import { test, mock, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { freshDb, withProvisioning, withTenant, makeExecute } from "./pg-harness.js";
+import {
+  freshDb,
+  withProvisioning,
+  withTenant,
+  makeExecute,
+} from "./pg-harness.js";
 import { stripe } from "../src/stripe.js";
-import { createCheckoutSession, createPortalSession } from "../src/routes/billing.js";
+import {
+  createCheckoutSession,
+  createPortalSession,
+} from "../src/routes/billing.js";
 
 afterEach(() => mock.restoreAll());
 
 async function seedTenant(client, name) {
   return withProvisioning(client, "seed-user", async (c) => {
-    const { rows } = await c.query(`insert into tenants (name) values ($1) returning id`, [name]);
+    const { rows } = await c.query(
+      `insert into tenants (name) values ($1) returning id`,
+      [name],
+    );
     return rows[0].id;
   });
 }
@@ -17,7 +28,9 @@ test("createCheckoutSession creates a Stripe customer on first use and stores it
   const client = await freshDb();
   try {
     const tenantId = await seedTenant(client, "Household");
-    mock.method(stripe.customers, "create", async () => ({ id: "cus_test123" }));
+    mock.method(stripe.customers, "create", async () => ({
+      id: "cus_test123",
+    }));
     mock.method(stripe.checkout.sessions, "create", async (args) => {
       assert.equal(args.customer, "cus_test123");
       assert.equal(args.mode, "subscription");
@@ -34,7 +47,10 @@ test("createCheckoutSession creates a Stripe customer on first use and stores it
     );
 
     assert.equal(result.url, "https://checkout.stripe.com/test-session");
-    const { rows } = await client.query(`select stripe_customer_id from tenants where id = $1`, [tenantId]);
+    const { rows } = await client.query(
+      `select stripe_customer_id from tenants where id = $1`,
+      [tenantId],
+    );
     assert.equal(rows[0].stripe_customer_id, "cus_test123");
   } finally {
     await client.end();
@@ -46,7 +62,10 @@ test("createCheckoutSession reuses an existing Stripe customer id, doesn't creat
   try {
     const tenantId = await seedTenant(client, "Household");
     await withTenant(client, tenantId, "owner-sub", (c) =>
-      c.query(`update tenants set stripe_customer_id = 'cus_existing' where id = $1`, [tenantId]),
+      c.query(
+        `update tenants set stripe_customer_id = 'cus_existing' where id = $1`,
+        [tenantId],
+      ),
     );
 
     let createCalled = false;
@@ -125,7 +144,10 @@ test("createPortalSession uses the tenant's existing Stripe customer id", async 
   try {
     const tenantId = await seedTenant(client, "Household");
     await withTenant(client, tenantId, "owner-sub", (c) =>
-      c.query(`update tenants set stripe_customer_id = 'cus_existing' where id = $1`, [tenantId]),
+      c.query(
+        `update tenants set stripe_customer_id = 'cus_existing' where id = $1`,
+        [tenantId],
+      ),
     );
     mock.method(stripe.billingPortal.sessions, "create", async (args) => {
       assert.equal(args.customer, "cus_existing");

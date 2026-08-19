@@ -5,10 +5,16 @@ process.env.STRIPE_PRICE_ID_PRO = "price_pro_test";
 process.env.STRIPE_PRICE_ID_FAMILY = "price_family_test";
 process.env.STRIPE_PRICE_ID_BUSINESS = "price_business_test";
 
-const { SEAT_CAPS, FEATURES, planFromPriceId } = await import("../src/plans.js");
+const { SEAT_CAPS, FEATURES, planFromPriceId } =
+  await import("../src/plans.js");
 
 test("SEAT_CAPS has all four tiers with the spec's caps", () => {
-  assert.deepEqual(SEAT_CAPS, { free: 1, pro: 2, family: 5, business: Infinity });
+  assert.deepEqual(SEAT_CAPS, {
+    free: 1,
+    pro: 2,
+    family: 5,
+    business: Infinity,
+  });
 });
 
 test("FEATURES: only free restricts net worth and history", () => {
@@ -27,5 +33,8 @@ test("planFromPriceId maps configured price ids to plan names", () => {
 });
 
 test("planFromPriceId throws on an unrecognized price id", () => {
-  assert.throws(() => planFromPriceId("price_unknown"), /Unrecognized Stripe price/);
+  assert.throws(
+    () => planFromPriceId("price_unknown"),
+    /Unrecognized Stripe price/,
+  );
 });

@@ -28,7 +28,8 @@ import { runProvisioningTransaction } from "./db.js";
 import { sendPastDueEmail, sendDowngradedEmail } from "./notify.js";
 
 export const handler = async (event) => {
-  const signature = event.headers?.["stripe-signature"] || event.headers?.["Stripe-Signature"];
+  const signature =
+    event.headers?.["stripe-signature"] || event.headers?.["Stripe-Signature"];
   let stripeEvent;
   try {
     stripeEvent = stripe.webhooks.constructEvent(
@@ -37,7 +38,10 @@ export const handler = async (event) => {
       process.env.STRIPE_WEBHOOK_SECRET,
     );
   } catch (err) {
-    return { statusCode: 400, body: `Webhook signature verification failed: ${err.message}` };
+    return {
+      statusCode: 400,
+      body: `Webhook signature verification failed: ${err.message}`,
+    };
   }
 
   try {
@@ -76,7 +80,11 @@ export const handler = async (event) => {
     }
     return { statusCode: 200, body: "ok" };
   } catch (err) {
-    console.error(`Webhook handling failed for ${stripeEvent.type}:`, err.message, err.stack);
+    console.error(
+      `Webhook handling failed for ${stripeEvent.type}:`,
+      err.message,
+      err.stack,
+    );
     return { statusCode: 500, body: "Webhook handler error" }; // Stripe retries on 5xx
   }
 };
@@ -95,7 +103,11 @@ export async function handleCheckoutCompleted(execute, session, priceId) {
   const result = await execute(
     `update tenants set plan = :plan, status = 'active', stripe_subscription_id = :subscriptionId
      where stripe_customer_id = :customerId`,
-    { plan, subscriptionId: session.subscription, customerId: session.customer },
+    {
+      plan,
+      subscriptionId: session.subscription,
+      customerId: session.customer,
+    },
   );
   warnIfNoTenantMatched(result, session.customer);
 }
@@ -170,7 +182,11 @@ async function notifyBestEffort(sendFn, toEmail) {
   try {
     await sendFn(toEmail);
   } catch (err) {
-    console.error(`Failed to send billing notification to ${toEmail}:`, err.message, err.stack);
+    console.error(
+      `Failed to send billing notification to ${toEmail}:`,
+      err.message,
+      err.stack,
+    );
   }
 }
 
@@ -192,14 +208,21 @@ export async function handleSubscriptionUpdated(execute, subscription) {
   const result = await execute(
     `update tenants set status = :status
      where stripe_customer_id = :customerId and stripe_subscription_id = :subscriptionId`,
-    { status, customerId: subscription.customer, subscriptionId: subscription.id },
+    {
+      status,
+      customerId: subscription.customer,
+      subscriptionId: subscription.id,
+    },
   );
   // No row matched -> this event is about a subscription this tenant is no
   // longer on. Returning early also stops a false "your payment failed"
   // email going to a customer whose current subscription is fine.
   if (!warnIfNoTenantMatched(result, subscription.customer)) return;
   if (status === "past_due") {
-    const ownerEmail = await ownerEmailForCustomer(execute, subscription.customer);
+    const ownerEmail = await ownerEmailForCustomer(
+      execute,
+      subscription.customer,
+    );
     if (ownerEmail) await notifyBestEffort(sendPastDueEmail, ownerEmail);
   }
 }
@@ -214,6 +237,9 @@ export async function handleSubscriptionDeleted(execute, subscription) {
     { customerId: subscription.customer, subscriptionId: subscription.id },
   );
   if (!warnIfNoTenantMatched(result, subscription.customer)) return;
-  const ownerEmail = await ownerEmailForCustomer(execute, subscription.customer);
+  const ownerEmail = await ownerEmailForCustomer(
+    execute,
+    subscription.customer,
+  );
   if (ownerEmail) await notifyBestEffort(sendDowngradedEmail, ownerEmail);
 }

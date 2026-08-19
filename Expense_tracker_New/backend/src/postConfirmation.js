@@ -78,7 +78,9 @@ async function resolveTenant({ sub, email, inviteToken }) {
         // it deserves its own message when this ever gets surfaced to a
         // user-facing flow.
         if (memberCount >= SEAT_CAPS[plan]) {
-          throw new Error(`Household is at its ${SEAT_CAPS[plan]}-seat limit for its current plan.`);
+          throw new Error(
+            `Household is at its ${SEAT_CAPS[plan]}-seat limit for its current plan.`,
+          );
         }
         await execute(
           `insert into tenant_users (user_sub, tenant_id, email, role)

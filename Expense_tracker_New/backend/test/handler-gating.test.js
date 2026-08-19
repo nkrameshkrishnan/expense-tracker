@@ -47,10 +47,17 @@ test("assertKnownPriceId rejects an unrecognized price id without calling Stripe
 });
 
 test("assertKnownPriceId accepts each configured price id", () => {
-  for (const id of ["price_pro_test", "price_family_test", "price_business_test"])
+  for (const id of [
+    "price_pro_test",
+    "price_family_test",
+    "price_business_test",
+  ])
     assert.doesNotThrow(() => assertKnownPriceId(id));
 });
 
 test("assertKnownPriceId rejects a missing price id", () => {
-  assert.throws(() => assertKnownPriceId(undefined), /Unrecognized Stripe price id/);
+  assert.throws(
+    () => assertKnownPriceId(undefined),
+    /Unrecognized Stripe price id/,
+  );
 });

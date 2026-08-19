@@ -6,7 +6,12 @@
    the customer-lookup UPDATE below needs to target the right row under
    RLS regardless. */
 
-export async function createCheckoutSession(execute, stripe, tenantId, { priceId, successUrl, cancelUrl }) {
+export async function createCheckoutSession(
+  execute,
+  stripe,
+  tenantId,
+  { priceId, successUrl, cancelUrl },
+) {
   // Checkout CREATES a subscription; it never modifies an existing one. A
   // tenant that already has one on file would end up billed twice, with the
   // app only ever tracking whichever subscription's webhook landed last and
@@ -35,7 +40,12 @@ export async function createCheckoutSession(execute, stripe, tenantId, { priceId
   return { url: session.url };
 }
 
-export async function createPortalSession(execute, stripe, tenantId, { returnUrl }) {
+export async function createPortalSession(
+  execute,
+  stripe,
+  tenantId,
+  { returnUrl },
+) {
   const customerId = await ensureStripeCustomer(execute, stripe, tenantId);
   const session = await stripe.billingPortal.sessions.create({
     customer: customerId,

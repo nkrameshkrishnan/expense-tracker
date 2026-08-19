@@ -11,8 +11,12 @@ export async function listTransactions(execute, { txYear } = {}, features) {
   const historyFloor = features.historyMonths
     ? `and date >= (current_date - interval '1 month' * ${Number(features.historyMonths)})`
     : "";
-  const where = txYear ? `where date >= :start and date <= :end ${historyFloor}` : `where true ${historyFloor}`;
-  const params = txYear ? { start: `${txYear}-01-01`, end: `${txYear}-12-31` } : {};
+  const where = txYear
+    ? `where date >= :start and date <= :end ${historyFloor}`
+    : `where true ${historyFloor}`;
+  const params = txYear
+    ? { start: `${txYear}-01-01`, end: `${txYear}-12-31` }
+    : {};
   return execute.rows(
     `select * from transactions ${where} order by date desc, id desc`,
     params,
