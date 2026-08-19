@@ -72,7 +72,14 @@ export const handler = async (event) => {
   } catch (err) {
     if (err instanceof AuthError)
       return json(401, { ok: false, error: err.message });
-    throw err;
+    // requireUser can now fail for reasons other than "bad credentials" -
+    // the X-Active-Tenant membership lookup is a real DB round trip that
+    // can time out or error. Rethrowing escaped this function entirely, so
+    // the response never got CORS_HEADERS attached and the browser
+    // reported an opaque CORS/network failure instead of a clean 500.
+    // Same shape as the request handler's own catch below.
+    console.error(`[auth] ${err.message}`, err.stack);
+    return json(500, { ok: false, error: "Request failed." });
   }
 
   try {

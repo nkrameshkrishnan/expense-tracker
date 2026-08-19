@@ -59,8 +59,7 @@ export function createAuthChecker(
     // X-Active-Tenant is different in the one way that matters: every value
     // reaching the return below has first been confirmed, inside a DB
     // transaction, against a real tenant_users row for this user. An
-    // unvalidated header
-    // must never be trusted here again.
+    // unvalidated header must never be trusted here again.
     const requested =
       event.headers?.["x-active-tenant"] || event.headers?.["X-Active-Tenant"];
 

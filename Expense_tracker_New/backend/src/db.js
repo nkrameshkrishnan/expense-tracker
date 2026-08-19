@@ -95,13 +95,15 @@ export async function runInTenantTransaction(tenantId, userSub, fn) {
   }, fn);
 }
 
-/** The ONLY other way into a transaction against these tables - used
-    exclusively by postConfirmation.js, which by definition runs before any
-    tenant_id exists to scope to. Relies on the narrow "provisioning"
-    policies in db/schema.sql (tenants/tenant_users INSERT, tenant_invites
-    SELECT/UPDATE), not on app.tenant_id being set at all - deliberately
-    does NOT set it, so any query here that isn't covered by one of those
-    specific policies correctly sees/changes nothing. */
+/** The ONLY other way into a transaction against these tables - used by
+    the operations that inherently cannot be scoped to one tenant:
+    postConfirmation.js (which by definition runs before any tenant_id
+    exists to scope to), auth.js's X-Active-Tenant membership check, and
+    handler.js's joinTenant/listMyTenants actions. Relies on the narrow
+    "provisioning" policies in db/schema.sql (tenants/tenant_users INSERT,
+    tenant_invites SELECT/UPDATE), not on app.tenant_id being set at all -
+    deliberately does NOT set it, so any query here that isn't covered by
+    one of those specific policies correctly sees/changes nothing. */
 export async function runProvisioningTransaction(userSub, fn) {
   return withDataApiTransaction(async (execute) => {
     await execute(`select set_config('app.user_id', :userSub, true)`, {
