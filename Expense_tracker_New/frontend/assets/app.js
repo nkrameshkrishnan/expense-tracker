@@ -69,6 +69,20 @@ const state = {
   filter: { q: "", cat: "", month: "", type: "" },
 };
 
+/* --------------------------------------------------------- active tenant
+   Keyed by email, not a single global key, so switching Google accounts in
+   the same browser (a real path: signing out and back in as someone else)
+   never resurrects a stale choice made under a different account. */
+function activeTenantKey() {
+  return `ledger:activeTenant:${state.userEmail || "anon"}`;
+}
+function getStoredActiveTenant() {
+  return localStorage.getItem(activeTenantKey());
+}
+function setStoredActiveTenant(tenantId) {
+  localStorage.setItem(activeTenantKey(), tenantId);
+}
+
 /* ------------------------------------------------------------ Google sign-in
    The ID token lives in sessionStorage, so closing the tab signs you out.
    It is only ever a claim - Apps Script decides whether it is honoured. */
@@ -402,6 +416,19 @@ async function refresh() {
     plan: "free",
     status: "active",
   };
+  state.userEmail = (await state.store.getUserEmail?.()) || null;
+  state.tenants = (await state.store.getMyTenants?.()) || [];
+  // Resolve which tenant this session is actively scoped to, and apply it
+  // to the store before the NEXT request goes out. "Never set" or a stored
+  // id for a tenant this account no longer belongs to both fall through to
+  // null - no X-Active-Tenant header at all, so auth.js falls back to the
+  // JWT's own default tenant, exactly as it already does for every existing
+  // single-tenant user today.
+  const storedTenant = getStoredActiveTenant();
+  const validStoredTenant = state.tenants.some(
+    (t) => t.tenant_id === storedTenant,
+  );
+  state.store.setActiveTenant?.(validStoredTenant ? storedTenant : null);
   $("#foot-count").textContent = `${state.rows.length} transactions stored`;
   renderPeopleSwitch();
   updateNetWorthGate();
@@ -426,6 +453,22 @@ async function refresh() {
       ? "Reading and writing your Ledger account live"
       : "Not connected to the Ledger API — changes stay in this browser";
   c.className = "conn" + (isRemoteStore(state.store) ? " remote" : "");
+}
+
+/** Household panel's switcher (Data tab) calls this. Persists the choice,
+    points the store at the new tenant, and only THEN clears its cache and
+    reloads - resetCache() before refresh() means the very next request goes
+    out already scoped to the new tenant, so nothing in between can render a
+    frame of the previous tenant's stale data. */
+async function switchActiveTenant(tenantId) {
+  setStoredActiveTenant(tenantId);
+  state.store.setActiveTenant?.(tenantId);
+  const done = await withBusy("Switching household", async () => {
+    state.store.resetCache?.();
+    await refresh();
+    state.rows = await state.store.list();
+  });
+  if (done) (VIEWS[state.tab] || renderDashboard)();
 }
 
 /* ================================================================= DASHBOARD */
@@ -2998,6 +3041,7 @@ function renderData() {
   const who = state.store.user?.email || "";
   const members = state.members || [];
   const invites = state.invites || [];
+  const tenants = state.tenants || [];
   const myRole = state.role || "member";
   const canManageInvites = myRole === "owner" || myRole === "admin";
   const tenant = state.tenant || { plan: "free", status: "active" };
@@ -3115,6 +3159,27 @@ function renderData() {
     <ul class="stack" style="margin:0;padding-left:1.2em">
       ${members.map((m) => `<li>${esc(m.email)} — ${esc(m.role)}</li>`).join("")}
     </ul>
+    ${
+      // Visible to any member belonging to more than one household, regardless
+      // of role - unlike the invite controls just below, which stay owner/
+      // admin-only. Most accounts belong to exactly one tenant and never see
+      // this at all.
+      tenants.length > 1
+        ? `
+    <div class="stack" style="max-width:420px">
+      <label class="f"><span>Active household</span>
+        <select id="tenant-switcher">
+          ${tenants
+            .map(
+              (t) =>
+                `<option value="${esc(t.tenant_id)}"${t.tenant_id === state.store.activeTenantId ? " selected" : ""}>${esc(t.name)} (${esc(t.role)})</option>`,
+            )
+            .join("")}
+        </select>
+      </label>
+    </div>`
+        : ""
+    }
     ${
       canManageInvites
         ? `
@@ -3258,6 +3323,10 @@ function renderData() {
     // Scrolls to / re-renders the same panel's plan cards - resubscribing
     // is just choosing a plan again, no separate flow needed.
     renderData();
+  });
+
+  $("#tenant-switcher")?.addEventListener("change", (e) => {
+    switchActiveTenant(e.target.value);
   });
 
   $("#send-invite")?.addEventListener("click", async () => {
@@ -3553,6 +3622,32 @@ async function boot() {
   state.store = await openStore(notice);
   await seedIfEmpty();
   await refresh();
+  // An already-signed-in user clicking an invite link: showGate()'s own
+  // inviteMatch handles the NOT-signed-in case (it feeds the token through
+  // Cognito's client_metadata so postConfirmation.js can redeem it on
+  // signup) - this covers the other case, where boot() runs directly and
+  // that gate is never shown at all. Same hash-based #invite=<token> link
+  // createInvite's "Copy link" button already produces (see the
+  // data-copy-invite handler below) - reusing that format rather than
+  // introducing a second, differently-shaped invite param.
+  const inviteMatch = location.hash.match(/invite=([\w-]+)/);
+  const inviteToken = inviteMatch?.[1];
+  if (inviteToken && isRemoteStore(state.store)) {
+    const joined = await withBusy("Joining household", async () => {
+      await state.store.joinTenant(inviteToken);
+    });
+    if (joined) {
+      state.tenants = (await state.store.getMyTenants?.()) || [];
+      notice(
+        "You've joined the household. Switch to it from the Household panel whenever you're ready.",
+        "ok",
+      );
+    } else {
+      notice("That invite link is invalid or has expired.", "bad");
+    }
+    // Strip the hash so a reload/refresh doesn't try to re-join.
+    history.replaceState(null, "", location.pathname + location.search);
+  }
   revealApp();
   if (state.tenant?.status === "past_due") {
     notice(
