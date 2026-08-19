@@ -132,6 +132,29 @@ export async function redeemInvite(execute, { sub, email, inviteToken }) {
     { token: inviteToken },
   );
   if (!invites[0]) {
+    // The lookup above filters on `used_at is null` BEFORE any membership
+    // check runs, so re-redeeming the SAME token a second time (the most
+    // common case: a signed-out invitee signs up - postConfirmation.js
+    // burns the token - and the app then replays the same link on the way
+    // back in) found nothing and errored, contradicting the spec's
+    // "re-redeeming a token for a tenant already joined -> silent success".
+    // Re-look the token up WITHOUT the used_at/expires_at filters and let
+    // it succeed only when the caller is genuinely already a member of the
+    // tenant it points at. A stranger replaying someone else's spent token
+    // has no such membership row and still falls through to the throw
+    // below, so this cannot be used to bypass invite consumption.
+    const spent = await execute.rows(
+      `select tenant_id from tenant_invites where token = :token`,
+      { token: inviteToken },
+    );
+    if (spent[0]) {
+      const already = await getMembershipInTenant(
+        execute,
+        sub,
+        spent[0].tenant_id,
+      );
+      if (already) return spent[0].tenant_id;
+    }
     throw new InvalidInviteError("This invite is invalid or has expired.");
   }
   const { tenant_id: tenantId, role } = invites[0];
@@ -142,6 +165,16 @@ export async function redeemInvite(execute, { sub, email, inviteToken }) {
     // no-op success, not an error. tenant_users' primary key is
     // (user_sub, tenant_id); a naive second insert would otherwise hit a
     // constraint violation.
+    //
+    // Consume the token here too: this branch handles a DIFFERENT, still
+    // valid invite to a tenant the caller already belongs to, and leaving
+    // it unmarked left a live, redeemable token sitting in the table (and
+    // in listPendingInvites) until its natural expiry. An invite is spent
+    // whichever branch resolved it.
+    await execute(
+      `update tenant_invites set used_at = now() where token = :token`,
+      { token: inviteToken },
+    );
     return tenantId;
   }
 

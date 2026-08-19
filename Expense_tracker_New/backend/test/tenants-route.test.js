@@ -138,7 +138,119 @@ test("redeemInvite is a no-op success for a token to a tenant already joined", a
         `select count(*) as count from tenant_users where user_sub = 'new-user'`,
       );
       assert.equal(Number(rows[0].count), 1); // no duplicate row, no constraint-violation throw
+      // The no-op path still CONSUMES the invite: leaving used_at null kept
+      // a live, redeemable token in the table (and in listPendingInvites)
+      // until its natural expiry.
+      const invRows = await makeExecute(c).rows(
+        `select used_at from tenant_invites where token = :token`,
+        { token },
+      );
+      assert.ok(invRows[0].used_at, "no-op redemption must mark the token used");
     });
+  } finally {
+    await client.end();
+  }
+});
+
+test("redeemInvite is a no-op success when the SAME token is redeemed twice", async () => {
+  const client = await freshDb();
+  try {
+    const tenantId = await withProvisioning(client, "seed-user", async (c) => {
+      const { rows } = await c.query(
+        `insert into tenants (name, plan) values ('Household', 'family') returning id`,
+      );
+      return rows[0].id;
+    });
+    const token = await withTenant(client, tenantId, "owner-sub", async (c) => {
+      const execute = makeExecute(c);
+      await execute(
+        `insert into tenant_users (user_sub, tenant_id, email, role) values ('owner-sub', :tenantId, 'owner@x.com', 'owner')`,
+        { tenantId },
+      );
+      const invite = await tenants.createInvite(execute, {
+        email: "new@x.com",
+        role: "member",
+      });
+      return invite.token;
+    });
+
+    const first = await withProvisioning(client, "new-user", (c) =>
+      tenants.redeemInvite(makeExecute(c), {
+        sub: "new-user",
+        email: "new@x.com",
+        inviteToken: token,
+      }),
+    );
+    assert.equal(first, tenantId);
+
+    // Second redemption of the same, now-used token by the SAME user: the
+    // caller is already a member, so this resolves as a silent success
+    // rather than "invalid or expired". This is the signed-out-invitee
+    // path - postConfirmation.js burns the token during signup and the app
+    // replays the same link once the user lands back signed in.
+    const second = await withProvisioning(client, "new-user", (c) =>
+      tenants.redeemInvite(makeExecute(c), {
+        sub: "new-user",
+        email: "new@x.com",
+        inviteToken: token,
+      }),
+    );
+    assert.equal(second, tenantId);
+
+    await withTenant(client, tenantId, "owner-sub", async (c) => {
+      const rows = await makeExecute(c).rows(
+        `select count(*) as count from tenant_users where user_sub = 'new-user'`,
+      );
+      assert.equal(Number(rows[0].count), 1);
+    });
+  } finally {
+    await client.end();
+  }
+});
+
+test("a used token replayed by a NON-member is still rejected", async () => {
+  const client = await freshDb();
+  try {
+    const tenantId = await withProvisioning(client, "seed-user", async (c) => {
+      const { rows } = await c.query(
+        `insert into tenants (name, plan) values ('Household', 'family') returning id`,
+      );
+      return rows[0].id;
+    });
+    const token = await withTenant(client, tenantId, "owner-sub", async (c) => {
+      const execute = makeExecute(c);
+      await execute(
+        `insert into tenant_users (user_sub, tenant_id, email, role) values ('owner-sub', :tenantId, 'owner@x.com', 'owner')`,
+        { tenantId },
+      );
+      const invite = await tenants.createInvite(execute, {
+        email: "new@x.com",
+        role: "member",
+      });
+      return invite.token;
+    });
+
+    await withProvisioning(client, "new-user", (c) =>
+      tenants.redeemInvite(makeExecute(c), {
+        sub: "new-user",
+        email: "new@x.com",
+        inviteToken: token,
+      }),
+    );
+
+    // The already-member escape hatch must not become a way for a stranger
+    // who intercepted a spent token to join.
+    await assert.rejects(
+      () =>
+        withProvisioning(client, "stranger", (c) =>
+          tenants.redeemInvite(makeExecute(c), {
+            sub: "stranger",
+            email: "stranger@x.com",
+            inviteToken: token,
+          }),
+        ),
+      tenants.InvalidInviteError,
+    );
   } finally {
     await client.end();
   }
