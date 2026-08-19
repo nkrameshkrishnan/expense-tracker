@@ -321,7 +321,11 @@ Resources:
     Properties:
       Engine: aurora-postgresql
       EngineMode: provisioned
-      EngineVersion: "15.4"
+      # No EngineVersion pin: AWS deprecates specific Aurora PostgreSQL minor
+      # versions for new-cluster creation over time (15.4 was pinned here
+      # before and later became one of them). Omitting it lets RDS pick
+      # whatever minor version is currently the default for aurora-postgresql
+      # at stack-creation time, so this never goes stale on its own.
       DatabaseName: ledger
       MasterUsername: !Sub "{{resolve:secretsmanager:${DbSecret}::username}}"
       MasterUserPassword: !Sub "{{resolve:secretsmanager:${DbSecret}::password}}"

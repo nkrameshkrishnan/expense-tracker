@@ -1,0 +1,10 @@
+{
+  "name": "ledger-backend-src",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "aws-jwt-verify": "^4.0.1",
+    "stripe": "^17.0.0"
+  }
+}
