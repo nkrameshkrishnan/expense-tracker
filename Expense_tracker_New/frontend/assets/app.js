@@ -82,6 +82,36 @@ function getStoredActiveTenant() {
 function setStoredActiveTenant(tenantId) {
   localStorage.setItem(activeTenantKey(), tenantId);
 }
+function clearStoredActiveTenant() {
+  localStorage.removeItem(activeTenantKey());
+}
+
+/* An invite token clicked while SIGNED OUT has to survive the round trip
+   through Cognito's Hosted UI. cognitoAuthorizeUrl's client_metadata only
+   reaches the PostConfirmation trigger, which fires for a brand-new
+   Cognito user and nobody else - an existing user simply re-authenticating
+   never triggers it - and the redirect back strips the fragment (see
+   consumeAuthRedirect) before boot()'s own #invite= check can see it. So
+   the token is parked here first and consumed by boot() on the way back.
+   sessionStorage, not localStorage: it is scoped to this sign-in attempt
+   in this tab, and must not outlive it. */
+const PENDING_INVITE_KEY = "ledger.pendingInviteToken";
+function getPendingInviteToken() {
+  try {
+    return sessionStorage.getItem(PENDING_INVITE_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+function setPendingInviteToken(token) {
+  try {
+    if (token) sessionStorage.setItem(PENDING_INVITE_KEY, token);
+    else sessionStorage.removeItem(PENDING_INVITE_KEY);
+  } catch {
+    /* a locked-down sessionStorage just means the signed-out invite path
+       falls back to doing nothing, exactly as it did before */
+  }
+}
 
 /* ------------------------------------------------------------ Google sign-in
    The ID token lives in sessionStorage, so closing the tab signs you out.
@@ -148,7 +178,15 @@ function showGate(message) {
     `<button class="btn" id="cognito-signin">Sign in with Google</button>`;
   $("#cognito-signin").onclick = () => {
     const inviteMatch = location.hash.match(/invite=([\w-]+)/);
-    location.href = cognitoAuthorizeUrl(inviteMatch?.[1]);
+    const inviteToken = inviteMatch?.[1];
+    // client_metadata (below) only ever reaches the PostConfirmation
+    // trigger, i.e. only for a first-ever signup. An EXISTING user
+    // clicking an invite link - the common case, since invites go to
+    // people who often already have an account - would otherwise sign in
+    // and silently never join anything. Stash it so boot() can redeem it
+    // after the redirect lands.
+    if (inviteToken) setPendingInviteToken(inviteToken);
+    location.href = cognitoAuthorizeUrl(inviteToken);
   };
 }
 
@@ -404,7 +442,21 @@ function notice(msg, kind = "", action = null) {
     }, 4000);
 }
 
-async function refresh() {
+/** `reentered` is set only by refresh's own re-entrant call below - every
+    other caller invokes refresh() with no arguments. */
+async function refresh(reentered = false) {
+  // Which tenant the fetches below are actually scoped to, captured BEFORE
+  // any request goes out. On a fresh page load this is null (no header, so
+  // the server uses the JWT's default tenant) - which is precisely why the
+  // stored preference has to be compared against it once the data is back,
+  // rather than merely applied to future requests.
+  const fetchedAs = state.store.getActiveTenant?.() ?? null;
+  // Let store.js tell us when the server rejects the active tenant because
+  // the membership is gone, so the persisted choice goes with it instead
+  // of being re-applied on the next load. Assigning on every refresh keeps
+  // it attached across the store being replaced (Connect & test, Retry).
+  if (state.store.kind === "api")
+    state.store.onActiveTenantRejected = clearStoredActiveTenant;
   state.rows = await state.store.list();
   state.budget = await state.store.getBudget(state.year);
   state.balances = (await state.store.getBalances?.()) || [];
@@ -418,17 +470,35 @@ async function refresh() {
   };
   state.userEmail = (await state.store.getUserEmail?.()) || null;
   state.tenants = (await state.store.getMyTenants?.()) || [];
-  // Resolve which tenant this session is actively scoped to, and apply it
-  // to the store before the NEXT request goes out. "Never set" or a stored
-  // id for a tenant this account no longer belongs to both fall through to
-  // null - no X-Active-Tenant header at all, so auth.js falls back to the
-  // JWT's own default tenant, exactly as it already does for every existing
-  // single-tenant user today.
+  // Resolve which tenant this session is actively scoped to. "Never set"
+  // or a stored id for a tenant this account no longer belongs to both
+  // fall through to null - no X-Active-Tenant header at all, so auth.js
+  // falls back to the JWT's own default tenant, exactly as it already does
+  // for every existing single-tenant user today. The stored id can only be
+  // validated here, after getMyTenants() has answered, which is why this
+  // resolution cannot happen before the fetch above.
   const storedTenant = getStoredActiveTenant();
   const validStoredTenant = state.tenants.some(
     (t) => t.tenant_id === storedTenant,
   );
-  state.store.setActiveTenant?.(validStoredTenant ? storedTenant : null);
+  const desiredTenant = validStoredTenant ? storedTenant : null;
+  // Everything above was fetched as `fetchedAs`. If that is not the tenant
+  // this session is supposed to be showing, the data on hand belongs to
+  // the wrong household: point the store at the right one, throw the cache
+  // away, and do the whole pass again. Applying the choice without
+  // re-fetching (what this used to do) left the UI rendering tenant A
+  // while the switcher said B and every later request went out as B -
+  // whose rows then merged into A's cached ones inside _fill().
+  //
+  // Terminates: the second pass starts with fetchedAs === desiredTenant
+  // (nothing else writes the store's active tenant or the stored key in
+  // between), so the branch is not taken again. `reentered` is a hard stop
+  // regardless - one extra pass, never a loop.
+  if (desiredTenant !== fetchedAs) {
+    state.store.setActiveTenant?.(desiredTenant);
+    state.store.resetCache?.();
+    if (!reentered) return refresh(true);
+  }
   $("#foot-count").textContent = `${state.rows.length} transactions stored`;
   renderPeopleSwitch();
   updateNetWorthGate();
@@ -461,6 +531,14 @@ async function refresh() {
     out already scoped to the new tenant, so nothing in between can render a
     frame of the previous tenant's stale data. */
 async function switchActiveTenant(tenantId) {
+  // Both writes below are optimistic - they happen before the refresh that
+  // can fail. Capture what they replace so a failure can put it back: a
+  // rejected id left sitting in localStorage is now applied to the very
+  // FIRST request of the next page load (refresh() resolves it up front),
+  // so leaving it there would carry a failed switch into every future
+  // session rather than being washed away by the next reload.
+  const prevStored = getStoredActiveTenant();
+  const prevActive = state.store.getActiveTenant?.() ?? null;
   setStoredActiveTenant(tenantId);
   state.store.setActiveTenant?.(tenantId);
   const done = await withBusy("Switching household", async () => {
@@ -468,7 +546,16 @@ async function switchActiveTenant(tenantId) {
     await refresh();
     state.rows = await state.store.list();
   });
-  if (done) (VIEWS[state.tab] || renderDashboard)();
+  if (done) {
+    (VIEWS[state.tab] || renderDashboard)();
+    return;
+  }
+  if (prevStored) setStoredActiveTenant(prevStored);
+  else clearStoredActiveTenant();
+  state.store.setActiveTenant?.(prevActive);
+  // Whatever the failed attempt did or did not manage to load is not the
+  // tenant being rolled back to - make the next request fetch afresh.
+  state.store.resetCache?.();
 }
 
 /* ================================================================= DASHBOARD */
@@ -3171,8 +3258,20 @@ function renderData() {
         <select id="tenant-switcher">
           ${tenants
             .map(
+              // No active tenant set means no X-Active-Tenant header is
+              // sent, so the server acts as the JWT's own default tenant -
+              // and nothing is marked selected here, leaving the browser to
+              // show the FIRST option. Those two agree because
+              // listMyTenants orders by created_at ascending, the default
+              // tenant is the one created at signup, and every membership
+              // insert path can only append a later row (no leave-tenant or
+              // remove-member action exists anywhere in this codebase). So
+              // tenants[0] is provably the JWT's default today - but that
+              // is an emergent property of the current insert paths, not an
+              // enforced guarantee, and would need re-verifying if leaving
+              // or removing a member is ever added.
               (t) =>
-                `<option value="${esc(t.tenant_id)}"${t.tenant_id === state.store.activeTenantId ? " selected" : ""}>${esc(t.name)} (${esc(t.role)})</option>`,
+                `<option value="${esc(t.tenant_id)}"${t.tenant_id === state.store.getActiveTenant?.() ? " selected" : ""}>${esc(t.name)} (${esc(t.role)})</option>`,
             )
             .join("")}
         </select>
@@ -3630,23 +3729,41 @@ async function boot() {
   // createInvite's "Copy link" button already produces (see the
   // data-copy-invite handler below) - reusing that format rather than
   // introducing a second, differently-shaped invite param.
+  //
+  // The sessionStorage fallback covers the signed-OUT case: showGate()
+  // parks the token there before handing off to Cognito, because the
+  // redirect back consumes and clears the whole fragment (including
+  // #invite=) before this ever runs, and client_metadata only reaches
+  // PostConfirmation, which does not fire for an existing user signing in
+  // again. Redeeming a token that user's own signup already burned is not
+  // an error: redeemInvite treats a spent token whose tenant you are
+  // already a member of as a no-op success.
   const inviteMatch = location.hash.match(/invite=([\w-]+)/);
-  const inviteToken = inviteMatch?.[1];
+  const inviteToken = inviteMatch?.[1] || getPendingInviteToken();
   if (inviteToken && isRemoteStore(state.store)) {
     const joined = await withBusy("Joining household", async () => {
       await state.store.joinTenant(inviteToken);
     });
+    // Consumed either way - a failed token must not be retried on every
+    // subsequent load of this tab.
+    setPendingInviteToken("");
     if (joined) {
       state.tenants = (await state.store.getMyTenants?.()) || [];
       notice(
         "You've joined the household. Switch to it from the Household panel whenever you're ready.",
         "ok",
       );
-    } else {
-      notice("That invite link is invalid or has expired.", "bad");
     }
-    // Strip the hash so a reload/refresh doesn't try to re-join.
-    history.replaceState(null, "", location.pathname + location.search);
+    // No else: withBusy has already shown the REAL failure ("Joining
+    // household failed: <server message>"). Overwriting it with a fixed
+    // "invalid or has expired" hid genuinely different causes - a seat-cap
+    // rejection, or a lost membership - behind a wrong explanation.
+    //
+    // Strip the hash so a reload/refresh doesn't try to re-join. Only when
+    // the token actually came from the hash: otherwise this would throw
+    // away a perfectly good #transactions-style deep link.
+    if (inviteMatch)
+      history.replaceState(null, "", location.pathname + location.search);
   }
   revealApp();
   if (state.tenant?.status === "past_due") {

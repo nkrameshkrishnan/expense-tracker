@@ -140,7 +140,12 @@ export const getCognitoConfig = () => ({
 });
 
 const ID_TOKEN_KEY = "ledger.cognitoIdToken";
-const TENANT_ID_KEY = "ledger.activeTenantId";
+
+/** auth.js's exact wording for "your token is fine, but you are not a
+    member of the tenant you asked to act as" - the one 401 that is NOT a
+    dead session. Kept as a constant so the match below is obviously tied
+    to a specific server message rather than to any 401 body. */
+const NOT_A_MEMBER = "not a member of the requested tenant";
 
 // sessionStorage can throw in locked-down browser contexts; falls back to
 // an in-memory value for the lifetime of the tab rather than crashing the
@@ -162,13 +167,6 @@ export const setIdToken = (t) => {
     /* fall through to memory */
   }
   _idTokenMem = t || "";
-};
-
-export const getActiveTenantId = () =>
-  localStorage.getItem(TENANT_ID_KEY) || "";
-export const setActiveTenantId = (id) => {
-  if (id) localStorage.setItem(TENANT_ID_KEY, id);
-  else localStorage.removeItem(TENANT_ID_KEY);
 };
 
 const DB_NAME = "ledger-expense-tracker";
@@ -217,10 +215,29 @@ class ApiStore {
     this.kind = "api";
     this.cache = null;
     this.activeTenantId = null;
+    // Bumped every time the cache is reset for a tenant change. Requests
+    // capture it before they go out and drop their response if it moved
+    // while they were in flight - see the comment on resetCache().
+    this.generation = 0;
+    // Set by app.js: called when the server rejects this session's
+    // X-Active-Tenant because the membership is gone, so the persisted
+    // per-user choice in localStorage can be cleared too. store.js has no
+    // business knowing that key's shape, so it asks rather than writes.
+    this.onActiveTenantRejected = null;
   }
 
   setActiveTenant(tenantId) {
     this.activeTenantId = tenantId || null;
+  }
+
+  /** Read-only accessor so views never reach into the field directly. */
+  getActiveTenant() {
+    return this.activeTenantId;
+  }
+
+  _clearCache() {
+    this.cache = null;
+    this.user = null;
   }
 
   resetCache() {
@@ -228,8 +245,17 @@ class ApiStore {
     // cached transactions/budget/balances/etc - the next _ensure() call
     // (triggered by refresh()) needs to hit the API fresh, scoped to
     // whatever tenant setActiveTenant() was just called with.
-    this.cache = null;
-    this.user = null;
+    //
+    // Clearing alone is not enough: boot() fires ensureAllYearsLoaded()
+    // without awaiting it, so a switch can happen while a request for the
+    // PREVIOUS tenant is still in flight. That response would otherwise
+    // land in _fill() afterwards and push the old tenant's rows onto the
+    // new tenant's freshly-loaded cache (and overwrite budget/balances/
+    // members/tenant/user with the old tenant's values). Bumping the
+    // generation here lets every in-flight request notice, on arrival,
+    // that the cache it was fetched for no longer exists, and drop itself.
+    this._clearCache();
+    this.generation++;
   }
 
   _headers(extra = {}) {
@@ -240,7 +266,49 @@ class ApiStore {
     };
   }
 
-  async _get(opts = {}, attempt = 1) {
+  /** A 401 body's `error` string, or "" if there isn't one. Never throws:
+      an unparseable body just means "no distinguishing message", which
+      falls through to the normal session-expired handling. */
+  async _errorText(res) {
+    try {
+      const body = await res.json();
+      return String(body?.error || "");
+    } catch {
+      return "";
+    }
+  }
+
+  /** True for the one 401 that means "this session's active tenant is no
+      longer yours" rather than "sign in again" - e.g. an owner removed you
+      from a household you had switched into. Forcing a full sign-out for
+      that (which is what treating every 401 as auth failure did) is both
+      wrong and unrecoverable-looking: the credentials are fine, only the
+      tenant choice is stale. */
+  _isTenantRejection(message) {
+    return this.activeTenantId && message.toLowerCase().includes(NOT_A_MEMBER);
+  }
+
+  /** Forget the active tenant entirely - in memory, in the cache (which
+      holds the rejected tenant's data), and, via app.js's callback, in
+      localStorage - so the retry and every later request fall back to the
+      JWT's own default tenant.
+
+      Deliberately does NOT bump `generation`: this runs INSIDE the very
+      request that is about to repopulate the cache, and invalidating that
+      request's own generation would make it discard its own retry and
+      leave the cache empty. The counter tracks user-initiated switches;
+      this is a forced fallback on a request already in flight. */
+  _dropActiveTenant() {
+    this.setActiveTenant(null);
+    this._clearCache();
+    try {
+      this.onActiveTenantRejected?.();
+    } catch {
+      /* clearing a persisted preference must never break the retry */
+    }
+  }
+
+  async _get(opts = {}, attempt = 1, retriedWithoutTenant = false) {
     const { year, txYear } = opts;
     const params = new URLSearchParams();
     if (year) params.set("year", year);
@@ -255,13 +323,18 @@ class ApiStore {
     } catch (networkErr) {
       if (attempt < 4) {
         await sleep(500 * attempt);
-        return this._get(opts, attempt + 1);
+        return this._get(opts, attempt + 1, retriedWithoutTenant);
       }
       throw new Error(
         `Could not reach the API (${networkErr.message}). Check your connection.`,
       );
     }
     if (res.status === 401) {
+      const message = await this._errorText(res);
+      if (!retriedWithoutTenant && this._isTenantRejection(message)) {
+        this._dropActiveTenant();
+        return this._get(opts, 1, true); // once, headerless - never a loop
+      }
       const err = new Error("Sign-in expired. Please sign in again.");
       err.auth = true;
       throw err;
@@ -269,7 +342,7 @@ class ApiStore {
     if (!res.ok) {
       if (res.status >= 500 && attempt < 4) {
         await sleep(500 * attempt);
-        return this._get(opts, attempt + 1);
+        return this._get(opts, attempt + 1, retriedWithoutTenant);
       }
       throw new Error(`API responded ${res.status}.`);
     }
@@ -278,7 +351,7 @@ class ApiStore {
     return data;
   }
 
-  async _post(payload, attempt = 1) {
+  async _post(payload, attempt = 1, retriedWithoutTenant = false) {
     const idempotent = [
       "update",
       "delete",
@@ -300,13 +373,21 @@ class ApiStore {
     } catch (networkErr) {
       if (idempotent && attempt < 2) {
         await sleep(600);
-        return this._post(payload, attempt + 1);
+        return this._post(payload, attempt + 1, retriedWithoutTenant);
       }
       throw new Error(
         `Could not reach the API (${networkErr.message}). Check your connection and try again.`,
       );
     }
     if (res.status === 401) {
+      const message = await this._errorText(res);
+      // Safe to replay for ANY action, unlike the network-blip retry above:
+      // a 401 means the request was rejected before it reached a route, so
+      // nothing was written and there is nothing to double-apply.
+      if (!retriedWithoutTenant && this._isTenantRejection(message)) {
+        this._dropActiveTenant();
+        return this._post(payload, 1, true);
+      }
       const err = new Error("Sign-in expired. Please sign in again.");
       err.auth = true;
       throw err;
@@ -314,7 +395,7 @@ class ApiStore {
     if (!res.ok) {
       if (idempotent && res.status >= 500 && attempt < 2) {
         await sleep(600);
-        return this._post(payload, attempt + 1);
+        return this._post(payload, attempt + 1, retriedWithoutTenant);
       }
       throw new Error(`API responded ${res.status}.`);
     }
@@ -351,25 +432,49 @@ class ApiStore {
   async _ensure() {
     if (this.cache) return this.cache;
     const y = currentYear();
+    const gen = this.generation;
     const d = await this._get({ txYear: y });
+    // A tenant switch landed while this was in flight: this response
+    // belongs to the previous tenant, so it must not be filled in. Start
+    // over instead of returning nothing - callers (list(), getBudget(),
+    // getMembers(), ...) all need a cache back. Terminates because each
+    // extra pass needs another switch to have happened mid-request.
+    if (gen !== this.generation) return this._ensure();
     this._fill(d);
     this.cache.loadedTxYears = new Set([y]);
     this.cache.allYearsLoaded = this.cache.allTxYears.length <= 1;
     return this.cache;
   }
 
+  /** "The cache this work was started for is gone" - either a tenant
+      switch bumped the generation, or something cleared it outright. Both
+      mean the response in hand must not be written anywhere. */
+  _stale(gen) {
+    return gen !== this.generation || !this.cache;
+  }
+
   async ensureYearLoaded(year) {
+    const gen = this.generation;
     await this._ensure();
+    if (this._stale(gen)) return;
     if (this.cache.allYearsLoaded || this.cache.loadedTxYears.has(year)) return;
     const d = await this._get({ txYear: year });
+    if (this._stale(gen)) return; // stale tenant - drop it silently
     this._fill(d);
     this.cache.loadedTxYears.add(year);
   }
 
   async ensureAllYearsLoaded() {
+    // Captured before _ensure(), not after: priming the cache is itself a
+    // network round trip a switch can land in the middle of.
+    const gen = this.generation;
     await this._ensure();
+    if (this._stale(gen)) return;
     if (this.cache.allYearsLoaded) return;
     const d = await this._get({});
+    // The case this fix exists for: boot() fires this without awaiting it,
+    // so a switch from the Household panel can easily beat it home.
+    if (this._stale(gen)) return;
     this._fill(d);
     this.cache.loadedTxYears = new Set(this.cache.allTxYears);
     this.cache.allYearsLoaded = true;
@@ -472,7 +577,12 @@ class ApiStore {
   }
   async _refreshMeta() {
     if (!this.cache) return;
+    const gen = this.generation;
     const d = await this._get({ txYear: -1 });
+    // Same guard as the loaders above: writing this straight into
+    // this.cache would splice the previous tenant's budget/balances/
+    // members into the tenant now being displayed.
+    if (this._stale(gen)) return;
     this.cache.budget = d.budget;
     this.cache.budgetYear = d.budgetYear || currentYear();
     this.cache.balances = d.balances || [];
