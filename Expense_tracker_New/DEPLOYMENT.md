@@ -24,33 +24,35 @@ most common reason `sam deploy` fails 20 minutes in.
 - [ ] **AWS account** with billing enabled and a user/role with permission
       to create: VPC/subnets, RDS/Aurora, Lambda, API Gateway, Cognito,
       IAM roles, Secrets Manager secrets, SES identities.
-- [ ] **AWS CLI v2** installed and configured:
-      `bash
-    aws --version                # expect aws-cli/2.x
-    aws sts get-caller-identity  # must return your account, not an error
-    `
-      If the second command errors, run `aws configure` (or `aws sso login`
-      if your org uses SSO) before continuing.
-- [ ] **AWS SAM CLI** installed:
-      `bash
-    sam --version   # expect SAM CLI, version 1.100+
-    `
-- [ ] **Node.js 20.x** (matches `template.yaml`'s `Runtime: nodejs20.x`):
-      `bash
-    node --version   # expect v20.x
-    `
+- [ ] **AWS CLI v2** installed and configured.
+- [ ] **AWS SAM CLI** installed.
+- [ ] **Node.js 20.x** (matches `template.yaml`'s `Runtime: nodejs20.x`).
 - [ ] **A Stripe account** (test mode is fine to start — you'll switch to
       live mode later by repeating the Stripe steps in Phase 3 with live
       keys/prices).
-- [ ] **This repo cloned locally**, on the `main` branch, up to date:
-      `bash
-    cd Expense_tracker_New/backend
-    npm install
-    `
+- [ ] **This repo cloned locally**, on the `main` branch, up to date.
 - [ ] Decide your **Stage name** now — it becomes part of URLs and
       resource names (`ledger-<Stage>-...`). Use `dev` for a first test
       deploy, `prod` when you're ready for real customers. This guide uses
       `dev` in every example; substitute your real value throughout.
+
+Verify the tools above are actually installed and working:
+
+```bash
+aws --version                # expect aws-cli/2.x
+aws sts get-caller-identity  # must return your account, not an error
+sam --version                # expect SAM CLI, version 1.100+
+node --version                # expect v20.x
+```
+
+If `aws sts get-caller-identity` errors, run `aws configure` (or
+`aws sso login` if your org uses SSO) before continuing. Then install
+dependencies:
+
+```bash
+cd Expense_tracker_New/backend
+npm install
+```
 
 ---
 
