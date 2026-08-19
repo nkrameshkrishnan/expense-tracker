@@ -216,11 +216,26 @@ class ApiStore {
     this.idToken = idToken;
     this.kind = "api";
     this.cache = null;
+    this.activeTenantId = null;
+  }
+
+  setActiveTenant(tenantId) {
+    this.activeTenantId = tenantId || null;
+  }
+
+  resetCache() {
+    // Switching tenants must not keep serving the previous tenant's
+    // cached transactions/budget/balances/etc - the next _ensure() call
+    // (triggered by refresh()) needs to hit the API fresh, scoped to
+    // whatever tenant setActiveTenant() was just called with.
+    this.cache = null;
+    this.user = null;
   }
 
   _headers(extra = {}) {
     return {
       Authorization: `Bearer ${this.idToken}`,
+      ...(this.activeTenantId ? { "X-Active-Tenant": this.activeTenantId } : {}),
       ...extra,
     };
   }
@@ -407,6 +422,16 @@ class ApiStore {
   }
   async getTenant() {
     return (await this._ensure()).tenant || { plan: "free", status: "active" };
+  }
+  async getUserEmail() {
+    return this.user?.email || null;
+  }
+  async getMyTenants() {
+    const r = await this._post({ action: "listMyTenants" });
+    return r.tenants || [];
+  }
+  async joinTenant(inviteToken) {
+    return this._post({ action: "joinTenant", inviteToken });
   }
   async createCheckoutSession(priceId, successUrl, cancelUrl) {
     return this._post({
