@@ -173,10 +173,11 @@ Resources:
       StageName: !Ref Stage
       CorsConfiguration:
         AllowOrigins: [!Ref AllowedOrigin]
-        # Deliberately no x-tenant-id: auth.js resolves the caller's tenant
-        # from the verified ID token only, never from a request header.
-        # Mirror any change here in handler.js's CORS_HEADERS.
-        AllowHeaders: [authorization, content-type]
+        # x-active-tenant is allowed: auth.js validates it against real
+        # tenant_users membership before trusting it, unlike the removed
+        # x-tenant-id header. Mirror any change here in handler.js's
+        # CORS_HEADERS.
+        AllowHeaders: [authorization, content-type, x-active-tenant]
         AllowMethods: [GET, POST, OPTIONS]
 
   # ------------------------------------------------------------------ Auth

@@ -23,11 +23,12 @@ import { FEATURES, planFromPriceId } from "./plans.js";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": process.env.ALLOWED_ORIGIN || "*",
-  // No x-tenant-id here (nor in template.yaml's CorsConfiguration): auth.js
-  // resolves the tenant from the verified token only, so there is no
-  // legitimate reason for a browser to send that header. Keep the two lists
-  // in sync if this ever changes.
-  "Access-Control-Allow-Headers": "authorization,content-type",
+  // x-active-tenant IS present here (and in template.yaml's
+  // CorsConfiguration): auth.js validates it against real tenant_users
+  // membership before trusting it (see the comment in auth.js), so, unlike
+  // the removed x-tenant-id header, there is a legitimate reason for a
+  // browser to send it. Keep the two lists in sync if this ever changes.
+  "Access-Control-Allow-Headers": "authorization,content-type,x-active-tenant",
   "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
 };
 

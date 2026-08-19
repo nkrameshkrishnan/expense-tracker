@@ -7,14 +7,23 @@
    in Security_Analysis.md validated for the Sheets/Supabase backends. */
 
 import { CognitoJwtVerifier } from "aws-jwt-verify";
+import { runProvisioningTransaction } from "./db.js";
+import { getMembershipInTenant } from "./routes/tenants.js";
 
 export class AuthError extends Error {}
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Factory so tests can inject a fake verifier instead of hitting Cognito's
     real JWKS endpoint over the network - see backend/test/auth.test.js.
     Production wiring (the exported `requireUser` below) is the only
-    caller that passes the real CognitoJwtVerifier. */
-export function createAuthChecker(verifier) {
+    caller that passes the real CognitoJwtVerifier and the real
+    runProvisioningTransaction. */
+export function createAuthChecker(
+  verifier,
+  runProvisioning = runProvisioningTransaction,
+) {
   return async function requireUser(event) {
     const header =
       event.headers?.authorization || event.headers?.Authorization || "";
@@ -28,37 +37,51 @@ export function createAuthChecker(verifier) {
       throw new AuthError(`Invalid token: ${err.message}`);
     }
 
-    // Which tenant this request acts as. This comes from the VERIFIED token
-    // and nothing else — `custom:tenant_id` is set on the user at signup by
-    // postConfirmation.js and is covered by the JWT signature checked above.
-    // Route modules never accept a tenant id from the request body either;
-    // only from here.
-    //
-    // This used to also honour an `X-Tenant-Id` request header, on the
-    // theory that a user belonging to more than one tenant needs a way to
-    // say which one they are acting as. Nothing ever validated that header
-    // against tenant_users, so any authenticated user could read and write
-    // any other tenant's data by setting one header — every downstream
-    // control (RLS, the invite roles, the whole isolation model) keys off
-    // this value. Removed rather than patched, because nothing sends it:
-    // the frontend never set it, and multi-tenant switching is out of scope.
-    //
-    // FUTURE WORK, do not build now: re-introducing tenant switching means
-    // a real membership check BEFORE this value is trusted — inside a
-    // transaction, query tenant_users for (user_sub = claims.sub, tenant_id
-    // = requested) and reject with AuthError when there is no row. That
-    // lookup needs a DB round trip, so it belongs in a provisioning-style
-    // transaction here (or in handler.js before runInTenantTransaction),
-    // not in a header read. Until that exists, a client-supplied tenant id
-    // must never reach this function's return value.
-    const tenantId = claims["custom:tenant_id"];
-    if (!tenantId) throw new AuthError("No tenant associated with this user.");
+    // The default tenant this request acts as, from the VERIFIED token and
+    // nothing else — `custom:tenant_id` is set on the user at signup by
+    // postConfirmation.js and is covered by the JWT signature checked
+    // above. Route modules never accept a tenant id from the request body
+    // either; only from here (or the validated override below).
+    const defaultTenantId = claims["custom:tenant_id"];
+    if (!defaultTenantId)
+      throw new AuthError("No tenant associated with this user.");
 
-    return {
-      sub: claims.sub,
-      email: claims.email,
-      tenantId,
-    };
+    // X-Active-Tenant: lets a user who belongs to more than one tenant act
+    // as one other than their token's default — this is the feature
+    // documented in docs/superpowers/specs/2026-08-18-tenant-switching-design.md.
+    //
+    // This is NOT a resurrection of the old X-Tenant-Id header. That header
+    // was removed (see git history and the "X-Tenant-Id header is IGNORED"
+    // tests in test/auth.test.js) because nothing ever validated it against
+    // tenant_users — any authenticated user could read and write any other
+    // tenant's data by setting one header, since every downstream control
+    // (RLS, invite roles, the whole isolation model) keys off this value.
+    // X-Active-Tenant is different in the one way that matters: every value
+    // reaching the return below has first been confirmed, inside a DB
+    // transaction, against a real tenant_users row for this user. An
+    // unvalidated header
+    // must never be trusted here again.
+    const requested =
+      event.headers?.["x-active-tenant"] || event.headers?.["X-Active-Tenant"];
+
+    if (!requested || requested === defaultTenantId) {
+      return { sub: claims.sub, email: claims.email, tenantId: defaultTenantId };
+    }
+
+    // A client-supplied value reaching a `cast(... as uuid)` query as
+    // garbage would surface as a raw Postgres error rather than a clean
+    // 401/403 — reject the shape here, before any DB round trip, same as
+    // rejecting a malformed token above.
+    if (!UUID_RE.test(requested))
+      throw new AuthError("Malformed X-Active-Tenant header.");
+
+    const membership = await runProvisioning(claims.sub, (execute) =>
+      getMembershipInTenant(execute, claims.sub, requested),
+    );
+    if (!membership)
+      throw new AuthError("Not a member of the requested tenant.");
+
+    return { sub: claims.sub, email: claims.email, tenantId: requested };
   };
 }
 

@@ -14,6 +14,21 @@ export async function getMembership(execute, userSub) {
   return rows[0] || null;
 }
 
+/** Same lookup as getMembership, but scoped to an explicit tenant rather
+    than the caller's default. Used by auth.js's X-Active-Tenant handling to
+    confirm real membership before letting a request act as a tenant other
+    than the one on the caller's token - called inside
+    runProvisioningTransaction (no app.tenant_id set yet), same reason
+    getMembership's callers are, so this can't rely on RLS scoping and
+    filters by tenant_id explicitly. */
+export async function getMembershipInTenant(execute, userSub, tenantId) {
+  const rows = await execute.rows(
+    `select role from tenant_users where user_sub = :userSub and tenant_id = cast(:tenantId as uuid)`,
+    { userSub, tenantId },
+  );
+  return rows[0] || null;
+}
+
 export async function listMembers(execute) {
   return execute.rows(
     `select user_sub, email, role, created_at from tenant_users order by created_at`,
