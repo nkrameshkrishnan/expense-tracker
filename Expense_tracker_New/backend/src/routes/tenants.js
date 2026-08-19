@@ -85,3 +85,74 @@ export async function revokeInvite(execute, token) {
     { token },
   );
 }
+
+/** Marker error for "this invite token doesn't resolve to anything
+    redeemable" (missing/expired/already used) - deliberately a plain
+    Error subclass, not a ValidationError, and not surfaced to end users
+    any differently than any other action failure today. Exists purely so
+    callers can distinguish this one specific failure mode by type:
+    postConfirmation.js's resolveTenant catches JUST this to silently fall
+    through to creating a new tenant (an expired invite shouldn't block a
+    real signup); every other error out of redeemInvite (e.g. the seat-cap
+    Error below) is NOT caught there and propagates to block signup, same
+    as today. */
+export class InvalidInviteError extends Error {}
+
+/** Redeems an invite token for `sub`/`email`, joining the tenant it
+    points at. Shared by postConfirmation.js (first-signup invite
+    redemption) and, from Task 3 onward, the joinTenant action (an
+    already-signed-in user joining a second tenant) - both need the exact
+    same lookup/seat-cap/insert/mark-used logic, so it lives here once
+    rather than being duplicated.
+
+    Called from runProvisioningTransaction (no app.tenant_id set), so -
+    like getMembershipInTenant - every query here filters by tenant_id
+    explicitly rather than relying on RLS scoping. */
+export async function redeemInvite(execute, { sub, email, inviteToken }) {
+  const invites = await execute.rows(
+    `select tenant_id, role from tenant_invites
+     where token = :token and used_at is null and expires_at > now()`,
+    { token: inviteToken },
+  );
+  if (!invites[0]) {
+    throw new InvalidInviteError("This invite is invalid or has expired.");
+  }
+  const { tenant_id: tenantId, role } = invites[0];
+
+  const existing = await getMembershipInTenant(execute, sub, tenantId);
+  if (existing) {
+    // Re-clicking an old invite link for a tenant already joined - a
+    // no-op success, not an error. tenant_users' primary key is
+    // (user_sub, tenant_id); a naive second insert would otherwise hit a
+    // constraint violation.
+    return tenantId;
+  }
+
+  const [{ plan }] = await execute.rows(
+    `select plan from tenants where id = cast(:tenantId as uuid)`,
+    { tenantId },
+  );
+  const [{ count: memberCount }] = await execute.rows(
+    `select cast(count(*) as int) as count from tenant_users where tenant_id = cast(:tenantId as uuid)`,
+    { tenantId },
+  );
+  // Hard, authoritative check: state can have changed (plan downgraded,
+  // another invite redeemed) since this invite was created - createInvite's
+  // check at send time is only a soft, best-effort warning.
+  if (memberCount >= SEAT_CAPS[plan]) {
+    throw new Error(
+      `Household is at its ${SEAT_CAPS[plan]}-seat limit for its current plan.`,
+    );
+  }
+
+  await execute(
+    `insert into tenant_users (user_sub, tenant_id, email, role)
+     values (:sub, :tenantId, :email, :role)`,
+    { sub, tenantId, email, role },
+  );
+  await execute(
+    `update tenant_invites set used_at = now() where token = :token`,
+    { token: inviteToken },
+  );
+  return tenantId;
+}
