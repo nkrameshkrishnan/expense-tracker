@@ -29,6 +29,23 @@ export async function getMembershipInTenant(execute, userSub, tenantId) {
   return rows[0] || null;
 }
 
+/** Lists every tenant `userSub` belongs to, across all memberships - the
+    backing query for the joinTenant/tenant-switching action set. Called
+    from runProvisioningTransaction (no app.tenant_id set), same reason
+    getMembershipInTenant is: this is inherently a cross-tenant query, so it
+    can't rely on RLS scoping to a single tenant and instead filters by
+    user_sub explicitly. */
+export async function listMyTenants(execute, userSub) {
+  return execute.rows(
+    `select tu.tenant_id, tu.role, t.name, t.plan
+     from tenant_users tu
+     join tenants t on t.id = tu.tenant_id
+     where tu.user_sub = :userSub
+     order by tu.created_at`,
+    { userSub },
+  );
+}
+
 export async function listMembers(execute) {
   return execute.rows(
     `select user_sub, email, role, created_at from tenant_users order by created_at`,

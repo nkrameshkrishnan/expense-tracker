@@ -8,7 +8,7 @@
 
 import { requireUser, AuthError } from "./auth.js";
 import { ValidationError } from "./validate.js";
-import { runInTenantTransaction } from "./db.js";
+import { runInTenantTransaction, runProvisioningTransaction } from "./db.js";
 import * as tx from "./routes/transactions.js";
 import * as budget from "./routes/budget.js";
 import * as balances from "./routes/balances.js";
@@ -156,6 +156,29 @@ async function handleGet(user, event) {
 async function handlePost(user, event) {
   const payload = JSON.parse(event.body || "{}");
   const { action } = payload;
+
+  // joinTenant/listMyTenants are inherently cross-tenant: joining a tenant
+  // not yet belonged to, or listing every tenant belonged to. Neither can
+  // run inside the single-tenant RLS scope runInTenantTransaction opens
+  // below, so both are special-cased here, before that transaction opens,
+  // using runProvisioningTransaction instead - the same "no app.tenant_id
+  // set" pattern postConfirmation.js already uses for the same reason.
+  if (action === "joinTenant") {
+    const tenantId = await runProvisioningTransaction(user.sub, (execute) =>
+      tenants.redeemInvite(execute, {
+        sub: user.sub,
+        email: user.email,
+        inviteToken: payload.inviteToken,
+      }),
+    );
+    return { ok: true, tenantId };
+  }
+  if (action === "listMyTenants") {
+    const myTenants = await runProvisioningTransaction(user.sub, (execute) =>
+      tenants.listMyTenants(execute, user.sub),
+    );
+    return { ok: true, tenants: myTenants };
+  }
 
   return runInTenantTransaction(user.tenantId, user.sub, async (execute) => {
     switch (action) {
