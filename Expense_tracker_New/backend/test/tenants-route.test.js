@@ -85,17 +85,27 @@ test("redeemInvite joins the invited tenant and marks the token used", async () 
         `insert into tenant_users (user_sub, tenant_id, email, role) values ('owner-sub', :tenantId, 'owner@x.com', 'owner')`,
         { tenantId },
       );
-      const invite = await tenants.createInvite(execute, { email: "new@x.com", role: "member" });
+      const invite = await tenants.createInvite(execute, {
+        email: "new@x.com",
+        role: "member",
+      });
       return invite.token;
     });
 
     const joinedTenantId = await withProvisioning(client, "new-user", (c) =>
-      tenants.redeemInvite(makeExecute(c), { sub: "new-user", email: "new@x.com", inviteToken: token }),
+      tenants.redeemInvite(makeExecute(c), {
+        sub: "new-user",
+        email: "new@x.com",
+        inviteToken: token,
+      }),
     );
     assert.equal(joinedTenantId, tenantId);
 
     await withTenant(client, tenantId, "owner-sub", async (c) => {
-      const membership = await tenants.getMembership(makeExecute(c), "new-user");
+      const membership = await tenants.getMembership(
+        makeExecute(c),
+        "new-user",
+      );
       assert.equal(membership.role, "member");
     });
   } finally {
@@ -124,12 +134,19 @@ test("redeemInvite is a no-op success for a token to a tenant already joined", a
         `insert into tenant_users (user_sub, tenant_id, email, role) values ('new-user', :tenantId, 'new@x.com', 'member')`,
         { tenantId },
       );
-      const invite = await tenants.createInvite(execute, { email: "new@x.com", role: "member" });
+      const invite = await tenants.createInvite(execute, {
+        email: "new@x.com",
+        role: "member",
+      });
       return invite.token;
     });
 
     const joinedTenantId = await withProvisioning(client, "new-user", (c) =>
-      tenants.redeemInvite(makeExecute(c), { sub: "new-user", email: "new@x.com", inviteToken: token }),
+      tenants.redeemInvite(makeExecute(c), {
+        sub: "new-user",
+        email: "new@x.com",
+        inviteToken: token,
+      }),
     );
     assert.equal(joinedTenantId, tenantId);
 
@@ -145,7 +162,10 @@ test("redeemInvite is a no-op success for a token to a tenant already joined", a
         `select used_at from tenant_invites where token = :token`,
         { token },
       );
-      assert.ok(invRows[0].used_at, "no-op redemption must mark the token used");
+      assert.ok(
+        invRows[0].used_at,
+        "no-op redemption must mark the token used",
+      );
     });
   } finally {
     await client.end();
@@ -285,7 +305,9 @@ test("redeemInvite rejects when the tenant is at its seat cap", async () => {
     // authoritative check catching what the soft check might have missed
     // (e.g. the plan was downgraded after the invite was sent).
     const tenantId = await withProvisioning(client, "seed-user", async (c) => {
-      const { rows } = await c.query(`insert into tenants (name) values ('Household') returning id`);
+      const { rows } = await c.query(
+        `insert into tenants (name) values ('Household') returning id`,
+      );
       return rows[0].id;
     });
     const token = await withTenant(client, tenantId, "owner-sub", async (c) => {

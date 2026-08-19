@@ -261,7 +261,9 @@ class ApiStore {
   _headers(extra = {}) {
     return {
       Authorization: `Bearer ${this.idToken}`,
-      ...(this.activeTenantId ? { "X-Active-Tenant": this.activeTenantId } : {}),
+      ...(this.activeTenantId
+        ? { "X-Active-Tenant": this.activeTenantId }
+        : {}),
       ...extra,
     };
   }

@@ -12,11 +12,15 @@ test("listMyTenants returns exactly the tenants a user belongs to", async () => 
   const client = await freshDb();
   try {
     const tenantA = await withProvisioning(client, "seed-user", async (c) => {
-      const { rows } = await c.query(`insert into tenants (name) values ('Household A') returning id`);
+      const { rows } = await c.query(
+        `insert into tenants (name) values ('Household A') returning id`,
+      );
       return rows[0].id;
     });
     const tenantB = await withProvisioning(client, "seed-user", async (c) => {
-      const { rows } = await c.query(`insert into tenants (name) values ('Household B') returning id`);
+      const { rows } = await c.query(
+        `insert into tenants (name) values ('Household B') returning id`,
+      );
       return rows[0].id;
     });
     await withTenant(client, tenantA, "owner-sub", (c) =>
@@ -43,7 +47,9 @@ test("redeemInvite lets an existing member of one tenant join a second, without 
   const client = await freshDb();
   try {
     const tenantA = await withProvisioning(client, "seed-user", async (c) => {
-      const { rows } = await c.query(`insert into tenants (name) values ('Household A') returning id`);
+      const { rows } = await c.query(
+        `insert into tenants (name) values ('Household A') returning id`,
+      );
       return rows[0].id;
     });
     const tenantB = await withProvisioning(client, "seed-user", async (c) => {
@@ -60,18 +66,30 @@ test("redeemInvite lets an existing member of one tenant join a second, without 
       ),
     );
 
-    const token = await withTenant(client, tenantB, "owner-sub-b", async (c) => {
-      const execute = makeExecute(c);
-      await execute(
-        `insert into tenant_users (user_sub, tenant_id, email, role) values ('owner-sub-b', :tenantId, 'ownerb@x.com', 'owner')`,
-        { tenantId: tenantB },
-      );
-      const invite = await tenants.createInvite(execute, { email: "user1@x.com", role: "member" });
-      return invite.token;
-    });
+    const token = await withTenant(
+      client,
+      tenantB,
+      "owner-sub-b",
+      async (c) => {
+        const execute = makeExecute(c);
+        await execute(
+          `insert into tenant_users (user_sub, tenant_id, email, role) values ('owner-sub-b', :tenantId, 'ownerb@x.com', 'owner')`,
+          { tenantId: tenantB },
+        );
+        const invite = await tenants.createInvite(execute, {
+          email: "user1@x.com",
+          role: "member",
+        });
+        return invite.token;
+      },
+    );
 
     const joinedTenantId = await withProvisioning(client, "user-1", (c) =>
-      tenants.redeemInvite(makeExecute(c), { sub: "user-1", email: "user1@x.com", inviteToken: token }),
+      tenants.redeemInvite(makeExecute(c), {
+        sub: "user-1",
+        email: "user1@x.com",
+        inviteToken: token,
+      }),
     );
     assert.equal(joinedTenantId, tenantB);
 

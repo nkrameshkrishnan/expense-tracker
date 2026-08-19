@@ -101,13 +101,22 @@ test("the CORS allow-list does not advertise x-tenant-id", async () => {
 });
 
 test("X-Active-Tenant matching the caller's default tenant never touches the DB", async () => {
-  const verifier = fakeVerifier({ sub: "user-1", email: "a@b.com", "custom:tenant_id": "tenant-A" });
+  const verifier = fakeVerifier({
+    sub: "user-1",
+    email: "a@b.com",
+    "custom:tenant_id": "tenant-A",
+  });
   let dbCalls = 0;
-  const runProvisioning = async () => { dbCalls++; };
+  const runProvisioning = async () => {
+    dbCalls++;
+  };
   const requireUser = createAuthChecker(verifier, runProvisioning);
 
   const user = await requireUser({
-    headers: { authorization: "Bearer valid-token", "x-active-tenant": "tenant-A" },
+    headers: {
+      authorization: "Bearer valid-token",
+      "x-active-tenant": "tenant-A",
+    },
   });
 
   assert.equal(user.tenantId, "tenant-A");
@@ -115,7 +124,11 @@ test("X-Active-Tenant matching the caller's default tenant never touches the DB"
 });
 
 test("X-Active-Tenant for a tenant the caller genuinely belongs to switches", async () => {
-  const verifier = fakeVerifier({ sub: "user-1", email: "a@b.com", "custom:tenant_id": "tenant-A" });
+  const verifier = fakeVerifier({
+    sub: "user-1",
+    email: "a@b.com",
+    "custom:tenant_id": "tenant-A",
+  });
   const runProvisioning = async (actorLabel, fn) =>
     fn({ rows: async () => [{ role: "member" }] });
   const requireUser = createAuthChecker(verifier, runProvisioning);
@@ -131,8 +144,13 @@ test("X-Active-Tenant for a tenant the caller genuinely belongs to switches", as
 });
 
 test("X-Active-Tenant for a tenant the caller does not belong to rejects", async () => {
-  const verifier = fakeVerifier({ sub: "user-1", email: "a@b.com", "custom:tenant_id": "tenant-A" });
-  const runProvisioning = async (actorLabel, fn) => fn({ rows: async () => [] });
+  const verifier = fakeVerifier({
+    sub: "user-1",
+    email: "a@b.com",
+    "custom:tenant_id": "tenant-A",
+  });
+  const runProvisioning = async (actorLabel, fn) =>
+    fn({ rows: async () => [] });
   const requireUser = createAuthChecker(verifier, runProvisioning);
 
   await assert.rejects(
@@ -148,15 +166,24 @@ test("X-Active-Tenant for a tenant the caller does not belong to rejects", async
 });
 
 test("a malformed X-Active-Tenant value is rejected before any DB call", async () => {
-  const verifier = fakeVerifier({ sub: "user-1", email: "a@b.com", "custom:tenant_id": "tenant-A" });
+  const verifier = fakeVerifier({
+    sub: "user-1",
+    email: "a@b.com",
+    "custom:tenant_id": "tenant-A",
+  });
   let dbCalls = 0;
-  const runProvisioning = async () => { dbCalls++; };
+  const runProvisioning = async () => {
+    dbCalls++;
+  };
   const requireUser = createAuthChecker(verifier, runProvisioning);
 
   await assert.rejects(
     () =>
       requireUser({
-        headers: { authorization: "Bearer valid-token", "x-active-tenant": "not-a-uuid" },
+        headers: {
+          authorization: "Bearer valid-token",
+          "x-active-tenant": "not-a-uuid",
+        },
       }),
     AuthError,
   );

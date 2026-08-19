@@ -64,7 +64,11 @@ export function createAuthChecker(
       event.headers?.["x-active-tenant"] || event.headers?.["X-Active-Tenant"];
 
     if (!requested || requested === defaultTenantId) {
-      return { sub: claims.sub, email: claims.email, tenantId: defaultTenantId };
+      return {
+        sub: claims.sub,
+        email: claims.email,
+        tenantId: defaultTenantId,
+      };
     }
 
     // A client-supplied value reaching a `cast(... as uuid)` query as

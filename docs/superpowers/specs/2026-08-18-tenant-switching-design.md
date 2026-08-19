@@ -12,7 +12,7 @@ never trusted from client input.
 ## Background
 
 Today, `Expense_tracker_New`'s backend (`auth.js`) resolves which tenant a
-request acts as *only* from the Cognito ID token's own `custom:tenant_id`
+request acts as _only_ from the Cognito ID token's own `custom:tenant_id`
 claim, set once by `postConfirmation.js` at signup (either creating a new
 tenant, or joining one via an invite token carried through Cognito's
 `clientMetadata`). There is no code path today for an already-registered
@@ -26,7 +26,7 @@ security review (finding C3, already fixed and merged) found and removed
 an `X-Tenant-Id` request header that used to be trusted as the caller's
 tenant context with **zero membership validation** — any authenticated user
 could act as any tenant just by setting a header. Building real
-tenant-switching means reintroducing *some* way for a request to act as a
+tenant-switching means reintroducing _some_ way for a request to act as a
 tenant other than the JWT's default — the same shape of mechanism as the
 bug that was just fixed. `auth.js` itself already carries a `FUTURE WORK`
 comment describing the correct fix: validate real membership, server-side,
@@ -37,16 +37,16 @@ before trusting any such value. This spec is that work.
 - Self-service creation of a second tenant by an already-registered user
   (e.g. a "create another household" button). In scope only: joining a
   second tenant via an invite, same as first-tenant signup already works.
-  A user still gets their *first* tenant by signing up (new or via
-  invite); this spec only adds a way to gain *additional* memberships and
+  A user still gets their _first_ tenant by signing up (new or via
+  invite); this spec only adds a way to gain _additional_ memberships and
   move between them.
-- Changing a user's *default* tenant (the one their JWT claims at sign-in).
+- Changing a user's _default_ tenant (the one their JWT claims at sign-in).
   Joining a second tenant never touches `custom:tenant_id`; the switch is
   purely a per-request, client-persisted preference layered on top.
-- Any change to how a *brand-new* user's first tenant is provisioned —
+- Any change to how a _brand-new_ user's first tenant is provisioned —
   `postConfirmation.js`'s Cognito-trigger flow is unchanged in shape, only
   refactored to share logic with the new signed-in join path.
-- Handling a user being removed from their *currently active* tenant
+- Handling a user being removed from their _currently active_ tenant
   mid-session with a dedicated UX flow. Their next request simply fails
   the membership check like any other invalid switch attempt; the
   existing generic request-failure `notice()` handling covers it.
@@ -87,7 +87,7 @@ assume it's the same trust-the-header bug. It's `X-Active-Tenant` instead.
 
 `template.yaml`'s CORS `Access-Control-Allow-Headers` gains
 `x-active-tenant`. The existing test asserting the CORS allow-list does
-*not* advertise `x-tenant-id` is unaffected and should not be touched —
+_not_ advertise `x-tenant-id` is unaffected and should not be touched —
 it's about the old, removed, unvalidated header; a new, validated,
 differently-named header is not a regression of that finding. The
 implementation plan should call this out explicitly so a reviewer doesn't
@@ -107,7 +107,7 @@ email, inviteToken })`. Two callers:
   `AdminUpdateUserAttributes`, exactly as today, since this is the user's
   very first membership and therefore their default.
 - **`joinTenant`** (new, `handler.js` action) — an already-registered,
-  signed-in user redeeming an invite for a *second* tenant. Calls the same
+  signed-in user redeeming an invite for a _second_ tenant. Calls the same
   `redeemInvite`, but **does not** touch `custom:tenant_id`. Their default
   tenant stays exactly what it was; the newly joined tenant becomes
   available in their tenant list and they switch to it (or not) via the
@@ -173,7 +173,7 @@ either.
   which one is "the default" itself.
 
 **Switcher UI:** lives inside the existing Household panel (Data tab),
-*not* a new standalone control. Unlike that panel's invite-management
+_not_ a new standalone control. Unlike that panel's invite-management
 actions (owner/admin only), the switcher itself is visible to **any**
 member with 2+ tenants regardless of role — viewing a tenant you're a
 plain member of is still a valid thing to do. Rendered only when
@@ -186,7 +186,7 @@ tenant.
 **Joining via an invite while already signed in:** invite links already
 carry a `?invite=<token>` query param (today consumed only pre-signup, via
 Cognito's `client_metadata`). `boot()` gains a check: if that param is
-present *and* the visitor already has a valid session, call the new
+present _and_ the visitor already has a valid session, call the new
 `joinTenant` action instead of routing through sign-up. Shows a "You've
 joined `<tenant name>`" notice, refreshes `state.tenants`, and lets the
 user switch to it via the normal Household-panel switcher — joining never
@@ -222,7 +222,7 @@ only where a real call would otherwise happen (Cognito's
   largely carried over from `postConfirmation.js`'s existing tests, now
   exercised directly against the shared function.
 - New `handler.js`-level test for the `joinTenant` action: confirms the
-  join happens and confirms `custom:tenant_id` is *not* touched — the one
+  join happens and confirms `custom:tenant_id` is _not_ touched — the one
   behavioral difference from signup-time redemption.
 - `listMyTenants`: returns exactly the tenants a given `sub` belongs to,
   and nothing belonging to any other user.

@@ -49,6 +49,7 @@ mocked AWS SDK (Cognito) only where a real call would otherwise happen.
 ### Task 1: `auth.js` — validated `X-Active-Tenant` header
 
 **Files:**
+
 - Modify: `Expense_tracker_New/backend/src/auth.js`
 - Modify: `Expense_tracker_New/backend/src/routes/tenants.js`
 - Modify: `Expense_tracker_New/backend/src/handler.js` (CORS_HEADERS only)
@@ -56,6 +57,7 @@ mocked AWS SDK (Cognito) only where a real call would otherwise happen.
 - Test: `Expense_tracker_New/backend/test/auth.test.js`
 
 **Interfaces:**
+
 - Produces: `routes/tenants.js` exports a new
   `getMembershipInTenant(execute, userSub, tenantId): Promise<{role: string} | null>`.
   `createAuthChecker(verifier, runProvisioning?)` — `requireUser`'s factory
@@ -72,9 +74,15 @@ same way):
 
 ```js
 test("X-Active-Tenant matching the caller's default tenant never touches the DB", async () => {
-  const verifier = fakeVerifier({ sub: "user-1", email: "a@b.com", "custom:tenant_id": "tenant-A" });
+  const verifier = fakeVerifier({
+    sub: "user-1",
+    email: "a@b.com",
+    "custom:tenant_id": "tenant-A",
+  });
   let dbCalls = 0;
-  const runProvisioning = async () => { dbCalls++; };
+  const runProvisioning = async () => {
+    dbCalls++;
+  };
   const requireUser = createAuthChecker(verifier, runProvisioning);
 
   const user = await requireUser({
@@ -86,7 +94,11 @@ test("X-Active-Tenant matching the caller's default tenant never touches the DB"
 });
 
 test("X-Active-Tenant for a tenant the caller genuinely belongs to switches", async () => {
-  const verifier = fakeVerifier({ sub: "user-1", email: "a@b.com", "custom:tenant_id": "tenant-A" });
+  const verifier = fakeVerifier({
+    sub: "user-1",
+    email: "a@b.com",
+    "custom:tenant_id": "tenant-A",
+  });
   const runProvisioning = async (actorLabel, fn) =>
     fn({ rows: async () => [{ role: "member" }] });
   const requireUser = createAuthChecker(verifier, runProvisioning);
@@ -99,8 +111,13 @@ test("X-Active-Tenant for a tenant the caller genuinely belongs to switches", as
 });
 
 test("X-Active-Tenant for a tenant the caller does not belong to rejects", async () => {
-  const verifier = fakeVerifier({ sub: "user-1", email: "a@b.com", "custom:tenant_id": "tenant-A" });
-  const runProvisioning = async (actorLabel, fn) => fn({ rows: async () => [] });
+  const verifier = fakeVerifier({
+    sub: "user-1",
+    email: "a@b.com",
+    "custom:tenant_id": "tenant-A",
+  });
+  const runProvisioning = async (actorLabel, fn) =>
+    fn({ rows: async () => [] });
   const requireUser = createAuthChecker(verifier, runProvisioning);
 
   await assert.rejects(
@@ -113,9 +130,15 @@ test("X-Active-Tenant for a tenant the caller does not belong to rejects", async
 });
 
 test("a malformed X-Active-Tenant value is rejected before any DB call", async () => {
-  const verifier = fakeVerifier({ sub: "user-1", email: "a@b.com", "custom:tenant_id": "tenant-A" });
+  const verifier = fakeVerifier({
+    sub: "user-1",
+    email: "a@b.com",
+    "custom:tenant_id": "tenant-A",
+  });
   let dbCalls = 0;
-  const runProvisioning = async () => { dbCalls++; };
+  const runProvisioning = async () => {
+    dbCalls++;
+  };
   const requireUser = createAuthChecker(verifier, runProvisioning);
 
   await assert.rejects(
@@ -216,7 +239,11 @@ export function createAuthChecker(
       event.headers?.["x-active-tenant"] || event.headers?.["X-Active-Tenant"];
 
     if (!requested || requested === defaultTenantId) {
-      return { sub: claims.sub, email: claims.email, tenantId: defaultTenantId };
+      return {
+        sub: claims.sub,
+        email: claims.email,
+        tenantId: defaultTenantId,
+      };
     }
 
     // A client-supplied value reaching a `cast(... as uuid)` query as
@@ -260,19 +287,25 @@ already in `handler.js`) is to keep both in sync rather than treat one as
 authoritative:
 
 In `Expense_tracker_New/backend/template.yaml`, line ~179:
+
 ```yaml
-        AllowHeaders: [authorization, content-type]
+AllowHeaders: [authorization, content-type]
 ```
+
 becomes
+
 ```yaml
-        AllowHeaders: [authorization, content-type, x-active-tenant]
+AllowHeaders: [authorization, content-type, x-active-tenant]
 ```
 
 In `Expense_tracker_New/backend/src/handler.js`'s `CORS_HEADERS` constant:
+
 ```js
   "Access-Control-Allow-Headers": "authorization,content-type",
 ```
+
 becomes
+
 ```js
   "Access-Control-Allow-Headers": "authorization,content-type,x-active-tenant",
 ```
@@ -308,11 +341,13 @@ git commit -m "feat: validate X-Active-Tenant header against real tenant_users m
 ### Task 2: Extract shared `redeemInvite`, refactor `postConfirmation.js`
 
 **Files:**
+
 - Modify: `Expense_tracker_New/backend/src/routes/tenants.js`
 - Modify: `Expense_tracker_New/backend/src/postConfirmation.js`
 - Test: `Expense_tracker_New/backend/test/tenants-route.test.js`
 
 **Interfaces:**
+
 - Produces: `routes/tenants.js` exports
   `redeemInvite(execute, { sub, email, inviteToken }): Promise<string>`
   (returns the tenant id joined) and `InvalidInviteError extends Error`
@@ -335,7 +370,12 @@ inline. Extend the import line to also pull in `withTenant, makeExecute`
 than hand-rolling the same transaction/RLS setup again:
 
 ```js
-import { freshDb, withProvisioning, withTenant, makeExecute } from "./pg-harness.js";
+import {
+  freshDb,
+  withProvisioning,
+  withTenant,
+  makeExecute,
+} from "./pg-harness.js";
 ```
 
 Add these tests:
@@ -356,17 +396,27 @@ test("redeemInvite joins the invited tenant and marks the token used", async () 
         `insert into tenant_users (user_sub, tenant_id, email, role) values ('owner-sub', :tenantId, 'owner@x.com', 'owner')`,
         { tenantId },
       );
-      const invite = await tenants.createInvite(execute, { email: "new@x.com", role: "member" });
+      const invite = await tenants.createInvite(execute, {
+        email: "new@x.com",
+        role: "member",
+      });
       return invite.token;
     });
 
     const joinedTenantId = await withProvisioning(client, "new-user", (c) =>
-      tenants.redeemInvite(makeExecute(c), { sub: "new-user", email: "new@x.com", inviteToken: token }),
+      tenants.redeemInvite(makeExecute(c), {
+        sub: "new-user",
+        email: "new@x.com",
+        inviteToken: token,
+      }),
     );
     assert.equal(joinedTenantId, tenantId);
 
     await withTenant(client, tenantId, "owner-sub", async (c) => {
-      const membership = await tenants.getMembership(makeExecute(c), "new-user");
+      const membership = await tenants.getMembership(
+        makeExecute(c),
+        "new-user",
+      );
       assert.equal(membership.role, "member");
     });
   } finally {
@@ -395,12 +445,19 @@ test("redeemInvite is a no-op success for a token to a tenant already joined", a
         `insert into tenant_users (user_sub, tenant_id, email, role) values ('new-user', :tenantId, 'new@x.com', 'member')`,
         { tenantId },
       );
-      const invite = await tenants.createInvite(execute, { email: "new@x.com", role: "member" });
+      const invite = await tenants.createInvite(execute, {
+        email: "new@x.com",
+        role: "member",
+      });
       return invite.token;
     });
 
     const joinedTenantId = await withProvisioning(client, "new-user", (c) =>
-      tenants.redeemInvite(makeExecute(c), { sub: "new-user", email: "new@x.com", inviteToken: token }),
+      tenants.redeemInvite(makeExecute(c), {
+        sub: "new-user",
+        email: "new@x.com",
+        inviteToken: token,
+      }),
     );
     assert.equal(joinedTenantId, tenantId);
 
@@ -444,7 +501,9 @@ test("redeemInvite rejects when the tenant is at its seat cap", async () => {
     // authoritative check catching what the soft check might have missed
     // (e.g. the plan was downgraded after the invite was sent).
     const tenantId = await withProvisioning(client, "seed-user", async (c) => {
-      const { rows } = await c.query(`insert into tenants (name) values ('Household') returning id`);
+      const { rows } = await c.query(
+        `insert into tenants (name) values ('Household') returning id`,
+      );
       return rows[0].id;
     });
     const token = await withTenant(client, tenantId, "owner-sub", async (c) => {
@@ -627,11 +686,13 @@ git commit -m "refactor: extract shared redeemInvite from postConfirmation.js"
 ### Task 3: `joinTenant` and `listMyTenants` backend actions
 
 **Files:**
+
 - Modify: `Expense_tracker_New/backend/src/handler.js`
 - Modify: `Expense_tracker_New/backend/src/routes/tenants.js`
 - Test: `Expense_tracker_New/backend/test/tenant-switching.test.js` (new)
 
 **Interfaces:**
+
 - Produces: `routes/tenants.js` exports
   `listMyTenants(execute, userSub): Promise<Array<{tenant_id, role, name, plan}>>`.
   `handler.js`'s POST action contract gains `joinTenant` (consumes
@@ -664,11 +725,15 @@ test("listMyTenants returns exactly the tenants a user belongs to", async () => 
   const client = await freshDb();
   try {
     const tenantA = await withProvisioning(client, "seed-user", async (c) => {
-      const { rows } = await c.query(`insert into tenants (name) values ('Household A') returning id`);
+      const { rows } = await c.query(
+        `insert into tenants (name) values ('Household A') returning id`,
+      );
       return rows[0].id;
     });
     const tenantB = await withProvisioning(client, "seed-user", async (c) => {
-      const { rows } = await c.query(`insert into tenants (name) values ('Household B') returning id`);
+      const { rows } = await c.query(
+        `insert into tenants (name) values ('Household B') returning id`,
+      );
       return rows[0].id;
     });
     await withTenant(client, tenantA, "owner-sub", (c) =>
@@ -695,7 +760,9 @@ test("redeemInvite lets an existing member of one tenant join a second, without 
   const client = await freshDb();
   try {
     const tenantA = await withProvisioning(client, "seed-user", async (c) => {
-      const { rows } = await c.query(`insert into tenants (name) values ('Household A') returning id`);
+      const { rows } = await c.query(
+        `insert into tenants (name) values ('Household A') returning id`,
+      );
       return rows[0].id;
     });
     const tenantB = await withProvisioning(client, "seed-user", async (c) => {
@@ -712,18 +779,30 @@ test("redeemInvite lets an existing member of one tenant join a second, without 
       ),
     );
 
-    const token = await withTenant(client, tenantB, "owner-sub-b", async (c) => {
-      const execute = makeExecute(c);
-      await execute(
-        `insert into tenant_users (user_sub, tenant_id, email, role) values ('owner-sub-b', :tenantId, 'ownerb@x.com', 'owner')`,
-        { tenantId: tenantB },
-      );
-      const invite = await tenants.createInvite(execute, { email: "user1@x.com", role: "member" });
-      return invite.token;
-    });
+    const token = await withTenant(
+      client,
+      tenantB,
+      "owner-sub-b",
+      async (c) => {
+        const execute = makeExecute(c);
+        await execute(
+          `insert into tenant_users (user_sub, tenant_id, email, role) values ('owner-sub-b', :tenantId, 'ownerb@x.com', 'owner')`,
+          { tenantId: tenantB },
+        );
+        const invite = await tenants.createInvite(execute, {
+          email: "user1@x.com",
+          role: "member",
+        });
+        return invite.token;
+      },
+    );
 
     const joinedTenantId = await withProvisioning(client, "user-1", (c) =>
-      tenants.redeemInvite(makeExecute(c), { sub: "user-1", email: "user1@x.com", inviteToken: token }),
+      tenants.redeemInvite(makeExecute(c), {
+        sub: "user-1",
+        email: "user1@x.com",
+        inviteToken: token,
+      }),
     );
     assert.equal(joinedTenantId, tenantB);
 
@@ -842,9 +921,11 @@ git commit -m "feat: add joinTenant and listMyTenants actions"
 ### Task 4: Frontend `store.js` — tenant-switching methods
 
 **Files:**
+
 - Modify: `Expense_tracker_New/frontend/assets/store.js`
 
 **Interfaces:**
+
 - Produces on `ApiStore`: `setActiveTenant(tenantId)` (sets an instance
   field, no network call), `resetCache()` (clears `this.cache`/`this.user`
   so the next `_ensure()` call re-fetches from scratch — needed by Task 5's
@@ -925,9 +1006,11 @@ git commit -m "feat: add tenant-switching methods to ApiStore"
 ### Task 5: Frontend `app.js` — switcher UI, join-while-signed-in, active-tenant persistence
 
 **Files:**
+
 - Modify: `Expense_tracker_New/frontend/assets/app.js`
 
 **Interfaces:**
+
 - Consumes: `ApiStore.setActiveTenant/getMyTenants/joinTenant/getUserEmail`
   (Task 4).
 
@@ -936,8 +1019,8 @@ git commit -m "feat: add tenant-switching methods to ApiStore"
 Add, alongside the existing `state.tenant = ...` line:
 
 ```js
-  state.userEmail = (await state.store.getUserEmail?.()) || null;
-  state.tenants = (await state.store.getMyTenants?.()) || [];
+state.userEmail = (await state.store.getUserEmail?.()) || null;
+state.tenants = (await state.store.getMyTenants?.()) || [];
 ```
 
 - [ ] **Step 2: Read/persist the active tenant, and set it on the store before every request**
@@ -961,10 +1044,10 @@ In `refresh()`, after `state.tenants` is populated, resolve and apply the
 active tenant:
 
 ```js
-  const stored = getStoredActiveTenant();
-  const validStored = state.tenants.some((t) => t.tenant_id === stored);
-  const activeTenantId = validStored ? stored : null; // null = the JWT's own default, no header needed
-  state.store.setActiveTenant?.(activeTenantId);
+const stored = getStoredActiveTenant();
+const validStored = state.tenants.some((t) => t.tenant_id === stored);
+const activeTenantId = validStored ? stored : null; // null = the JWT's own default, no header needed
+state.store.setActiveTenant?.(activeTenantId);
 ```
 
 (`validStored` false — including "never set" — means no header is sent at
@@ -993,20 +1076,23 @@ async function switchActiveTenant(tenantId) {
 Add near the top of `boot()`, before `revealApp()`:
 
 ```js
-  const inviteToken = new URLSearchParams(location.search).get("invite");
-  if (inviteToken && isRemoteStore(state.store)) {
-    const joined = await withBusy("Joining household", async () => {
-      await state.store.joinTenant(inviteToken);
-    });
-    if (joined) {
-      state.tenants = (await state.store.getMyTenants?.()) || [];
-      notice("You've joined the household. Switch to it from the Household panel whenever you're ready.", "ok");
-    } else {
-      notice("That invite link is invalid or has expired.", "bad");
-    }
-    // Strip the query param so a refresh doesn't try to re-join.
-    history.replaceState(null, "", location.pathname + location.hash);
+const inviteToken = new URLSearchParams(location.search).get("invite");
+if (inviteToken && isRemoteStore(state.store)) {
+  const joined = await withBusy("Joining household", async () => {
+    await state.store.joinTenant(inviteToken);
+  });
+  if (joined) {
+    state.tenants = (await state.store.getMyTenants?.()) || [];
+    notice(
+      "You've joined the household. Switch to it from the Household panel whenever you're ready.",
+      "ok",
+    );
+  } else {
+    notice("That invite link is invalid or has expired.", "bad");
   }
+  // Strip the query param so a refresh doesn't try to re-join.
+  history.replaceState(null, "", location.pathname + location.hash);
+}
 ```
 
 Confirm the actual invite-link query-param name against
@@ -1040,9 +1126,9 @@ ${
 Wire it after the panel's other handlers:
 
 ```js
-  $("#tenant-switcher")?.addEventListener("change", (e) => {
-    switchActiveTenant(e.target.value);
-  });
+$("#tenant-switcher")?.addEventListener("change", (e) => {
+  switchActiveTenant(e.target.value);
+});
 ```
 
 Treat the exact markup above as a starting point, not verbatim final
@@ -1073,10 +1159,10 @@ git commit -m "feat: add tenant switcher to Household panel and join-via-invite-
 ## Self-Review Notes
 
 - **Spec coverage:** Auth flow validation (Task 1), shared invite-redemption
-  + signed-in join (Tasks 2-3), listing memberships (Task 3), frontend
-  state/persistence/UI (Tasks 4-5). Every section of the spec has a
-  corresponding task. No schema/RLS task, matching the spec's explicit
-  "Summary of what does NOT change".
+  - signed-in join (Tasks 2-3), listing memberships (Task 3), frontend
+    state/persistence/UI (Tasks 4-5). Every section of the spec has a
+    corresponding task. No schema/RLS task, matching the spec's explicit
+    "Summary of what does NOT change".
 - **Type/interface consistency:** `getMembershipInTenant`'s
   `{role: string} | null` return shape (Task 1) matches what `redeemInvite`
   (Task 2) and the switch-validation path both expect. `listMyTenants`'
@@ -1095,7 +1181,7 @@ git commit -m "feat: add tenant switcher to Household panel and join-via-invite-
 - **Cross-task inconsistency caught and fixed during self-review:** an
   earlier draft of Task 5 Step 3 read/wrote `state.cache` directly to
   invalidate the previous tenant's cached data, but `ApiStore.cache` is a
-  private field on the *store instance*, not on `state` — that line would
+  private field on the _store instance_, not on `state` — that line would
   have silently done nothing, leaving stale data visible after a switch.
   Fixed by adding a `resetCache()` method to `ApiStore` in Task 4 (this
   plan's actual method-signature source of truth) and having Task 5 call
