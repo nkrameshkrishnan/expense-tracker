@@ -398,7 +398,10 @@ async function refresh() {
   state.members = (await state.store.getMembers?.()) || [];
   state.invites = (await state.store.getInvites?.()) || [];
   state.role = (await state.store.getRole?.()) || "member";
-  state.tenant = (await state.store.getTenant?.()) || { plan: "free", status: "active" };
+  state.tenant = (await state.store.getTenant?.()) || {
+    plan: "free",
+    status: "active",
+  };
   $("#foot-count").textContent = `${state.rows.length} transactions stored`;
   renderPeopleSwitch();
   updateNetWorthGate();
@@ -3011,11 +3014,27 @@ function renderData() {
   const hasSubscription = tenant.plan !== "free";
   const PLANS = [
     { id: "free", label: "Free", price: "$0/mo", priceId: null },
-    { id: "pro", label: "Pro", price: "$7/mo CAD", priceId: STRIPE_PRICE_ID_PRO },
-    { id: "family", label: "Family", price: "$13/mo CAD", priceId: STRIPE_PRICE_ID_FAMILY },
-    { id: "business", label: "Business", price: "$24/mo CAD", priceId: STRIPE_PRICE_ID_BUSINESS },
+    {
+      id: "pro",
+      label: "Pro",
+      price: "$7/mo CAD",
+      priceId: STRIPE_PRICE_ID_PRO,
+    },
+    {
+      id: "family",
+      label: "Family",
+      price: "$13/mo CAD",
+      priceId: STRIPE_PRICE_ID_FAMILY,
+    },
+    {
+      id: "business",
+      label: "Business",
+      price: "$24/mo CAD",
+      priceId: STRIPE_PRICE_ID_BUSINESS,
+    },
   ];
-  const showDowngradeBanner = tenant.plan === "free" && !!tenant.hasStripeCustomer;
+  const showDowngradeBanner =
+    tenant.plan === "free" && !!tenant.hasStripeCustomer;
 
   view.innerHTML = `
   <div class="head"><div><h1>Data</h1><p class="sub">Where your data lives, and how to get it in and out.</p></div></div>
@@ -3536,21 +3555,25 @@ async function boot() {
   await refresh();
   revealApp();
   if (state.tenant?.status === "past_due") {
-    notice("Your payment failed — update your card to keep full access.", "bad", {
-      label: "Manage billing →",
-      // Same withBusy + notice shape as the #manage-billing handler in
-      // renderData(). Without it, a failed createPortalSession (expired
-      // token, API down, a non-owner reaching the banner) rejected into
-      // nothing: the click looked like it did nothing at all.
-      onClick: async () => {
-        const returnUrl = location.origin + location.pathname;
-        const done = await withBusy("Opening billing portal", async () => {
-          const { url } = await state.store.createPortalSession(returnUrl);
-          location.href = url;
-        });
-        if (!done) notice("Could not open billing portal.", "bad");
+    notice(
+      "Your payment failed — update your card to keep full access.",
+      "bad",
+      {
+        label: "Manage billing →",
+        // Same withBusy + notice shape as the #manage-billing handler in
+        // renderData(). Without it, a failed createPortalSession (expired
+        // token, API down, a non-owner reaching the banner) rejected into
+        // nothing: the click looked like it did nothing at all.
+        onClick: async () => {
+          const returnUrl = location.origin + location.pathname;
+          const done = await withBusy("Opening billing portal", async () => {
+            const { url } = await state.store.createPortalSession(returnUrl);
+            location.href = url;
+          });
+          if (!done) notice("Could not open billing portal.", "bad");
+        },
       },
-    });
+    );
   }
   // A configured endpoint that still failed to connect (as opposed to no
   // endpoint being saved at all, which is a normal, expected state) is the

@@ -220,7 +220,7 @@ Stripe → Developers → Webhooks, add an endpoint pointing at the stack's
 `customer.subscription.deleted`. Copy that endpoint's signing secret
 (`whsec_...`) into the `StripeWebhookSecret` deploy parameter. Until this
 exists, checkout completes and takes the customer's money but the tenant is
-never moved off the free plan — this webhook is the app's *only* channel
+never moved off the free plan — this webhook is the app's _only_ channel
 for learning that anyone paid.
 
 **3. Set Stripe's failed-payment retries to 30 days before cancel.** In
@@ -248,8 +248,8 @@ Billing panel hides the plan buttons while a subscription exists.
 **5. Verify the SES sender identity and leave the SES sandbox.** Billing
 notifications (past-due, downgraded-to-free) are sent through SES from the
 address in the `SesFromAddress` parameter. That identity must be verified,
-and while the account is in the SES sandbox SES will only deliver to *other
-verified addresses* — so every notification to a real customer fails. Those
+and while the account is in the SES sandbox SES will only deliver to _other
+verified addresses_ — so every notification to a real customer fails. Those
 failures are deliberately swallowed: `stripeWebhook.js`'s
 `notifyBestEffort` logs and continues, so an SES outage can never roll back
 the tenant-state DB write the webhook just made. The practical consequence

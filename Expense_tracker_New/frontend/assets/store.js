@@ -409,7 +409,12 @@ class ApiStore {
     return (await this._ensure()).tenant || { plan: "free", status: "active" };
   }
   async createCheckoutSession(priceId, successUrl, cancelUrl) {
-    return this._post({ action: "createCheckoutSession", priceId, successUrl, cancelUrl });
+    return this._post({
+      action: "createCheckoutSession",
+      priceId,
+      successUrl,
+      cancelUrl,
+    });
   }
   async createPortalSession(returnUrl) {
     return this._post({ action: "createPortalSession", returnUrl });
