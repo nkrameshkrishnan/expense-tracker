@@ -8,9 +8,7 @@ import {
   ACCOUNTS,
   MONTHS,
   currentYear,
-  API_ENDPOINT_KEY,
   getApiEndpoint,
-  apiEndpointSource,
   getCognitoConfig,
   emptyBudget,
   UNASSIGNED,
@@ -20,7 +18,6 @@ import {
   setIdToken,
   NET_WORTH_ACCOUNTS,
   personColorIndex,
-  ApiStore,
 } from "./store.js";
 import {
   STRIPE_PRICE_ID_PRO,
@@ -3333,8 +3330,6 @@ function renderBalanceForm(copyFrom) {
 
 /* ====================================================================== DATA */
 function renderData() {
-  const src = apiEndpointSource();
-  const ep = localStorage.getItem(API_ENDPOINT_KEY) || "";
   const live = state.store.kind === "api";
   const who = state.store.user?.email || "";
   const members = state.members || [];
@@ -3348,37 +3343,19 @@ function renderData() {
 
   <div class="eyebrow">Ledger API connection</div>
   <div class="panel stack">
-    <p class="note" style="margin:0">Status: <b>${
+    ${
       live
-        ? "connected \u2014 reading and writing your Ledger account live" +
-          (who ? " as " + esc(who) : "")
-        : state.store.kind === "memory"
-          ? "session memory only, nothing is being saved"
-          : "not connected \u2014 changes stay in this browser"
-    }</b>.
+        ? `<p class="note" style="margin:0">Status: <b>connected \u2014 reading and writing your Ledger account live${who ? " as " + esc(who) : ""}</b>.
       Access: <b>Google sign-in via Cognito</b>, verified on every request by the API and by row-level
       security scoped to your tenant \u2014 there is no separate token to manage here.</p>
-    ${
-      src === "build"
-        ? `<div class="actions">
-      <button class="btn ghost" id="reload" ${live ? "" : "disabled"}>Reload from server</button>
-    </div>`
-        : `
-    <p class="note" style="margin:0">Endpoint source: <b>${src === "runtime" ? "entered here, stored in this browser only" : "none"}</b>.</p>
-    <div class="stack" style="max-width:620px">
-      <label class="f"><span>API base URL</span>
-        <input id="ep" placeholder="https://abc123.execute-api.us-east-1.amazonaws.com/dev" value="${esc(ep)}"></label>
-    </div>
     <div class="actions">
-      <button class="btn" id="connect">Connect &amp; test</button>
-      <button class="btn ghost" id="disconnect">Disconnect</button>
-      <button class="btn ghost" id="reload" ${live ? "" : "disabled"}>Reload from server</button>
-    </div>
-    <p class="note"><b>The endpoint URL stays in this browser and is never published.</b> Values injected from
-    GitHub secrets end up in <code>assets/config.js</code>, which is served to every visitor of the site \u2014
-    a secret in Actions keeps it out of the repo, not out of the page. That's fine here: the URL itself grants
-    nothing, every request still needs your signed Cognito token. Enter it here instead if you would rather it
-    never appear in the deployed site at all.</p>`
+      <button class="btn ghost" id="reload">Reload from server</button>
+    </div>`
+        : `<p class="note" style="margin:0">Status: <b style="color:var(--danger,#c00)">Unable to connect to your account right now.</b>
+      This usually resolves on its own \u2014 try again in a moment. If it continues, contact support.</p>
+    <div class="actions">
+      <button class="btn" id="retry-connect">Try again</button>
+    </div>`
     }
   </div>
 
@@ -3498,53 +3475,24 @@ function renderData() {
     <span class="muted">Export first \u2014 this cannot be undone.</span>
   </div></div>`;
 
-  // #connect/#disconnect/#ep only exist when src !== "build" - a
-  // build-injected endpoint has nothing to test or clear from here.
-  if ($("#connect"))
-    $("#connect").onclick = async () => {
-      const url = $("#ep").value.trim();
-      if (!/^https:\/\/.+/.test(url)) {
-        return notice(
-          "That does not look like a URL. Copy the ApiUrl output from backend/template.yaml's deployment.",
-          "bad",
-        );
-      }
-      localStorage.setItem(API_ENDPOINT_KEY, url);
-      if (getCognitoConfig().clientId && !getIdToken()) {
-        showGate();
-        return;
-      }
-      // Tests the URL just entered directly via ApiStore, not through
-      // openStore() - ping() already throws with the specific reason (and
-      // .auth set, for an expired/rejected sign-in) - withBusy's catch
-      // surfaces that directly, so there is no need to reconstruct a reason
-      // from onNotice callbacks here.
-      await withBusy("Testing the connection", async () => {
-        const s = new ApiStore(url, getIdToken());
-        await s.ping();
-        state.store = s;
-        await refresh();
-        // This button is a one-time, manual "does this actually work" check,
-        // not a hot path - unlike normal boot, waiting the extra moment here
-        // for the real total is worth it. Without this, the confirmation would
-        // report only the current year's count (e.g. "24 rows loaded"), which
-        // reads as "your account only has 24 rows" rather than what it
-        // actually means: that many rows loaded SO FAR.
-        await state.store.ensureAllYearsLoaded?.();
-        state.rows = await state.store.list();
-      });
-      if (state.store.kind === "api")
-        notice(`Connected \u2014 ${state.rows.length} rows loaded.`, "ok");
-      renderData();
-    };
-
-  if ($("#disconnect"))
-    $("#disconnect").onclick = async () => {
-      localStorage.removeItem(API_ENDPOINT_KEY);
+  // No manual endpoint entry - the backend is always build-configured for
+  // a real deployment. If it can't be reached, that's a connection error
+  // to recover from, not a raw URL field to hand-configure (see the
+  // "not live" branch of the panel above).
+  $("#retry-connect")?.addEventListener("click", async () => {
+    const done = await withBusy("Reconnecting", async () => {
       state.store = await openStore(notice);
+      if (!isRemoteStore(state.store))
+        throw new Error("still could not reach the API");
       await refresh();
+      await state.store.ensureAllYearsLoaded?.();
+      state.rows = await state.store.list();
+    });
+    if (done) {
+      notice(`Connected \u2014 ${state.rows.length} rows loaded.`, "ok");
       renderData();
-    };
+    }
+  });
 
   $("#tenant-switcher")?.addEventListener("change", (e) => {
     switchActiveTenant(e.target.value);
@@ -3586,7 +3534,7 @@ function renderData() {
     });
   });
 
-  $("#reload").onclick = async () => {
+  $("#reload")?.addEventListener("click", async () => {
     const done = await withBusy("Reloading from the sheet", async () => {
       state.store.cache = null;
       await refresh();
@@ -3595,7 +3543,7 @@ function renderData() {
       renderData();
       notice(`Reloaded ${state.rows.length} rows.`, "ok");
     }
-  };
+  });
 
   view.querySelectorAll("[data-assign]").forEach(
     (b) =>
