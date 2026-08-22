@@ -1458,7 +1458,13 @@ details[open] .add-details-toggle::before {
 }
 
 /* ================================================================== PEOPLE */
-/* One colour per person, used on the rail, chips, swatches and every chart. */
+/* One colour per person, used on the rail, chips, swatches and every chart.
+   Colour is assigned by a stable hash of the name (app.js's
+   personColorClass / store.js's personColorIndex), not by matching a
+   specific name - this app is multi-tenant, so a household's real member
+   names cannot be hardcoded here. person-color-0..4 mirror the exact
+   order of charts.js's PERSON_PALETTE, so the same name gets the same
+   colour in the UI and in every chart. */
 .person-swatch {
   width: 8px;
   height: 8px;
@@ -1467,20 +1473,28 @@ details[open] .add-details-toggle::before {
   flex-shrink: 0;
   background: var(--rule-2);
 }
-.person-swatch[data-p="Ramesh"],
-.person-card-fill[data-p="Ramesh"] {
+.person-swatch.person-color-0,
+.person-card-fill.person-color-0 {
   background: var(--teal);
 }
-.person-swatch[data-p="Surya"],
-.person-card-fill[data-p="Surya"] {
-  background: var(--blue);
-}
-.person-swatch[data-p="Joint"],
-.person-card-fill[data-p="Joint"] {
+.person-swatch.person-color-1,
+.person-card-fill.person-color-1 {
   background: var(--amber);
 }
-.person-swatch[data-p="Unassigned"],
-.person-card-fill[data-p="Unassigned"] {
+.person-swatch.person-color-2,
+.person-card-fill.person-color-2 {
+  background: var(--blue);
+}
+.person-swatch.person-color-3,
+.person-card-fill.person-color-3 {
+  background: var(--red);
+}
+.person-swatch.person-color-4,
+.person-card-fill.person-color-4 {
+  background: #7c3aed;
+}
+.person-swatch.person-color-none,
+.person-card-fill.person-color-none {
   background: var(--rule-2);
 }
 
@@ -1596,17 +1610,25 @@ details[open] .add-details-toggle::before {
   margin-right: 6px;
   white-space: nowrap;
 }
-.person-chip[data-p="Ramesh"] {
+.person-chip.person-color-0 {
   border-color: var(--teal);
   color: var(--teal);
 }
-.person-chip[data-p="Surya"] {
+.person-chip.person-color-1 {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+.person-chip.person-color-2 {
   border-color: var(--blue);
   color: var(--blue);
 }
-.person-chip[data-p="Joint"] {
-  border-color: var(--amber);
-  color: var(--amber);
+.person-chip.person-color-3 {
+  border-color: var(--red);
+  color: var(--red);
+}
+.person-chip.person-color-4 {
+  border-color: #7c3aed;
+  color: #7c3aed;
 }
 
 /* add-page person picker */

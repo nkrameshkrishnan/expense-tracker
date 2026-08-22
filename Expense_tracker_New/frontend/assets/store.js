@@ -86,36 +86,42 @@ export const MONTHS = [
   "Dec",
 ];
 
-export const PEOPLE = ["Ramesh", "Surya", "Joint"];
 export const UNASSIGNED = "Unassigned";
 export const PERSON_KEY = "ledger.person";
 
-export const NET_WORTH_ACCOUNTS = [
-  { account: "CIBC Chequing", owner: "Ramesh", kind: "Asset" },
-  { account: "CIBC TFSA (Investment)", owner: "Ramesh", kind: "Asset" },
-  { account: "WealthSimple Chequing", owner: "Ramesh", kind: "Asset" },
-  { account: "WealthSimple TFSA", owner: "Ramesh", kind: "Asset" },
-  { account: "WealthSimple RRSP", owner: "Ramesh", kind: "Asset" },
-  { account: "WealthSimple Non-registered", owner: "Ramesh", kind: "Asset" },
-  { account: "CIBC Visa", owner: "Ramesh", kind: "Liability" },
-  { account: "CIBC Mastercard", owner: "Ramesh", kind: "Liability" },
-  { account: "Amex (Ramesh)", owner: "Ramesh", kind: "Liability" },
-  { account: "CIBC Chequing (Surya)", owner: "Surya", kind: "Asset" },
-  { account: "CIBC Savings (Surya)", owner: "Surya", kind: "Asset" },
-  { account: "CIBC TFSA (Surya)", owner: "Surya", kind: "Asset" },
-  { account: "CIBC TFSA GIC (Surya)", owner: "Surya", kind: "Asset" },
-  { account: "WealthSimple Chequing (Surya)", owner: "Surya", kind: "Asset" },
-  { account: "WealthSimple TFSA (Surya)", owner: "Surya", kind: "Asset" },
-  { account: "WealthSimple RRSP (Surya)", owner: "Surya", kind: "Asset" },
-  {
-    account: "WealthSimple Non-registered (Surya)",
-    owner: "Surya",
-    kind: "Asset",
-  },
-  { account: "Amex (Surya)", owner: "Surya", kind: "Liability" },
-];
+// No fixed PEOPLE list, unlike the original single-household project this
+// was adapted from: this backend is multi-tenant (see validate.js's own
+// "person: text(...)" comment, which already treats it as free text
+// server-side), so hardcoding a household's real member names here would
+// mean every OTHER tenant's household sees someone else's names as their
+// only options - and normalise() below would silently discard any person
+// name that isn't in the list, which is exactly what happened before this
+// was fixed. person is now a listFor()-managed field like category/payment/
+// account (see app.js's BUILTIN), seeded with nothing built-in.
+
+// No hardcoded starter accounts either, for the same reason - a brand-new
+// tenant starts with zero net-worth accounts and adds their own (the "+
+// New" flow already exists for this); showing every signup someone else's
+// real-looking bank/brokerage accounts was never correct for a SaaS
+// product, even as a demo.
+export const NET_WORTH_ACCOUNTS = [];
 
 export const CUSTOM_KEY = "ledger.customLists";
+
+// Deterministic person -> palette-index mapping, so the same name always
+// gets the same colour across swatches/chips/charts without this app
+// needing to know a tenant's household member names in advance. Kept here
+// (not in app.js/charts.js) so both modules derive the same colour for the
+// same name from one definition. "Unassigned" is handled by each caller as
+// an explicit, separate case - it is a state, not a person, and must not
+// collide with a real name's colour.
+export const PERSON_PALETTE_SIZE = 5;
+export function personColorIndex(name) {
+  const s = String(name || "");
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h % PERSON_PALETTE_SIZE;
+}
 
 /* ----------------------------------------------------------- Cognito auth
    Config precedence matches the original project: what's typed under a
@@ -198,7 +204,11 @@ export function normalise(r) {
     account: r.account || "",
     recurring: r.recurring === "Yes" || r.recur === "Yes" ? "Yes" : "No",
     notes: r.notes || r.note || "",
-    person: PEOPLE.includes(r.person) ? r.person : "",
+    // Free text, matching the backend's own validate.js - this used to be
+    // allow-listed against a fixed 3-name PEOPLE constant, which silently
+    // discarded any other tenant's real person value back to "" on every
+    // read.
+    person: String(r.person || "").trim(),
   };
 }
 

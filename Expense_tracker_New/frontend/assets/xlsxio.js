@@ -5,7 +5,6 @@ import {
   CAT_TYPE,
   MONTHS,
   PAYMENTS,
-  PEOPLE,
   UNASSIGNED,
   currentYear,
   normalise,
@@ -62,7 +61,13 @@ export function personBreakdown(rows, month, year = currentYear()) {
       Number(String(r.date).slice(0, 4)) === year &&
       (month === 0 || monthOf(r) === month),
   );
-  const buckets = [...PEOPLE, UNASSIGNED]
+  // Derived from whoever actually appears in this period, not a fixed
+  // household's names - this app is multi-tenant, so it cannot know a
+  // tenant's real member names in advance.
+  const peopleInScope = [
+    ...new Set(inScope.map((r) => r.person).filter(Boolean)),
+  ].sort((a, b) => a.localeCompare(b));
+  const buckets = [...peopleInScope, UNASSIGNED]
     .map((p) => {
       const mine =
         p === UNASSIGNED
@@ -87,7 +92,14 @@ export function personBreakdown(rows, month, year = currentYear()) {
 
 /** Monthly expense series split by person — feeds the comparison chart. */
 export function personSeries(rows, year = currentYear()) {
-  const people = [...PEOPLE, UNASSIGNED];
+  // Same reasoning as personBreakdown() above - derived from the data,
+  // not a fixed household's names.
+  const people = [
+    ...[...new Set(rows.map((r) => r.person).filter(Boolean))].sort((a, b) =>
+      a.localeCompare(b),
+    ),
+    UNASSIGNED,
+  ];
   return people
     .map((p) => ({
       person: p,

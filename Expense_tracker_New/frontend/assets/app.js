@@ -13,13 +13,13 @@ import {
   apiEndpointSource,
   getCognitoConfig,
   emptyBudget,
-  PEOPLE,
   UNASSIGNED,
   PERSON_KEY,
   CUSTOM_KEY,
   getIdToken,
   setIdToken,
   NET_WORTH_ACCOUNTS,
+  personColorIndex,
   ApiStore,
 } from "./store.js";
 import {
@@ -391,7 +391,22 @@ const BUILTIN = {
   payment: PAYMENTS,
   account: ACCOUNTS,
   subcategory: [],
+  // No built-ins: a tenant's household/team member names cannot be known
+  // in advance (this app is multi-tenant), so this list starts empty and
+  // grows purely from listFor()'s other two sources - values already in
+  // your data, and anything added via "+ New".
+  person: [],
 };
+
+/** Colour class for a person swatch/chip/card-fill, derived from a stable
+    hash of their name (store.js's personColorIndex) rather than a lookup
+    table of specific names - the same reason BUILTIN.person is empty
+    above. "Unassigned"/blank is its own neutral case, not hashed into the
+    palette, so it never collides with a real person's colour. */
+const personColorClass = (p) =>
+  p && p !== UNASSIGNED
+    ? `person-color-${personColorIndex(p)}`
+    : "person-color-none";
 
 /** Merged, de-duplicated, sorted option list for a dropdown. */
 function listFor(kind, forCategory) {
@@ -495,7 +510,10 @@ function renderPeopleSwitch() {
   const el = $("#people");
   if (!el) return;
   const present = new Set(state.rows.map((r) => r.person || UNASSIGNED));
-  const opts = ["", ...PEOPLE.filter((p) => present.has(p))];
+  const known = [...present]
+    .filter((p) => p !== UNASSIGNED)
+    .sort((a, b) => a.localeCompare(b));
+  const opts = ["", ...known];
   if (present.has(UNASSIGNED)) opts.push(UNASSIGNED);
   el.innerHTML = opts
     .map((p) => {
@@ -1026,11 +1044,11 @@ function personCards(people) {
       (b) => `
       <div class="person-card${state.person === (b.person === UNASSIGNED ? UNASSIGNED : b.person) ? " on" : ""}" data-jump="${esc(b.person)}">
         <div class="person-card-head">
-          <span class="person-swatch" data-p="${esc(b.person)}"></span>
+          <span class="person-swatch ${personColorClass(b.person)}" data-p="${esc(b.person)}"></span>
           <span class="person-card-name">${esc(b.person)}</span>
         </div>
         <div class="person-card-val num">${money(b.expense)}</div>
-        <div class="person-card-bar"><div class="person-card-fill" data-p="${esc(b.person)}" style="width:${(b.share * 100).toFixed(1)}%"></div></div>
+        <div class="person-card-bar"><div class="person-card-fill ${personColorClass(b.person)}" data-p="${esc(b.person)}" style="width:${(b.share * 100).toFixed(1)}%"></div></div>
         <div class="person-card-meta">
           <span class="muted">${pct(b.share)} of spend</span>
           ${b.income > 0 ? `<span class="tx-income num">+${money(b.income)}</span>` : `<span class="muted num">${b.count} entries</span>`}
@@ -1063,10 +1081,14 @@ function renderAdd() {
   const today = new Date().toISOString().slice(0, 10);
   const selType = e?.type || "Expense";
   const selCat = e?.category || "Groceries";
-  // Default to whoever is selected in the header, so a run of Surya's receipts
-  // does not need the field touched on every entry.
+  // Default to whoever is selected in the header, so a run of one person's
+  // receipts does not need the field touched on every entry. No fallback
+  // to a specific name - that name is not known in advance. Excludes
+  // UNASSIGNED specifically: that's a header FILTER meaning "show only
+  // unassigned rows", not a real person to default a new entry's person
+  // to - a new entry should start blank, same as if nothing were selected.
   const selPerson =
-    e?.person || (PEOPLE.includes(state.person) ? state.person : "Ramesh");
+    e?.person || (state.person !== UNASSIGNED ? state.person : "") || "";
 
   const curMonth = new Date().getMonth() + 1;
   const ctxActual = scoped()
@@ -1122,7 +1144,13 @@ function renderAdd() {
 
       <div class="add-person-row">
         <span class="add-label" style="margin-right:4px">Whose</span>
-        ${PEOPLE.map((pp) => `<button type="button" class="add-person-btn${pp === selPerson ? " on" : ""}" data-person="${pp}"><span class="person-swatch" data-p="${pp}"></span>${pp}</button>`).join("")}
+        ${listFor("person")
+          .map(
+            (pp) =>
+              `<button type="button" class="add-person-btn${pp === selPerson ? " on" : ""}" data-person="${esc(pp)}"><span class="person-swatch ${personColorClass(pp)}" data-p="${esc(pp)}"></span>${esc(pp)}</button>`,
+          )
+          .join("")}
+        <button type="button" class="add-person-btn" id="add-person-new">+ New</button>
       </div>
 
       <form id="f" autocomplete="off">
@@ -1284,15 +1312,54 @@ function renderAdd() {
     };
   });
 
-  view.querySelectorAll(".add-person-btn").forEach((btn) => {
-    btn.onclick = () => {
-      view
-        .querySelectorAll(".add-person-btn")
-        .forEach((b) => b.classList.remove("on"));
-      btn.classList.add("on");
-      $("#person-hidden").value = btn.dataset.person;
-    };
+  const selectPerson = (name) => {
+    view
+      .querySelectorAll(".add-person-btn[data-person]")
+      .forEach((b) => b.classList.toggle("on", b.dataset.person === name));
+    $("#person-hidden").value = name;
+  };
+  view.querySelectorAll(".add-person-btn[data-person]").forEach((btn) => {
+    btn.onclick = () => selectPerson(btn.dataset.person);
   });
+
+  // "+ New" - same inline-add pattern as selectWithNew()'s .newopt, but
+  // this picker is a row of buttons rather than a <select>, so it gets its
+  // own small handler instead of reusing wireNewOption() directly.
+  $("#add-person-new").onclick = () => {
+    const addBtn = $("#add-person-new");
+    const wrap = document.createElement("span");
+    wrap.className = "newopt";
+    wrap.innerHTML = `<input class="newopt-input" placeholder="New person…" autocomplete="off">
+      <button type="button" class="newopt-ok">Add</button>
+      <button type="button" class="newopt-cancel">✕</button>`;
+    addBtn.style.display = "none";
+    addBtn.after(wrap);
+    const input = wrap.querySelector(".newopt-input");
+    input.focus();
+    const close = (value) => {
+      wrap.remove();
+      addBtn.style.display = "";
+      if (!value) return;
+      addCustom("person", value);
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "add-person-btn";
+      b.dataset.person = value;
+      b.innerHTML = `<span class="person-swatch ${personColorClass(value)}" data-p="${esc(value)}"></span>${esc(value)}`;
+      b.onclick = () => selectPerson(value);
+      addBtn.before(b);
+      selectPerson(value);
+    };
+    wrap.querySelector(".newopt-ok").onclick = () => close(input.value.trim());
+    wrap.querySelector(".newopt-cancel").onclick = () => close(null);
+    input.onkeydown = (ev) => {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        close(input.value.trim());
+      }
+      if (ev.key === "Escape") close(null);
+    };
+  };
 
   $("#f-date").oninput = (ev) => {
     $("#day-name").textContent = dayName(ev.target.value);
@@ -1451,7 +1518,7 @@ function renderAdd() {
           .querySelectorAll(".add-type-btn")
           .forEach((b) => b.classList.toggle("on", b.dataset.type === d.type));
         view
-          .querySelectorAll(".add-person-btn")
+          .querySelectorAll(".add-person-btn[data-person]")
           .forEach((b) =>
             b.classList.toggle("on", b.dataset.person === d.person),
           );
@@ -1541,7 +1608,7 @@ function renderTransactions() {
           ${r.recurring === "Yes" ? '<span class="tx-badge">Recurring</span>' : ""}
         </div>
         <div class="tx-meta">
-          ${!state.person ? `<span class="person-chip" data-p="${esc(r.person || UNASSIGNED)}">${esc(r.person || UNASSIGNED)}</span>` : ""}
+          ${!state.person ? `<span class="person-chip ${personColorClass(r.person || UNASSIGNED)}" data-p="${esc(r.person || UNASSIGNED)}">${esc(r.person || UNASSIGNED)}</span>` : ""}
           <span class="tx-cat">${esc(r.category)}${r.subcategory ? " · " + esc(r.subcategory) : ""}</span>
           ${r.payment ? `<span class="tx-sep">·</span><span class="tx-pay">${esc(r.payment)}</span>` : ""}
         </div>
@@ -2096,7 +2163,7 @@ function nwAccounts() {
     if (!seen.has(b.account)) {
       seen.set(b.account, {
         account: b.account,
-        owner: b.owner || "Ramesh",
+        owner: b.owner || UNASSIGNED,
         kind: b.kind === "Liability" ? "Liability" : "Asset",
       });
     }
@@ -2105,13 +2172,12 @@ function nwAccounts() {
   return [...seen.values()];
 }
 
-/** Owners that actually have accounts, so a Joint account gets its own group. */
+/** Owners that actually have accounts, so a shared account gets its own
+    group. Sorted alphabetically - there is no fixed household order to
+    prefer since owner names are not known in advance. */
 function nwOwners() {
   const set = new Set(nwAccounts().map((a) => a.owner));
-  return [
-    ...PEOPLE.filter((p) => set.has(p)),
-    ...[...set].filter((o) => !PEOPLE.includes(o)),
-  ];
+  return [...set].sort((a, b) => a.localeCompare(b));
 }
 
 function addNwAccount(account, owner, kind) {
@@ -2342,7 +2408,7 @@ function renderNetWorth() {
         const ch = v !== null && p !== null ? v - p : null;
         return `<tr class="${v === null ? "nw-blank" : ""}">
         <td>${esc(a.account)}</td>
-        <td><span class="person-chip" data-p="${esc(a.owner)}">${esc(a.owner)}</span></td>
+        <td><span class="person-chip ${personColorClass(a.owner)}" data-p="${esc(a.owner)}">${esc(a.owner)}</span></td>
         <td><span class="tag">${a.kind}</span></td>
         <td class="n num">${v === null ? '<span class="muted">not recorded</span>' : money(v)}</td>
         <td class="n num ${ch === null ? "muted" : ch < 0 ? "tx-over" : "tx-income"}">${
@@ -2650,7 +2716,10 @@ function debtDialog(existing) {
     <label class="f"><span>Principal amount *</span>
       <input type="number" name="amount" step="0.01" min="0.01" value="${d.amount ?? ""}" required placeholder="0.00"></label>
     <label class="f"><span>Whose *</span>
-      <select name="owner">${PEOPLE.map((p) => `<option${(d.owner || "Ramesh") === p ? " selected" : ""}>${esc(p)}</option>`).join("")}</select></label>
+      <input name="owner" value="${esc(d.owner || "")}" list="owner-names" placeholder="e.g. ${esc(listFor("person")[0] || "your name")}" required></label>
+    <datalist id="owner-names">${listFor("person")
+      .map((p) => `<option>${esc(p)}</option>`)
+      .join("")}</datalist>
     <label class="f"><span>Date opened *</span>
       <input type="date" name="date" value="${esc(d.date || today)}" required></label>
     <label class="f wide"><span>Description</span>
@@ -2814,7 +2883,7 @@ function renderDebtSection(scopeOwner) {
           <span class="debt-name">${esc(d.counterparty)}</span>
           <span class="tag ${d.direction === "Owed" ? "tag-liab" : ""}">${d.direction === "Owed" ? "You owe" : "Owed to you"}</span>
           ${d.settled ? '<span class="tag debt-settled-tag">Settled</span>' : ""}
-          ${d.owner ? `<span class="person-chip" data-p="${esc(d.owner)}">${esc(d.owner)}</span>` : ""}
+          ${d.owner ? `<span class="person-chip ${personColorClass(d.owner)}" data-p="${esc(d.owner)}">${esc(d.owner)}</span>` : ""}
           ${d.description ? `<div class="debt-desc">${esc(d.description)}</div>` : ""}
         </div>
         <div class="debt-amounts">
@@ -3015,7 +3084,10 @@ function renderBalanceForm(copyFrom) {
       <label class="f" style="flex:2;min-width:180px"><span>Account name</span>
         <input id="nw-new-name" placeholder="e.g. Car loan, RESP, Condo" autocomplete="off"></label>
       <label class="f"><span>Owner</span>
-        <select id="nw-new-owner">${PEOPLE.map((p) => `<option${p === "Ramesh" ? " selected" : ""}>${esc(p)}</option>`).join("")}</select></label>
+        <input id="nw-new-owner" list="nw-owner-names" placeholder="e.g. ${esc(listFor("person")[0] || "your name")}" autocomplete="off"></label>
+      <datalist id="nw-owner-names">${listFor("person")
+        .map((p) => `<option>${esc(p)}</option>`)
+        .join("")}</datalist>
       <label class="f"><span>Kind</span>
         <select id="nw-new-kind"><option>Asset</option><option>Liability</option></select></label>
       <button class="btn" id="nw-add-acct" type="button">Add</button>
@@ -3169,7 +3241,7 @@ function renderBalanceForm(copyFrom) {
       for (const r of rows)
         (byDate[r.date] ||= []).push({
           account: r.account,
-          owner: r.owner || "Ramesh",
+          owner: r.owner || UNASSIGNED,
           kind: r.kind === "Liability" ? "Liability" : "Asset",
           balance: Math.abs(Number(r.balance) || 0),
           notes: r.notes || "imported",
@@ -3336,7 +3408,12 @@ function renderData() {
       state.rows.filter((r) => !r.person).length
         ? `
     <div class="actions">
-      ${PEOPLE.map((pp) => `<button class="btn ghost" data-assign="${pp}">Assign all to ${pp}</button>`).join("")}
+      ${listFor("person")
+        .map(
+          (pp) =>
+            `<button class="btn ghost" data-assign="${esc(pp)}">Assign all to ${esc(pp)}</button>`,
+        )
+        .join("")}
     </div>
     <p class="note">This rewrites every unassigned row. You can still change individual entries afterwards from Transactions \u2192 edit.</p>`
         : ""

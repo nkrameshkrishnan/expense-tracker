@@ -1,5 +1,7 @@
 /* Chart.js wrappers. Each call destroys the previous instance on that canvas,
    which is what stops the classic "ghost tooltip from the old chart" bug. */
+import { personColorIndex } from "./store.js";
+
 const INK = "#12161c",
   INK3 = "#6b7684",
   RULE = "#ddd5c8";
@@ -7,8 +9,9 @@ const TEAL = "#0f766e",
   AMBER = "#b45309",
   RED = "#b3261e",
   BLUE = "#1d4ed8",
+  PURPLE = "#7c3aed",
   SAND = "#c6bcab";
-const PIE = [TEAL, AMBER, BLUE, RED, "#7c3aed", "#0891b2", SAND];
+const PIE = [TEAL, AMBER, BLUE, RED, PURPLE, "#0891b2", SAND];
 
 const registry = new Map();
 const money0 = (v) =>
@@ -225,13 +228,17 @@ export function paymentSplit(byPayment) {
 }
 
 /* ---- person comparison ---------------------------------------------------- */
-const PERSON_COLORS = {
-  Ramesh: TEAL,
-  Surya: BLUE,
-  Joint: AMBER,
-  Unassigned: SAND,
-};
-const colorFor = (p) => PERSON_COLORS[p] || SAND;
+// PERSON_PALETTE mirrors store.js's PERSON_PALETTE_SIZE (5 colours) so
+// personColorIndex(name) always resolves to a real entry here - a tenant's
+// household member names are not known in advance, so colour is assigned
+// by a stable hash of the name rather than a lookup table of specific
+// names. "Unassigned" is deliberately not hashed into the palette: it is a
+// state, not a person, and gets the same neutral SAND it always has.
+const PERSON_PALETTE = [TEAL, AMBER, BLUE, RED, PURPLE];
+const colorFor = (p) =>
+  p && p !== "Unassigned"
+    ? PERSON_PALETTE[personColorIndex(p) % PERSON_PALETTE.length]
+    : SAND;
 
 export function personSplit(breakdown) {
   mount("c-person-split", {
