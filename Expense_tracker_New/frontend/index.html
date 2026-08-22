@@ -62,6 +62,8 @@
           <button data-tab="budget">Budget</button>
           <button data-tab="networth">Net worth</button>
           <button data-tab="data">Data</button>
+          <button data-tab="billing">Billing</button>
+          <button data-tab="profile">Profile</button>
         </nav>
         <div class="people" id="people"></div>
         <div class="conn" id="conn" title="Storage backend">&#9679; local</div>
@@ -80,6 +82,11 @@
     </div>
 
     <div id="gate" hidden></div>
+    <!-- Full-viewport plan picker, shown once between sign-in and the real app
+     for a brand-new household's owner (see app.js's renderPlanGate). Its own
+     element, separate from #gate, since the two overlays are shown at
+     different moments and never both at once. -->
+    <div id="plan-gate" hidden></div>
     <main id="view"></main>
 
     <footer class="foot">

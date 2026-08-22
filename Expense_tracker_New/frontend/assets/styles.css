@@ -2215,3 +2215,270 @@ tr:hover .nw-del-acct {
 .banner-action:hover {
   background: rgba(0, 0, 0, 0.06);
 }
+
+/* ------------------------------------------------------------- plan gate
+   Full-viewport plan picker shown once, between sign-in and the real app,
+   to a brand-new household's owner (app.js's renderPlanGate). Its own
+   overlay and its own card/grid classes - not shared with the Billing
+   page's .billing-plan-* below, since this is a one-time decision that
+   deserves more visual weight than a page you return to. */
+#plan-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 30px 20px;
+  background: var(--paper);
+  overflow-y: auto;
+}
+/* Same specificity fix as #gate: [hidden] loses to an ID selector's own
+   `display` unless given an attribute selector of its own to win with. */
+#plan-gate[hidden] {
+  display: none;
+}
+.plan-gate-card {
+  max-width: 1000px;
+  width: 100%;
+  text-align: center;
+  margin: auto 0;
+}
+.plan-gate-mark {
+  color: var(--amber);
+  font-size: 28px;
+  line-height: 1;
+  margin-bottom: 8px;
+}
+.plan-gate-title {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 8px;
+}
+.plan-gate-sub {
+  font-size: 13px;
+  color: var(--ink-2);
+  margin: 0 auto 28px;
+  max-width: 52ch;
+  line-height: 1.5;
+}
+.plan-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  text-align: left;
+}
+@media (max-width: 860px) {
+  .plan-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 520px) {
+  .plan-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.plan-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--rule-2);
+  background: #fff;
+  padding: 18px 16px 16px;
+}
+.plan-card.recommended {
+  border: 1px solid var(--amber);
+  background: #fffaf3;
+}
+.plan-badge {
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  transform: translateY(-100%);
+  background: var(--amber);
+  color: var(--paper);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 7px;
+}
+.plan-name {
+  font-weight: 700;
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+.plan-price {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-bottom: 2px;
+}
+.plan-amount {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 22px;
+}
+.plan-period {
+  color: var(--ink-3);
+  font-size: 11.5px;
+}
+.plan-seats {
+  color: var(--ink-3);
+  font-size: 11.5px;
+  margin-bottom: 10px;
+}
+.plan-blurb {
+  font-size: 12px;
+  color: var(--ink-2);
+  margin: 0 0 12px;
+  line-height: 1.5;
+}
+.plan-features {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  font-size: 12px;
+  color: var(--ink-2);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.plan-features li {
+  padding-left: 1.3em;
+  position: relative;
+}
+.plan-features li::before {
+  content: "\2713";
+  position: absolute;
+  left: 0;
+  color: var(--teal);
+  font-family: var(--mono);
+}
+.plan-cta {
+  margin-top: auto;
+  width: 100%;
+  text-align: center;
+}
+.plan-gate-error {
+  color: var(--red);
+  font-size: 12px;
+  margin: 18px 0 0;
+}
+.plan-gate-note {
+  font-size: 11px;
+  color: var(--ink-3);
+  margin: 22px 0 0;
+  line-height: 1.5;
+}
+
+/* ---------------------------------------------------------------- billing */
+.billing-current-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.billing-current-plan {
+  font-size: 18px;
+  font-weight: 700;
+}
+.status-pill {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 8px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+.status-pill.ok {
+  color: var(--teal);
+}
+.status-pill.warn {
+  color: var(--amber);
+}
+.status-pill.bad {
+  color: var(--red);
+}
+.billing-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+}
+.billing-plan-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--rule-2);
+  background: #fff;
+  padding: 16px 14px 14px;
+}
+.billing-plan-card.recommended {
+  border-color: var(--amber);
+}
+.billing-plan-card.current {
+  border-color: var(--ink);
+}
+.billing-plan-tag {
+  align-self: flex-start;
+  background: var(--amber);
+  color: var(--paper);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 7px;
+  margin: -16px -14px 12px;
+}
+.billing-plan-name {
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+.billing-plan-price {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.billing-plan-price .num {
+  font-weight: 700;
+  font-size: 18px;
+}
+.billing-plan-features {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  font-size: 11.5px;
+  color: var(--ink-2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.billing-plan-features li {
+  padding-left: 1.2em;
+  position: relative;
+}
+.billing-plan-features li::before {
+  content: "\2713";
+  position: absolute;
+  left: 0;
+  color: var(--teal);
+  font-family: var(--mono);
+}
+.billing-plan-card .btn {
+  margin-top: auto;
+  width: 100%;
+  text-align: center;
+}
+.billing-plan-current-tag {
+  margin-top: auto;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}

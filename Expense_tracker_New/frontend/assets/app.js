@@ -69,6 +69,71 @@ const state = {
   filter: { q: "", cat: "", month: "", type: "" },
 };
 
+/* ------------------------------------------------------------------ plans
+   The four pricing tiers, shown at signup (renderPlanGate) and again on the
+   Billing tab (renderBilling). Mirrors backend/src/plans.js's
+   SEAT_CAPS/FEATURES - nothing enforces the two copies matching, so a tier
+   added or changed on the server needs the same edit made here by hand.
+   The two renderers deliberately do not share markup/CSS: the signup gate
+   is a one-time, full-viewport decision (bigger cards, its own visual
+   weight), while the Billing tab is a page you return to, sitting alongside
+   this app's other panels - collapsing them into one component would make
+   whichever one changes next drag the other along with it. */
+const PLANS = [
+  {
+    id: "free",
+    label: "Free",
+    amount: "$0",
+    period: "/mo",
+    priceId: null,
+    seats: "1 person",
+    blurb: "Track your own spending, no card required.",
+    features: ["Last 12 months of history"],
+  },
+  {
+    id: "pro",
+    label: "Pro",
+    amount: "$7",
+    period: "/mo CAD",
+    priceId: STRIPE_PRICE_ID_PRO,
+    seats: "2 people",
+    blurb: "Built for two people running one household.",
+    features: ["Full history, every year", "Net worth tracking"],
+    recommended: true,
+  },
+  {
+    id: "family",
+    label: "Family",
+    amount: "$13",
+    period: "/mo CAD",
+    priceId: STRIPE_PRICE_ID_FAMILY,
+    seats: "5 people",
+    blurb: "Room for kids, parents, or a shared place.",
+    features: ["Full history, every year", "Net worth tracking"],
+  },
+  {
+    id: "business",
+    label: "Business",
+    amount: "$24",
+    period: "/mo CAD",
+    priceId: STRIPE_PRICE_ID_BUSINESS,
+    seats: "Unlimited people",
+    blurb: "For a team's books, not a household's.",
+    features: ["Full history, every year", "Net worth tracking"],
+  },
+];
+
+/* Shown once, the first time a brand-new household's owner signs in with no
+   plan chosen yet. Keyed by nothing more than "has this browser seen it" -
+   this app has exactly one tenant-creation moment per Cognito user (see
+   Expense_tracker_New/README.md's "Tenant-switching UI is deferred by
+   design"), so there is only ever one owner and one gate to show per
+   account; cleared on sign-out so a different person signing in on a
+   shared browser still gets asked. */
+const PLAN_GATE_SEEN_KEY = "ledger.planGateSeen";
+const planGateSeen = () => localStorage.getItem(PLAN_GATE_SEEN_KEY) === "1";
+const markPlanGateSeen = () => localStorage.setItem(PLAN_GATE_SEEN_KEY, "1");
+
 /* --------------------------------------------------------- active tenant
    Keyed by email, not a single global key, so switching Google accounts in
    the same browser (a real path: signing out and back in as someone else)
@@ -192,6 +257,7 @@ function showGate(message) {
 
 function signOut() {
   setIdToken("");
+  localStorage.removeItem(PLAN_GATE_SEEN_KEY);
   const { domain, clientId } = getCognitoConfig();
   if (domain && clientId) {
     const params = new URLSearchParams({
@@ -217,6 +283,79 @@ function consumeAuthRedirect() {
   if (!idToken) return false;
   setIdToken(idToken);
   return true;
+}
+
+/** Full-viewport plan picker, shown once between sign-in and the real app
+    for a brand-new household's owner - same overlay mechanics as
+    showGate() (boot-loading hidden, header stays hidden until a choice is
+    made, so there is no flash of an unstyled/unpaid Dashboard first).
+    onFree runs when "Continue with Free" is chosen; choosing a paid tier
+    redirects straight to Stripe Checkout and never returns here - a
+    successful or cancelled checkout both land back on the Billing tab, same
+    as every other "Choose <plan>" button in this app (see renderBilling). */
+function renderPlanGate(onFree) {
+  const bootOverlay = $("#boot-loading");
+  if (bootOverlay) bootOverlay.hidden = true;
+  const gate = $("#plan-gate");
+  gate.hidden = false;
+  gate.innerHTML = `
+    <div class="plan-gate-card">
+      <div class="plan-gate-mark">&#8214;</div>
+      <div class="eyebrow">Choose your plan</div>
+      <h1 class="plan-gate-title">How many people will use this ledger?</h1>
+      <p class="plan-gate-sub">Pick a starting plan for this household. Nothing here is permanent — change or cancel it anytime from the Billing tab.</p>
+      <div class="plan-grid">
+        ${PLANS.map(
+          (p) => `
+        <div class="plan-card${p.recommended ? " recommended" : ""}">
+          ${p.recommended ? '<div class="plan-badge">Most households</div>' : ""}
+          <div class="plan-name">${esc(p.label)}</div>
+          <div class="plan-price"><span class="plan-amount">${esc(p.amount)}</span><span class="plan-period">${esc(p.period)}</span></div>
+          <div class="plan-seats">${esc(p.seats)}</div>
+          <p class="plan-blurb">${esc(p.blurb)}</p>
+          <ul class="plan-features">
+            ${p.features.map((f) => `<li>${esc(f)}</li>`).join("")}
+          </ul>
+          <button class="btn ${p.id === "free" ? "ghost" : ""} plan-cta" data-plan-id="${esc(p.id)}" data-price-id="${esc(p.priceId || "")}">
+            ${p.id === "free" ? "Continue with Free" : `Choose ${esc(p.label)}`}
+          </button>
+        </div>`,
+        ).join("")}
+      </div>
+      <p class="plan-gate-error" id="plan-gate-error" hidden></p>
+      <p class="plan-gate-note">Only the owner sets this. Anyone you invite later joins under whichever plan is active when they accept.</p>
+    </div>`;
+
+  // notice()'s #banner sits in normal document flow, behind this overlay's
+  // z-index - a checkout failure reported through it would be invisible
+  // while the gate is up, so errors are shown inline in the card instead.
+  const errEl = $("#plan-gate-error");
+  gate.querySelectorAll(".plan-cta").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      errEl.hidden = true;
+      if (btn.dataset.planId === "free") {
+        markPlanGateSeen();
+        gate.hidden = true;
+        onFree();
+        return;
+      }
+      btn.disabled = true;
+      try {
+        const base = location.origin + location.pathname;
+        const { url } = await state.store.createCheckoutSession(
+          btn.dataset.priceId,
+          `${base}#billing`,
+          `${base}#billing`,
+        );
+        markPlanGateSeen();
+        location.href = url;
+      } catch (e) {
+        btn.disabled = false;
+        errEl.textContent = `Could not start checkout: ${e.message}`;
+        errEl.hidden = false;
+      }
+    });
+  });
 }
 
 /* ------------------------------------------------------- user-defined lists
@@ -3131,41 +3270,6 @@ function renderData() {
   const tenants = state.tenants || [];
   const myRole = state.role || "member";
   const canManageInvites = myRole === "owner" || myRole === "admin";
-  const tenant = state.tenant || { plan: "free", status: "active" };
-  // Billing is owner-only (the backend enforces the same rule on both
-  // billing actions), and it is a narrower rule than canManageInvites -
-  // an admin can invite people but cannot spend the household's money.
-  // Same shape as the Household panel above: the read-only summary stays
-  // visible to everyone, only the actions are gated.
-  const canManageBilling = myRole === "owner";
-  // Checkout can only CREATE a subscription. Once one exists, changing or
-  // cancelling it belongs to the Customer Portal - showing "Choose <other
-  // plan>" here would start a second, separately-billed subscription
-  // (routes/billing.js rejects it server-side too).
-  const hasSubscription = tenant.plan !== "free";
-  const PLANS = [
-    { id: "free", label: "Free", price: "$0/mo", priceId: null },
-    {
-      id: "pro",
-      label: "Pro",
-      price: "$7/mo CAD",
-      priceId: STRIPE_PRICE_ID_PRO,
-    },
-    {
-      id: "family",
-      label: "Family",
-      price: "$13/mo CAD",
-      priceId: STRIPE_PRICE_ID_FAMILY,
-    },
-    {
-      id: "business",
-      label: "Business",
-      price: "$24/mo CAD",
-      priceId: STRIPE_PRICE_ID_BUSINESS,
-    },
-  ];
-  const showDowngradeBanner =
-    tenant.plan === "free" && !!tenant.hasStripeCustomer;
 
   view.innerHTML = `
   <div class="head"><div><h1>Data</h1><p class="sub">Where your data lives, and how to get it in and out.</p></div></div>
@@ -3191,7 +3295,6 @@ function renderData() {
       <button class="btn" id="connect">Connect &amp; test</button>
       <button class="btn ghost" id="disconnect">Disconnect</button>
       <button class="btn ghost" id="reload" ${live ? "" : "disabled"}>Reload from server</button>
-      ${getIdToken() ? '<button class="btn ghost" id="data-signout">Sign out</button>' : ""}
     </div>
     <p class="note"><b>The endpoint URL stays in this browser and is never published.</b> Values injected from
     GitHub secrets end up in <code>assets/config.js</code>, which is served to every visitor of the site \u2014
@@ -3305,43 +3408,6 @@ function renderData() {
     }
   </div>
 
-  <div class="eyebrow">Billing</div>
-  <div class="panel stack">
-    <p class="note" style="margin:0">Current plan: <b>${esc(tenant.plan)}</b>${tenant.status === "past_due" ? ' \u2014 <b style="color:var(--danger,#c00)">payment failed</b>' : ""}.</p>
-    ${
-      showDowngradeBanner
-        ? `<p class="note" style="margin:0">Your subscription was canceled after a failed payment \u2014 you're on the Free plan.${canManageBilling ? ' <button class="btn ghost" id="resubscribe">Resubscribe</button>' : ""}</p>`
-        : ""
-    }
-    <div class="actions" style="flex-wrap:wrap">
-      ${PLANS.map(
-        (p) => `
-        <div class="panel" style="min-width:160px">
-          <b>${esc(p.label)}</b><br>
-          <span class="muted">${esc(p.price)}</span><br>
-          ${
-            p.id === tenant.plan
-              ? '<span class="muted">Current plan</span>'
-              : !canManageBilling || hasSubscription || !p.priceId
-                ? ""
-                : `<button class="btn ghost" data-upgrade-plan="${esc(p.priceId)}">Choose ${esc(p.label)}</button>`
-          }
-        </div>`,
-      ).join("")}
-    </div>
-    ${
-      hasSubscription && canManageBilling
-        ? `<p class="note" style="margin:0">Switching plans, updating your card and cancelling all happen in the Stripe billing portal \u2014 starting a second checkout here would bill you twice.</p>
-    <div class="actions"><button class="btn ghost" id="manage-billing">Manage billing</button></div>`
-        : ""
-    }
-    ${
-      canManageBilling
-        ? ""
-        : '<p class="note" style="margin:0">Only the household owner can change the plan or manage payment details.</p>'
-    }
-  </div>
-
   <div class="eyebrow">Danger zone</div>
   <div class="panel"><div class="actions">
     <button class="btn danger" id="wipe">Delete every row${live ? " from the server" : ""}</button>
@@ -3391,38 +3457,6 @@ function renderData() {
     await refresh();
     renderData();
   };
-
-  $("#data-signout")?.addEventListener("click", signOut);
-
-  view.querySelectorAll("[data-upgrade-plan]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const base = location.origin + location.pathname;
-      const done = await withBusy("Starting checkout", async () => {
-        const { url } = await state.store.createCheckoutSession(
-          btn.dataset.upgradePlan,
-          `${base}#data`,
-          `${base}#data`,
-        );
-        location.href = url;
-      });
-      if (!done) notice("Could not start checkout.", "bad");
-    });
-  });
-
-  $("#manage-billing")?.addEventListener("click", async () => {
-    const returnUrl = location.origin + location.pathname;
-    const done = await withBusy("Opening billing portal", async () => {
-      const { url } = await state.store.createPortalSession(returnUrl);
-      location.href = url;
-    });
-    if (!done) notice("Could not open billing portal.", "bad");
-  });
-
-  $("#resubscribe")?.addEventListener("click", () => {
-    // Scrolls to / re-renders the same panel's plan cards - resubscribing
-    // is just choosing a plan again, no separate flow needed.
-    renderData();
-  });
 
   $("#tenant-switcher")?.addEventListener("change", (e) => {
     switchActiveTenant(e.target.value);
@@ -3584,6 +3618,186 @@ function renderData() {
   };
 }
 
+/** The household's plan, status and payment actions - its own top-level page
+    rather than a section of Data, since it is where an owner actually goes
+    to make a billing decision, not incidental to "where your data lives".
+    Deliberately does not share markup with renderPlanGate: that overlay is
+    a one-time, full-viewport decision shown once at signup, this is a page
+    you come back to and sits visually among this app's other panels. */
+function renderBilling() {
+  const tenant = state.tenant || { plan: "free", status: "active" };
+  const myRole = state.role || "member";
+  // Billing is owner-only (the backend enforces the same rule on both
+  // billing actions) - a narrower rule than canManageInvites, since an
+  // admin can invite people but cannot spend the household's money.
+  const canManageBilling = myRole === "owner";
+  // Checkout can only CREATE a subscription. Once one exists, changing or
+  // cancelling it belongs to the Customer Portal - showing "Choose <other
+  // plan>" here would start a second, separately-billed subscription
+  // (routes/billing.js rejects it server-side too).
+  const hasSubscription = tenant.plan !== "free";
+  const showDowngradeBanner =
+    tenant.plan === "free" && !!tenant.hasStripeCustomer;
+  const planMeta = PLANS.find((p) => p.id === tenant.plan) || PLANS[0];
+  const statusLabel =
+    tenant.status === "past_due"
+      ? "Payment failed"
+      : showDowngradeBanner
+        ? "Back on Free"
+        : "Active";
+  const statusClass =
+    tenant.status === "past_due" ? "bad" : showDowngradeBanner ? "warn" : "ok";
+
+  view.innerHTML = `
+  <div class="head"><div><h1>Billing</h1><p class="sub">This household's plan, seats and payment details.</p></div></div>
+
+  <div class="eyebrow">Current plan</div>
+  <div class="panel billing-current">
+    <div class="billing-current-top">
+      <div>
+        <div class="billing-current-plan">${esc(planMeta.label)}</div>
+        <div class="muted">${esc(planMeta.seats)} &middot; <span class="num">${esc(planMeta.amount)}</span>${esc(planMeta.period)}</div>
+      </div>
+      <span class="status-pill ${statusClass}">${esc(statusLabel)}</span>
+    </div>
+    ${
+      tenant.status === "past_due"
+        ? `<p class="note" style="margin-top:12px">Your last payment failed. Update your card in the billing portal before the grace period ends to keep full access.</p>`
+        : ""
+    }
+    ${
+      showDowngradeBanner
+        ? `<p class="note" style="margin-top:12px">Your subscription was canceled after a failed payment — you're on the Free plan.${canManageBilling ? ' <button class="btn ghost" id="resubscribe">Resubscribe</button>' : ""}</p>`
+        : ""
+    }
+    ${
+      canManageBilling
+        ? ""
+        : '<p class="note" style="margin-top:12px">Only the household owner can change the plan or manage payment details.</p>'
+    }
+  </div>
+
+  <div class="eyebrow">Plans</div>
+  <div class="billing-plan-grid">
+    ${PLANS.map((p) => {
+      const isCurrent = p.id === tenant.plan;
+      return `
+      <div class="billing-plan-card${isCurrent ? " current" : ""}${p.recommended && !isCurrent ? " recommended" : ""}">
+        ${p.recommended && !isCurrent ? '<div class="billing-plan-tag">Most households</div>' : ""}
+        <div class="billing-plan-name">${esc(p.label)}</div>
+        <div class="billing-plan-price"><span class="num">${esc(p.amount)}</span><span class="muted">${esc(p.period)}</span></div>
+        <div class="muted" style="margin:2px 0 10px">${esc(p.seats)}</div>
+        <p class="note" style="margin:0 0 10px">${esc(p.blurb)}</p>
+        <ul class="billing-plan-features">
+          ${p.features.map((f) => `<li>${esc(f)}</li>`).join("")}
+        </ul>
+        ${
+          isCurrent
+            ? '<span class="billing-plan-current-tag">Current plan</span>'
+            : !canManageBilling || hasSubscription || !p.priceId
+              ? ""
+              : `<button class="btn ghost" data-upgrade-plan="${esc(p.priceId)}">Choose ${esc(p.label)}</button>`
+        }
+      </div>`;
+    }).join("")}
+  </div>
+
+  ${
+    hasSubscription && canManageBilling
+      ? `<div class="eyebrow">Manage</div>
+  <div class="panel stack">
+    <p class="note" style="margin:0">Switching plans, updating your card and cancelling all happen in the Stripe billing portal — starting a second checkout here would bill you twice.</p>
+    <div class="actions"><button class="btn ghost" id="manage-billing">Manage billing</button></div>
+  </div>`
+      : ""
+  }`;
+
+  view.querySelectorAll("[data-upgrade-plan]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const base = location.origin + location.pathname;
+      const done = await withBusy("Starting checkout", async () => {
+        const { url } = await state.store.createCheckoutSession(
+          btn.dataset.upgradePlan,
+          `${base}#billing`,
+          `${base}#billing`,
+        );
+        location.href = url;
+      });
+      if (!done) notice("Could not start checkout.", "bad");
+    });
+  });
+
+  $("#manage-billing")?.addEventListener("click", async () => {
+    const returnUrl = location.origin + location.pathname;
+    const done = await withBusy("Opening billing portal", async () => {
+      const { url } = await state.store.createPortalSession(returnUrl);
+      location.href = url;
+    });
+    if (!done) notice("Could not open billing portal.", "bad");
+  });
+
+  $("#resubscribe")?.addEventListener("click", () => {
+    // Re-renders this same page's plan cards - resubscribing is just
+    // choosing a plan again, no separate flow needed.
+    renderBilling();
+  });
+}
+
+/** The signed-in individual's own account: identity, role, and sign-out.
+    Distinct from Data's Household panel (which manages OTHER members and
+    invites) and from Billing (tenant-wide money) - this is the one page
+    that's about you specifically, not the household. Only shows real
+    fields the backend actually returns (email, role) - no display name or
+    avatar exists anywhere in this app's auth (see auth.js/handler.js). */
+function renderProfile() {
+  const signedIn = !!getIdToken();
+  const email = state.userEmail || state.store.user?.email || "";
+  const myRole = state.role || "member";
+  const roleInfo =
+    {
+      owner:
+        "Full access — can manage billing, invite or remove members, and use every feature.",
+      admin: "Can invite members. Billing stays with the owner.",
+      member:
+        "Can add and edit transactions, budget and net worth. Inviting and billing stay with the owner or admins.",
+    }[myRole] || "";
+  const members = state.members || [];
+  const tenants = state.tenants || [];
+
+  view.innerHTML = `
+  <div class="head"><div><h1>Profile</h1><p class="sub">Your account in this ledger.</p></div></div>
+
+  <div class="eyebrow">Account</div>
+  <div class="panel stack">
+    ${
+      signedIn
+        ? `
+    <p class="note" style="margin:0">Signed in as <b>${esc(email || "unknown")}</b>.</p>
+    <p class="note" style="margin:0">Your role: <b>${esc(myRole)}</b>. ${esc(roleInfo)}</p>
+    <p class="note" style="margin:0">Sign-in is Google-only, via Cognito — there is no separate Ledger password to set or reset.</p>`
+        : `<p class="note" style="margin:0">This browser isn't signed in to a Ledger account — data is stored locally only. Connect from Data &rarr; Ledger API connection.</p>`
+    }
+  </div>
+
+  ${
+    signedIn
+      ? `
+  <div class="eyebrow">Household</div>
+  <div class="panel stack">
+    <p class="note" style="margin:0">${members.length} member${members.length === 1 ? "" : "s"} in this household.${tenants.length > 1 ? ` You belong to ${tenants.length} households.` : ""}</p>
+    <p class="note" style="margin:0">Manage members, invites${tenants.length > 1 ? " and switch households" : ""} from Data &rarr; Household.</p>
+  </div>
+
+  <div class="eyebrow">Session</div>
+  <div class="panel"><div class="actions">
+    <button class="btn ghost" id="profile-signout">Sign out</button>
+  </div></div>`
+      : ""
+  }`;
+
+  $("#profile-signout")?.addEventListener("click", signOut);
+}
+
 /* ==================================================================== router */
 const VIEWS = {
   dashboard: renderDashboard,
@@ -3592,6 +3806,8 @@ const VIEWS = {
   budget: renderBudget,
   networth: renderNetWorth,
   data: renderData,
+  billing: renderBilling,
+  profile: renderProfile,
 };
 
 function go(tab) {
@@ -3765,7 +3981,20 @@ async function boot() {
     if (inviteMatch)
       history.replaceState(null, "", location.pathname + location.search);
   }
-  revealApp();
+  // A brand-new household's owner, who has never chosen a plan: gated the
+  // same way showDowngradeBanner tells "new" apart from "downgraded" - plan
+  // is free AND no Stripe customer has ever been created for this tenant.
+  // An owner who cancelled after a failed payment (hasStripeCustomer: true)
+  // is back on Free too, but must never see the "new signup" gate again.
+  const showPlanGate =
+    state.role === "owner" &&
+    state.tenant?.plan === "free" &&
+    !state.tenant?.hasStripeCustomer &&
+    !planGateSeen();
+  // Deferred until the plan gate has had its chance to decide: revealing the
+  // header now would let a bare, unstyled Dashboard flash behind the gate
+  // for a moment before it renders (see renderPlanGate's own comment).
+  if (!showPlanGate) revealApp();
   if (state.tenant?.status === "past_due") {
     notice(
       "Your payment failed — update your card to keep full access.",
@@ -3773,7 +4002,7 @@ async function boot() {
       {
         label: "Manage billing →",
         // Same withBusy + notice shape as the #manage-billing handler in
-        // renderData(). Without it, a failed createPortalSession (expired
+        // renderBilling(). Without it, a failed createPortalSession (expired
         // token, API down, a non-owner reaching the banner) rejected into
         // nothing: the click looked like it did nothing at all.
         onClick: async () => {
@@ -3840,7 +4069,14 @@ async function boot() {
   // values.
   const hashTab = (location.hash || "#dashboard").slice(1);
   const startTab = firstRun ? "data" : hashTab in VIEWS ? hashTab : "dashboard";
-  go(startTab);
+  if (showPlanGate) {
+    renderPlanGate(() => {
+      revealApp();
+      go(startTab);
+    });
+  } else {
+    go(startTab);
+  }
 
   // Fire-and-forget: brings in every other year's transactions silently in
   // the background, so by the time anyone actually reaches for a different
