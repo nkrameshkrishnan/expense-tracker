@@ -3356,9 +3356,15 @@ function renderData() {
           ? "session memory only, nothing is being saved"
           : "not connected \u2014 changes stay in this browser"
     }</b>.
-      Endpoint source: <b>${src === "build" ? "GitHub secret, injected at deploy" : src === "runtime" ? "entered here, stored in this browser only" : "none"}</b>.
       Access: <b>Google sign-in via Cognito</b>, verified on every request by the API and by row-level
       security scoped to your tenant \u2014 there is no separate token to manage here.</p>
+    ${
+      src === "build"
+        ? `<div class="actions">
+      <button class="btn ghost" id="reload" ${live ? "" : "disabled"}>Reload from server</button>
+    </div>`
+        : `
+    <p class="note" style="margin:0">Endpoint source: <b>${src === "runtime" ? "entered here, stored in this browser only" : "none"}</b>.</p>
     <div class="stack" style="max-width:620px">
       <label class="f"><span>API base URL</span>
         <input id="ep" placeholder="https://abc123.execute-api.us-east-1.amazonaws.com/dev" value="${esc(ep)}"></label>
@@ -3372,7 +3378,8 @@ function renderData() {
     GitHub secrets end up in <code>assets/config.js</code>, which is served to every visitor of the site \u2014
     a secret in Actions keeps it out of the repo, not out of the page. That's fine here: the URL itself grants
     nothing, every request still needs your signed Cognito token. Enter it here instead if you would rather it
-    never appear in the deployed site at all.</p>
+    never appear in the deployed site at all.</p>`
+    }
   </div>
 
   <div class="eyebrow">Export</div>
@@ -3491,49 +3498,53 @@ function renderData() {
     <span class="muted">Export first \u2014 this cannot be undone.</span>
   </div></div>`;
 
-  $("#connect").onclick = async () => {
-    const url = $("#ep").value.trim();
-    if (!/^https:\/\/.+/.test(url)) {
-      return notice(
-        "That does not look like a URL. Copy the ApiUrl output from backend/template.yaml's deployment.",
-        "bad",
-      );
-    }
-    localStorage.setItem(API_ENDPOINT_KEY, url);
-    if (getCognitoConfig().clientId && !getIdToken()) {
-      showGate();
-      return;
-    }
-    // Tests the URL just entered directly via ApiStore, not through
-    // openStore() - ping() already throws with the specific reason (and
-    // .auth set, for an expired/rejected sign-in) - withBusy's catch
-    // surfaces that directly, so there is no need to reconstruct a reason
-    // from onNotice callbacks here.
-    await withBusy("Testing the connection", async () => {
-      const s = new ApiStore(url, getIdToken());
-      await s.ping();
-      state.store = s;
-      await refresh();
-      // This button is a one-time, manual "does this actually work" check,
-      // not a hot path - unlike normal boot, waiting the extra moment here
-      // for the real total is worth it. Without this, the confirmation would
-      // report only the current year's count (e.g. "24 rows loaded"), which
-      // reads as "your account only has 24 rows" rather than what it
-      // actually means: that many rows loaded SO FAR.
-      await state.store.ensureAllYearsLoaded?.();
-      state.rows = await state.store.list();
-    });
-    if (state.store.kind === "api")
-      notice(`Connected \u2014 ${state.rows.length} rows loaded.`, "ok");
-    renderData();
-  };
+  // #connect/#disconnect/#ep only exist when src !== "build" - a
+  // build-injected endpoint has nothing to test or clear from here.
+  if ($("#connect"))
+    $("#connect").onclick = async () => {
+      const url = $("#ep").value.trim();
+      if (!/^https:\/\/.+/.test(url)) {
+        return notice(
+          "That does not look like a URL. Copy the ApiUrl output from backend/template.yaml's deployment.",
+          "bad",
+        );
+      }
+      localStorage.setItem(API_ENDPOINT_KEY, url);
+      if (getCognitoConfig().clientId && !getIdToken()) {
+        showGate();
+        return;
+      }
+      // Tests the URL just entered directly via ApiStore, not through
+      // openStore() - ping() already throws with the specific reason (and
+      // .auth set, for an expired/rejected sign-in) - withBusy's catch
+      // surfaces that directly, so there is no need to reconstruct a reason
+      // from onNotice callbacks here.
+      await withBusy("Testing the connection", async () => {
+        const s = new ApiStore(url, getIdToken());
+        await s.ping();
+        state.store = s;
+        await refresh();
+        // This button is a one-time, manual "does this actually work" check,
+        // not a hot path - unlike normal boot, waiting the extra moment here
+        // for the real total is worth it. Without this, the confirmation would
+        // report only the current year's count (e.g. "24 rows loaded"), which
+        // reads as "your account only has 24 rows" rather than what it
+        // actually means: that many rows loaded SO FAR.
+        await state.store.ensureAllYearsLoaded?.();
+        state.rows = await state.store.list();
+      });
+      if (state.store.kind === "api")
+        notice(`Connected \u2014 ${state.rows.length} rows loaded.`, "ok");
+      renderData();
+    };
 
-  $("#disconnect").onclick = async () => {
-    localStorage.removeItem(API_ENDPOINT_KEY);
-    state.store = await openStore(notice);
-    await refresh();
-    renderData();
-  };
+  if ($("#disconnect"))
+    $("#disconnect").onclick = async () => {
+      localStorage.removeItem(API_ENDPOINT_KEY);
+      state.store = await openStore(notice);
+      await refresh();
+      renderData();
+    };
 
   $("#tenant-switcher")?.addEventListener("change", (e) => {
     switchActiveTenant(e.target.value);
