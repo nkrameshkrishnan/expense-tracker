@@ -83,6 +83,9 @@ Resources:
     Properties:
       CodeUri: src/
       Handler: handler.handler
+      Environment:
+        Variables:
+          RATE_LIMIT_TABLE: !Ref RateLimitTable
       Policies:
         - Statement:
             - Effect: Allow
@@ -95,6 +98,9 @@ Resources:
             - Effect: Allow
               Action: secretsmanager:GetSecretValue
               Resource: !Ref DbSecret
+            - Effect: Allow
+              Action: dynamodb:UpdateItem
+              Resource: !GetAtt RateLimitTable.Arn
       Events:
         Get:
           Type: HttpApi
@@ -172,16 +178,17 @@ Resources:
     Properties:
       StageName: !Ref Stage
       # API Gateway account-level throttling (token bucket, shared across every
-      # request to every route on this stage — not per-IP or per-tenant, since
-      # HttpApi has no built-in per-client throttling without API keys/usage
-      # plans or a WAF rate-based rule). This is the free, no-extra-AWS-spend
-      # first line of defense against a runaway client or credential-stuffing
-      # traffic driving up the Lambda/Aurora bill, sized generously enough
-      # that one household's refresh() (up to ~10 sequential GETs) never gets
-      # anywhere close to it. Revisit upward as real concurrent usage grows,
-      # and consider a WAF rate-based rule (true per-IP limiting) or Cognito
-      # Advanced Security before this genuinely needs to hold back abuse
-      # rather than just cap the blast radius.
+      # request to every route on this stage — not per-IP or per-tenant on
+      # its own). This is the free, no-extra-AWS-spend first line of defense
+      # against a runaway client or credential-stuffing traffic driving up
+      # the Lambda/Aurora bill, sized generously enough that one household's
+      # refresh() (up to ~10 sequential GETs) never gets anywhere close to
+      # it. Revisit upward as real concurrent usage grows. True per-IP
+      # limiting now lives one layer down, in WebAcl's rate-based rule below
+      # (blocks a single abusive IP before it can consume this shared
+      # budget) and in RateLimitTable/rateLimit.js inside DataFunction
+      # itself (catches invalid-token brute-forcing too, which never reaches
+      # a route handler for the WAF rule to score against).
       DefaultRouteSettings:
         ThrottlingBurstLimit: 20
         ThrottlingRateLimit: 10
@@ -193,6 +200,74 @@ Resources:
         # CORS_HEADERS.
         AllowHeaders: [authorization, content-type, x-active-tenant]
         AllowMethods: [GET, POST, OPTIONS]
+
+  # True per-IP throttling — DefaultRouteSettings above is one shared budget
+  # for the whole API, so a single abusive IP can otherwise consume it and
+  # starve every real user. Scope must be REGIONAL: CLOUDFRONT scope only
+  # applies to CloudFront distributions, not a regional API Gateway HTTP
+  # API. Deliberately just the rate-based rule, not AWS Managed Rule Groups
+  # (AWSManagedRulesCommonRuleSet etc.) — those add real per-rule-group and
+  # per-request cost for signature-based protection (SQLi, XSS payloads)
+  # this app doesn't specifically need yet, since every query already goes
+  # through parameterized RDS Data API calls. Add them later if that
+  # changes.
+  WebAcl:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: !Sub ledger-${Stage}-api
+      Scope: REGIONAL
+      DefaultAction:
+        Allow: {}
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: !Sub ledger-${Stage}-api
+      Rules:
+        - Name: RateLimitPerIp
+          Priority: 0
+          Action:
+            Block: {}
+          Statement:
+            RateBasedStatement:
+              # Requests per 5-minute rolling window, per source IP - well
+              # above what one household's normal usage could ever hit, but
+              # low enough that a single IP can't quietly eat the whole
+              # DefaultRouteSettings budget above (10 req/s = 3000/5min
+              # shared across every client on the API).
+              Limit: 500
+              AggregateKeyType: IP
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: !Sub ledger-${Stage}-rate-limit
+
+  WebAclAssociation:
+    Type: AWS::WAFv2::WebACLAssociation
+    Properties:
+      ResourceArn: !Sub arn:aws:apigateway:${AWS::Region}::/apis/${HttpApi}/stages/${Stage}
+      WebACLArn: !GetAtt WebAcl.Arn
+
+  # Backs rateLimit.js's per-source-IP check inside DataFunction itself -
+  # the complement to WebAcl above, which only sees traffic that reaches API
+  # Gateway with a route match. This also catches repeated invalid-token
+  # attempts (a token verification failure never reaches a route handler,
+  # but rateLimit.js runs before requireUser()). PAY_PER_REQUEST: no fixed
+  # monthly cost, and item volume here is tiny (one row per IP per 60s
+  # window, self-deleting via TTL).
+  RateLimitTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ledger-${Stage}-rate-limit
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
 
   # ------------------------------------------------------------------ Auth
   UserPool:
@@ -207,6 +282,18 @@ Resources:
         - Name: tenant_id
           AttributeDataType: String
           Mutable: true
+      # AUDIT, not ENFORCED: logs compromised-credential/risk detections to
+      # CloudWatch (visible under the User Pool's "Advanced security" tab)
+      # without blocking or challenging a real sign-in on a false positive,
+      # which would have no support flow to recover from today. Move to
+      # ENFORCED once there's been a chance to see what AUDIT actually flags
+      # for real traffic. NOTE: enabling this moves the User Pool onto
+      # Cognito's Essentials/Plus feature plan rather than Lite - check
+      # current Cognito pricing for that tier before this goes to a real
+      # account with real MAUs, since it changes the pricing basis for the
+      # whole pool, not just an added per-feature line item.
+      UserPoolAddOns:
+        AdvancedSecurityMode: AUDIT
       LambdaConfig:
         PostConfirmation: !GetAtt PostConfirmationFunction.Arn
 

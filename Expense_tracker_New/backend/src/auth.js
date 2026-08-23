@@ -3,8 +3,9 @@
 
    This is the server-mediated backend's equivalent of Code.gs's
    requireUser() — called unconditionally at the top of every request in
-   handler.js, exactly the same "always-on gate" shape the security review
-   in Security_Analysis.md validated for the Sheets/Supabase backends. */
+   handler.js, the same "always-on gate" shape the root README's "Read
+   this before you deploy" section describes for the Sheets/Supabase
+   backends. */
 
 import { CognitoJwtVerifier } from "aws-jwt-verify";
 import { runProvisioningTransaction } from "./db.js";

@@ -5,8 +5,9 @@
   "type": "module",
   "description": "Server-mediated API for Ledger's multi-tenant SaaS backend (API Gateway + Lambda + Aurora Serverless v2 + Cognito).",
   "dependencies": {
-    "@aws-sdk/client-rds-data": "^3.600.0",
     "@aws-sdk/client-cognito-identity-provider": "^3.600.0",
+    "@aws-sdk/client-dynamodb": "^3.1116.0",
+    "@aws-sdk/client-rds-data": "^3.600.0",
     "@aws-sdk/client-ses": "^3.600.0",
     "aws-jwt-verify": "^4.0.1",
     "stripe": "^17.0.0"

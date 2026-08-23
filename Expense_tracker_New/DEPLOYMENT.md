@@ -435,7 +435,15 @@ Don't skip these before pointing this at real money or real user data.
       rather than reusing your `dev` stack, if you want dev/prod isolation
       (recommended) — this means repeating Phases 1-9 as a second,
       parallel deployment rather than overwriting `dev`.
-- [ ] Review this repo's `Security_Analysis.md` and `README.md`'s
-      "Not done" section for anything still outstanding at the time you
-      read this — both are living documents and may have grown new items
-      since this guide was written.
+- [x] ~~API abuse protection~~ — already in `template.yaml` by default, no
+      action needed: API Gateway stage throttling, a WAF rate-based rule
+      per source IP, and a DynamoDB-backed per-IP rate limit inside
+      `DataFunction` itself. Cognito's `AdvancedSecurityMode` is set to
+      `AUDIT` (logs risk detections, doesn't block sign-in) — move it to
+      `ENFORCED` once you've seen what AUDIT actually flags for real
+      traffic, and check current Cognito pricing for the Essentials/Plus
+      tier first, since enabling it moves the whole User Pool off Lite
+      pricing.
+- [ ] Review this repo's `README.md`'s "Not done" section for anything
+      still outstanding at the time you read this — it's a living document
+      and may have grown new items since this guide was written.

@@ -7,6 +7,7 @@
    without a verified tenant context. */
 
 import { requireUser, AuthError } from "./auth.js";
+import { checkRateLimit, RateLimitError } from "./rateLimit.js";
 import { ValidationError } from "./validate.js";
 import { runInTenantTransaction, runProvisioningTransaction } from "./db.js";
 import * as tx from "./routes/transactions.js";
@@ -65,6 +66,17 @@ export function assertKnownPriceId(priceId) {
 export const handler = async (event) => {
   const method = event.requestContext?.http?.method || event.httpMethod;
   if (method === "OPTIONS") return { statusCode: 204, headers: CORS_HEADERS };
+
+  // Runs before requireUser() deliberately: a bad/expired token never
+  // reaches any route handler, so this is the only place repeated
+  // invalid-token attempts (not just authenticated abuse) get counted.
+  try {
+    await checkRateLimit(event);
+  } catch (err) {
+    if (err instanceof RateLimitError)
+      return json(429, { ok: false, error: err.message });
+    throw err; // checkRateLimit only ever throws RateLimitError - see rateLimit.js
+  }
 
   let user;
   try {

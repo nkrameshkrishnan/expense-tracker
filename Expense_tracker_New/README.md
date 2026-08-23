@@ -16,8 +16,8 @@ that can only be confirmed against a real AWS account.
 The original Ledger is a static site with public build-time config
 (`assets/config.js`) — safe under its own model because access is enforced
 server-side (Apps Script's `requireUser()`, Supabase RLS), not by keeping
-values secret. See the root repo's `Security_Analysis.md` for the full
-reasoning.
+values secret. See the root repo's `README.md`, under "Read this before you
+deploy," for the full reasoning.
 
 This folder is the first step toward a different goal: **multi-tenant SaaS**,
 where other households/organizations sign up as isolated tenants rather than
