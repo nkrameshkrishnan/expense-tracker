@@ -160,6 +160,7 @@ function planFeatureList(features) {
       : `Last ${features.historyMonths} months of history`,
   ];
   if (features.netWorth) list.push("Net worth tracking");
+  if (features.aiImport) list.push("AI-powered statement import");
   return list;
 }
 
@@ -717,6 +718,17 @@ async function refresh(reentered = false) {
     plan: "free",
     status: "active",
   };
+  state.tenant.aiImportAllowed = !!state.plans?.find(
+    (p) => p.id === state.tenant.plan,
+  )?.features?.aiImport;
+  // Must match AI_IMPORT_MONTHLY_CAP in backend/src/plans.js - not sent
+  // over the wire today, so this is a second, manually-synced copy.
+  // Low-risk (display only, the real enforcement is server-side), but
+  // worth revisiting if backend/src/plans.js's value ever changes.
+  state.tenant.aiImportsRemaining =
+    state.tenant.aiImportsUsedThisMonth != null
+      ? Math.max(0, 20 - state.tenant.aiImportsUsedThisMonth)
+      : null;
   state.userEmail = (await state.store.getUserEmail?.()) || null;
   state.tenants = (await state.store.getMyTenants?.()) || [];
   // Resolve which tenant this session is actively scoped to. "Never set"
@@ -3440,6 +3452,22 @@ function renderData() {
     files are uploaded automatically in the background, a little at a time.</p>
   </div>
 
+  <div class="eyebrow">AI Import</div>
+  <div class="panel stack">
+    ${
+      !state.plans
+        ? `<p class="note" style="margin:0">Checking your plan…</p>`
+        : !state.tenant?.aiImportAllowed
+          ? `<p class="note" style="margin:0">Upload a bank or credit-card statement (CSV or PDF) and let AI read it for you — <b>available on the Pro and Family plans.</b> <a href="#billing" data-goto-billing>Upgrade from Billing</a>.</p>`
+          : state.tenant?.aiImportsRemaining <= 0
+            ? `<p class="note" style="margin:0">You've used all your AI imports for this month. It resets at the start of next month.</p>`
+            : `
+    <input type="file" id="ai-file" accept=".csv,.pdf">
+    <p class="note" style="margin:0">Upload a real bank or credit-card statement — AI reads it and maps it into your categories. You review everything before anything is saved. ${esc(String(state.tenant?.aiImportsRemaining ?? ""))} import${state.tenant?.aiImportsRemaining === 1 ? "" : "s"} left this month.</p>
+    <div id="ai-review"></div>`
+    }
+  </div>
+
   <div class="eyebrow">People</div>
   <div class="panel stack">
     <p class="note" style="margin:0">${(() => {
@@ -3670,6 +3698,35 @@ function renderData() {
     }
   };
 
+  view.querySelector("[data-goto-billing]")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    go("billing");
+  });
+
+  $("#ai-file")?.addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reviewEl = $("#ai-review");
+    const fileType = file.name.toLowerCase().endsWith(".pdf") ? "pdf" : "csv";
+    reviewEl.innerHTML = `<p class="note">Reading your statement — this can take up to 20 seconds…</p>`;
+
+    try {
+      const buf = await file.arrayBuffer();
+      const fileBase64 = btoa(
+        new Uint8Array(buf).reduce((s, b) => s + String.fromCharCode(b), ""),
+      );
+      const { transactions, skipped } = await state.store.extractTransactions(
+        file.name,
+        fileType,
+        fileBase64,
+        CAT_NAMES,
+      );
+      renderAiReviewTable(reviewEl, transactions, skipped);
+    } catch (err) {
+      reviewEl.innerHTML = `<b class="over">${esc(err.message)}</b>`;
+    }
+  });
+
   $("#wipe").onclick = async () => {
     if (!isRemoteStore(state.store))
       return notice(
@@ -3689,6 +3746,68 @@ function renderData() {
     });
     renderData();
     if (done) notice("All rows deleted.", "ok");
+  };
+
+  // First render shows "Checking your plan…" above; once the fetch
+  // resolves, silently re-render with the real aiImportAllowed value - but
+  // only if Data is still the tab on screen (the user may have already
+  // navigated away by the time it resolves).
+  ensurePlans(() => {
+    if (state.tab === "data") renderData();
+  });
+}
+
+/** Renders the read-only, checkbox-driven review table for AI-extracted
+    transactions - see this feature's spec, Architecture §7. No inline
+    editing (Non-goals): anything wrong here gets fixed after import via
+    the normal Transactions edit flow, same as any other imported row. */
+function renderAiReviewTable(reviewEl, transactions, skipped) {
+  if (transactions.length === 0) {
+    reviewEl.innerHTML = `<p class="note">No transactions found in this file.${skipped ? ` (${skipped} row${skipped === 1 ? "" : "s"} couldn't be read reliably.)` : ""}</p>`;
+    return;
+  }
+
+  reviewEl.innerHTML = `
+    ${skipped ? `<p class="note" style="margin:0 0 8px">${skipped} row${skipped === 1 ? "" : "s"} couldn't be read reliably and ${skipped === 1 ? "isn't" : "aren't"} shown below.</p>` : ""}
+    <table class="ai-review-table">
+      <thead><tr><th></th><th>Date</th><th>Type</th><th>Category</th><th>Description</th><th>Amount</th></tr></thead>
+      <tbody>
+        ${transactions
+          .map(
+            (t, i) => `
+        <tr class="${t.confidence === "low" ? "ai-low-confidence" : ""}">
+          <td><input type="checkbox" class="ai-row-check" data-idx="${i}" checked></td>
+          <td>${esc(t.date)}</td>
+          <td>${esc(t.type)}</td>
+          <td>${esc(t.category)}${t.confidence === "low" ? ' <span class="ai-flag" title="Low confidence — double-check this row">⚠</span>' : ""}</td>
+          <td>${esc(t.description)}</td>
+          <td class="num">${esc(money(t.amount))}</td>
+        </tr>`,
+          )
+          .join("")}
+      </tbody>
+    </table>
+    <div class="actions" style="margin-top:10px">
+      <button class="btn" id="ai-import-selected">Import selected</button>
+    </div>`;
+
+  reviewEl.querySelector("#ai-import-selected").onclick = async () => {
+    const checked = [...reviewEl.querySelectorAll(".ai-row-check:checked")].map(
+      (cb) => transactions[Number(cb.dataset.idx)],
+    );
+    if (!checked.length) return notice("Select at least one row.", "bad");
+    const done = await withBusy(
+      `Importing ${checked.length} transactions`,
+      async () => {
+        await state.store.bulkAdd(checked);
+        await refresh();
+      },
+    );
+    if (done) {
+      notice(`Imported ${checked.length} transactions.`, "ok");
+      reviewEl.innerHTML = "";
+      renderData();
+    }
   };
 }
 
