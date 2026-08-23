@@ -1,11 +1,12 @@
-/* Storage layer for the SaaS build. ApiStore is the real one: it talks to
-   the server-mediated API (API Gateway + Lambda + Aurora, see
+/* Storage layer for the SaaS build. ApiStore is the only real store: it
+   talks to the server-mediated API (API Gateway + Lambda + Aurora, see
    ../../backend) instead of a Google Sheet or Supabase directly — the
    browser never holds a database credential of any kind, only a
-   short-lived Cognito ID token. LocalStore (IndexedDB) and MemoryStore
-   remain unchanged from the original project as offline/no-config
-   fallbacks; app.js calls the same interface regardless of which one is
-   active. */
+   short-lived Cognito ID token. There is deliberately no local/offline
+   fallback (this is multi-tenant SaaS, not a personal tool with no server
+   of its own) — see DisconnectedStore below for what openStore() returns
+   when a real connection isn't currently working. app.js calls the same
+   interface regardless of which one is active. */
 
 import {
   API_ENDPOINT,
@@ -174,9 +175,6 @@ export const setIdToken = (t) => {
   }
   _idTokenMem = t || "";
 };
-
-const DB_NAME = "ledger-expense-tracker";
-const DB_VERSION = 1;
 
 export function emptyBudget() {
   const b = {};
@@ -665,307 +663,86 @@ class ApiStore {
   }
 }
 
-/* ------------------------------------------------------------------ IndexedDB
-   Unchanged from the original project — offline/no-config fallback so the
-   app is usable before a backend is wired up. */
-class LocalStore {
-  constructor(db) {
-    this.db = db;
-    this.kind = "local";
-  }
-  async ensureYearLoaded() {}
-  async ensureAllYearsLoaded() {}
-  static open() {
-    return new Promise((resolve, reject) => {
-      if (!("indexedDB" in globalThis))
-        return reject(new Error("no indexedDB"));
-      const req = indexedDB.open(DB_NAME, DB_VERSION);
-      req.onupgradeneeded = () => {
-        const db = req.result;
-        if (!db.objectStoreNames.contains("transactions")) {
-          db.createObjectStore("transactions", {
-            keyPath: "id",
-            autoIncrement: true,
-          }).createIndex("date", "date");
-        }
-        if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta");
-      };
-      req.onsuccess = () => resolve(new LocalStore(req.result));
-      req.onerror = () => reject(req.error || new Error("indexedDB blocked"));
-      req.onblocked = () => reject(new Error("indexedDB blocked"));
-    });
-  }
-  _tx(s, m) {
-    return this.db.transaction(s, m).objectStore(s);
-  }
-  _wrap(req) {
-    return new Promise((res, rej) => {
-      req.onsuccess = () => res(req.result);
-      req.onerror = () => rej(req.error);
-    });
-  }
-  async list() {
-    const rows = await this._wrap(
-      this._tx("transactions", "readonly").getAll(),
-    );
-    return rows.sort((a, b) =>
-      a.date < b.date ? 1 : a.date > b.date ? -1 : b.id - a.id,
-    );
-  }
-  async add(rec) {
-    const r = normalise(rec);
-    delete r.id;
-    const id = await this._wrap(this._tx("transactions", "readwrite").add(r));
-    return { ...r, id };
-  }
-  async bulkAdd(list) {
-    const os = this.db
-      .transaction("transactions", "readwrite")
-      .objectStore("transactions");
-    for (const rec of list) {
-      const r = normalise(rec);
-      delete r.id;
-      os.add(r);
-    }
-    await new Promise((res, rej) => {
-      os.transaction.oncomplete = res;
-      os.transaction.onerror = () => rej(os.transaction.error);
-    });
-    return list.length;
-  }
-  async update(id, rec) {
-    const r = normalise({ ...rec, id });
-    await this._wrap(this._tx("transactions", "readwrite").put(r));
-    return r;
-  }
-  async remove(id) {
-    await this._wrap(this._tx("transactions", "readwrite").delete(Number(id)));
-  }
-  async clear() {
-    await this._wrap(this._tx("transactions", "readwrite").clear());
-    await this._wrap(this._tx("meta", "readwrite").delete("budget"));
-  }
-  async getBudget(year) {
-    const y = year || currentYear();
-    const all =
-      (await this._wrap(this._tx("meta", "readonly").get("budgetsByYear"))) ||
-      {};
-    return all[y] || emptyBudget();
-  }
-  async getBalances() {
-    return (
-      (await this._wrap(this._tx("meta", "readonly").get("balances"))) || []
-    );
-  }
-  async getDebts() {
-    return (await this._wrap(this._tx("meta", "readonly").get("debts"))) || [];
-  }
-  async addDebt(record) {
-    const all = await this.getDebts();
-    const id = Math.max(0, ...all.map((d) => Number(d.id) || 0)) + 1;
-    await this._wrap(
-      this._tx("meta", "readwrite").put([...all, { ...record, id }], "debts"),
-    );
-    return id;
-  }
-  async updateDebt(id, record) {
-    const all = await this.getDebts();
-    await this._wrap(
-      this._tx("meta", "readwrite").put(
-        all.map((d) =>
-          Number(d.id) === Number(id) ? { ...record, id: Number(id) } : d,
-        ),
-        "debts",
-      ),
-    );
-  }
-  async deleteDebt(id) {
-    const all = await this.getDebts();
-    await this._wrap(
-      this._tx("meta", "readwrite").put(
-        all.filter(
-          (d) =>
-            Number(d.id) !== Number(id) && Number(d.parentId) !== Number(id),
-        ),
-        "debts",
-      ),
-    );
-  }
-  async importDebts(records) {
-    const all = await this.getDebts();
-    let id = Math.max(0, ...all.map((d) => Number(d.id) || 0)) + 1;
-    const fileToReal = {};
-    for (const r of records)
-      if (r.kind !== "Payment") fileToReal[String(r.fileRef)] = id++;
-    const rows = [];
-    let nD = 0,
-      nP = 0,
-      skipped = 0;
-    id = Math.max(0, ...all.map((d) => Number(d.id) || 0)) + 1;
-    for (const r of records) {
-      if (r.kind !== "Payment") {
-        rows.push({ ...r, id, parentId: null });
-        id++;
-        nD++;
-        continue;
-      }
-      const parentReal = fileToReal[String(r.parentFileRef)];
-      if (!parentReal) {
-        skipped++;
-        continue;
-      }
-      rows.push({ ...r, id, parentId: parentReal });
-      id++;
-      nP++;
-    }
-    await this._wrap(
-      this._tx("meta", "readwrite").put([...all, ...rows], "debts"),
-    );
-    return { debts: nD, payments: nP, skipped };
-  }
-  async setBalances(date, entries) {
-    const all = (await this.getBalances()).filter((b) => b.date !== date);
-    await this._wrap(
-      this._tx("meta", "readwrite").put(
-        [...all, ...entries.map((e) => ({ ...e, date }))],
-        "balances",
-      ),
-    );
-  }
-  async deleteBalanceDate(date) {
-    const all = (await this.getBalances()).filter((b) => b.date !== date);
-    await this._wrap(this._tx("meta", "readwrite").put(all, "balances"));
-  }
-  async setBudget(b, year) {
-    const y = year || currentYear();
-    const all =
-      (await this._wrap(this._tx("meta", "readonly").get("budgetsByYear"))) ||
-      {};
-    all[y] = b;
-    await this._wrap(this._tx("meta", "readwrite").put(all, "budgetsByYear"));
-    return b;
-  }
-  async isEmpty() {
-    return (
-      (await this._wrap(this._tx("transactions", "readonly").count())) === 0
-    );
-  }
+/* -------------------------------------------------------------- disconnected
+   Placeholder used only when there is no working connection to a Ledger
+   account — never a storage tier a user should knowingly be "on". This is a
+   multi-tenant SaaS: every session must be connected to a real account, so
+   nothing here ever persists (no IndexedDB, no localStorage cache of rows).
+   Reads return empty so the app can still render its own shell instead of
+   crashing outright; writes throw, so every action correctly surfaces "not
+   connected" through the same withBusy()/notice() path every other store
+   error already goes through, rather than silently accepting a change that
+   was never actually saved anywhere. */
+function notConnected() {
+  throw new Error(
+    "Not connected to your Ledger account — reconnect to make changes.",
+  );
 }
-
-/* ------------------------------------------------------------------ memory */
-class MemoryStore {
+class DisconnectedStore {
   constructor() {
-    this.rows = [];
-    this.seq = 1;
-    this.budget = emptyBudget();
-    this.kind = "memory";
+    this.kind = "disconnected";
   }
   async ensureYearLoaded() {}
   async ensureAllYearsLoaded() {}
   async list() {
-    return [...this.rows].sort((a, b) =>
-      a.date < b.date ? 1 : a.date > b.date ? -1 : b.id - a.id,
-    );
+    return [];
   }
-  async add(rec) {
-    const r = normalise(rec);
-    r.id = this.seq++;
-    this.rows.push(r);
-    return r;
+  async add() {
+    notConnected();
   }
-  async bulkAdd(l) {
-    for (const x of l) await this.add(x);
-    return l.length;
+  async bulkAdd() {
+    notConnected();
   }
-  async update(id, rec) {
-    const r = normalise({ ...rec, id: Number(id) });
-    this.rows = this.rows.map((x) => (x.id === r.id ? r : x));
-    return r;
+  async update() {
+    notConnected();
   }
-  async remove(id) {
-    this.rows = this.rows.filter((x) => x.id !== Number(id));
+  async remove() {
+    notConnected();
   }
   async clear() {
-    this.rows = [];
-    this.budget = emptyBudget();
+    notConnected();
   }
-  async getBudget(year) {
-    const y = year || currentYear();
-    this.budgetsByYear = this.budgetsByYear || {};
-    return this.budgetsByYear[y] || this.budget || emptyBudget();
+  async getBudget() {
+    return emptyBudget();
   }
-  async setBudget(b, year) {
-    const y = year || currentYear();
-    this.budgetsByYear = this.budgetsByYear || {};
-    this.budgetsByYear[y] = b;
-    return b;
+  async setBudget() {
+    notConnected();
   }
   async getBalances() {
-    return this.balances || (this.balances = []);
+    return [];
   }
   async getDebts() {
-    return this.debts || (this.debts = []);
+    return [];
   }
-  async addDebt(record) {
-    this.debts = this.debts || [];
-    const id = Math.max(0, ...this.debts.map((d) => Number(d.id) || 0)) + 1;
-    this.debts.push({ ...record, id });
-    return id;
+  async addDebt() {
+    notConnected();
   }
-  async updateDebt(id, record) {
-    this.debts = (this.debts || []).map((d) =>
-      Number(d.id) === Number(id) ? { ...record, id: Number(id) } : d,
-    );
+  async updateDebt() {
+    notConnected();
   }
-  async deleteDebt(id) {
-    this.debts = (this.debts || []).filter(
-      (d) => Number(d.id) !== Number(id) && Number(d.parentId) !== Number(id),
-    );
+  async deleteDebt() {
+    notConnected();
   }
-  async importDebts(records) {
-    this.debts = this.debts || [];
-    let id = Math.max(0, ...this.debts.map((d) => Number(d.id) || 0)) + 1;
-    const fileToReal = {};
-    for (const r of records)
-      if (r.kind !== "Payment") fileToReal[String(r.fileRef)] = id++;
-    const rows = [];
-    let nD = 0,
-      nP = 0,
-      skipped = 0;
-    id = Math.max(0, ...this.debts.map((d) => Number(d.id) || 0)) + 1;
-    for (const r of records) {
-      if (r.kind !== "Payment") {
-        rows.push({ ...r, id, parentId: null });
-        id++;
-        nD++;
-        continue;
-      }
-      const parentReal = fileToReal[String(r.parentFileRef)];
-      if (!parentReal) {
-        skipped++;
-        continue;
-      }
-      rows.push({ ...r, id, parentId: parentReal });
-      id++;
-      nP++;
-    }
-    this.debts.push(...rows);
-    return { debts: nD, payments: nP, skipped };
+  async importDebts() {
+    notConnected();
   }
-  async setBalances(date, entries) {
-    this.balances = [
-      ...(this.balances || []).filter((b) => b.date !== date),
-      ...entries.map((e) => ({ ...e, date })),
-    ];
+  async setBalances() {
+    notConnected();
   }
-  async deleteBalanceDate(date) {
-    this.balances = (this.balances || []).filter((b) => b.date !== date);
+  async deleteBalanceDate() {
+    notConnected();
   }
   async isEmpty() {
-    return this.rows.length === 0;
+    return true;
   }
 }
 
+/** Requires a real, working connection to the account — there is no local
+    or offline fallback. If the endpoint or token is missing, or the API
+    can't be reached, this returns a DisconnectedStore: the app still boots
+    and renders (see boot() in app.js), but every read comes back empty and
+    every write fails loudly instead of quietly keeping changes that were
+    never actually saved anywhere. */
 export async function openStore(onNotice) {
   const endpoint = getApiEndpoint();
   const idToken = getIdToken();
@@ -976,22 +753,14 @@ export async function openStore(onNotice) {
       return s;
     } catch (e) {
       onNotice?.(
-        `API unreachable: ${e.message} Falling back to this browser's storage — changes will NOT reach the server.`,
+        `Could not connect to your Ledger account: ${e.message}`,
         "bad",
       );
+      return new DisconnectedStore();
     }
-  } else if (!endpoint) {
-    onNotice?.("No API connected. Using browser storage — sign in to connect.");
   }
-  try {
-    return await LocalStore.open();
-  } catch {
-    onNotice?.(
-      "IndexedDB unavailable, so nothing will persist. Export before closing the tab.",
-      "bad",
-    );
-    return new MemoryStore();
-  }
+  onNotice?.("Not connected to a Ledger account.", "bad");
+  return new DisconnectedStore();
 }
 
 export { ApiStore };

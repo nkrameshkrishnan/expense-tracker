@@ -8,7 +8,6 @@ import {
   ACCOUNTS,
   MONTHS,
   currentYear,
-  getApiEndpoint,
   getCognitoConfig,
   emptyBudget,
   UNASSIGNED,
@@ -659,8 +658,7 @@ async function refresh(reentered = false) {
   const c = $("#conn");
   const label = {
     api: "\u25cf ledger api",
-    local: "\u25cf browser only",
-    memory: "\u25cf session only",
+    disconnected: "\u25cf not connected",
   };
   const who = state.store.user?.email
     ? ` \u00b7 ${state.store.user.email.split("@")[0]}`
@@ -675,7 +673,7 @@ async function refresh(reentered = false) {
   c.title =
     state.store.kind === "api"
       ? "Reading and writing your Ledger account live"
-      : "Not connected to the Ledger API — changes stay in this browser";
+      : "Not connected to your Ledger account — reconnect to load or save data";
   c.className = "conn" + (isRemoteStore(state.store) ? " remote" : "");
 }
 
@@ -721,8 +719,9 @@ function availableYears() {
   // year that actually EXISTS in the database, independent of which years
   // have had their data fetched yet. Scanning state.rows alone would only show
   // years already loaded, which is wrong the moment a year is fetched lazily
-  // rather than eagerly. LocalStore/MemoryStore never partially load, so
-  // scanning state.rows for them is already complete and correct.
+  // rather than eagerly. DisconnectedStore has no cache and always returns
+  // empty rows, so falling through to scanning state.rows for it is still
+  // correct - just always empty until a real connection exists.
   const serverYears = state.store?.cache?.allTxYears;
   const fromData = new Set(
     serverYears?.length
@@ -2333,9 +2332,8 @@ function renderNetWorth() {
   ${
     !isRemoteStore(state.store)
       ? `<div class="nw-warn" style="border-left-color:var(--red)">
-    <b>Not connected to a Google Sheet or Supabase.</b> Everything on this page is saved to
-    ${state.store.kind === "memory" ? "this session only \u2014 it will be lost on reload" : "this browser only"}.
-    Connect under <b>Data \u2192 Google Sheet</b> (or configure Supabase) if you want balances to persist.
+    <b>Not connected to your Ledger account.</b> Nothing on this page can be saved right now
+    &mdash; reconnect under <b>Data</b> to record or view balances.
   </div>`
       : ""
   }
@@ -3250,15 +3248,9 @@ function renderBalanceForm(copyFrom) {
         )
       )
         return;
-      const target = backendLabel(state.store);
-      if (
-        !isRemoteStore(state.store) &&
-        !confirm(
-          `Not connected to a Google Sheet or Supabase right now. This import will go to ${target}.\n\n` +
-            `Connect first under Data \u2192 Google Sheet (or configure Supabase) if you want it saved there instead. Continue anyway?`,
-        )
-      ) {
-        out.textContent = "Cancelled.";
+      if (!isRemoteStore(state.store)) {
+        out.innerHTML =
+          '<b class="over">Not connected to your Ledger account \u2014 reconnect before importing.</b>';
         return;
       }
       const done = await withBusy(
@@ -3269,12 +3261,10 @@ function renderBalanceForm(copyFrom) {
           state.balances = await state.store.getBalances();
         },
       );
-      // State can flip mid-import (a token can expire between click and completion),
-      // so report where the data actually landed, not where it was aimed.
       if (done) {
         notice(
-          `Imported ${rows.length} balances to ${target}.`,
-          isRemoteStore(state.store) ? "ok" : "bad",
+          `Imported ${rows.length} balances to your Ledger account.`,
+          "ok",
         );
         renderNetWorth();
       }
@@ -3302,15 +3292,11 @@ function renderBalanceForm(copyFrom) {
       !confirm(`A snapshot for ${date} already exists. Replace it?`)
     )
       return;
-    const target = backendLabel(state.store);
-    if (
-      !isRemoteStore(state.store) &&
-      !confirm(
-        `Not connected to a Google Sheet or Supabase right now. This will save to ${target}.\n\n` +
-          `Connect first under Data \u2192 Google Sheet (or configure Supabase) if you want it saved there instead. Continue anyway?`,
-      )
-    )
-      return;
+    if (!isRemoteStore(state.store))
+      return notice(
+        "Not connected to your Ledger account \u2014 reconnect before saving.",
+        "bad",
+      );
     const done = await withBusy(
       `Saving ${entries.length} balances`,
       async () => {
@@ -3319,10 +3305,7 @@ function renderBalanceForm(copyFrom) {
       },
     );
     if (done) {
-      notice(
-        `Snapshot saved for ${date} to ${target}.`,
-        isRemoteStore(state.store) ? "ok" : "bad",
-      );
+      notice(`Snapshot saved for ${date}.`, "ok");
       renderNetWorth();
     }
   };
@@ -3557,11 +3540,15 @@ function renderData() {
         out.innerHTML = `<b class="over">No usable rows found on "${esc(sheet)}".</b>`;
         return;
       }
-      const dest = backendLabel(state.store);
+      if (!isRemoteStore(state.store)) {
+        out.innerHTML =
+          '<b class="over">Not connected to your Ledger account — reconnect before importing.</b>';
+        return;
+      }
       const replacing = $("#replace").checked;
       if (
         !confirm(
-          `Import ${rows.length} rows from "${sheet}" into ${dest}?${skipped ? `\n\n${skipped} rows will be skipped (no valid date or amount).` : ""}${
+          `Import ${rows.length} rows from "${sheet}" into your Ledger account?${skipped ? `\n\n${skipped} rows will be skipped (no valid date or amount).` : ""}${
             replacing
               ? `\n\n"Replace everything first" is checked: every existing transaction will be deleted before the import.${hiddenHistoryWarning()}`
               : ""
@@ -3588,10 +3575,14 @@ function renderData() {
   };
 
   $("#wipe").onclick = async () => {
-    const where = backendLabel(state.store);
+    if (!isRemoteStore(state.store))
+      return notice(
+        "Not connected to your Ledger account — reconnect before deleting anything.",
+        "bad",
+      );
     if (
       !confirm(
-        `Delete all ${state.rows.length} transactions from ${where}?\n\nThis cannot be undone.${hiddenHistoryWarning()}`,
+        `Delete all ${state.rows.length} transactions from your Ledger account?\n\nThis cannot be undone.${hiddenHistoryWarning()}`,
       )
     )
       return;
@@ -3762,7 +3753,7 @@ function renderProfile() {
     <p class="note" style="margin:0">Signed in as <b>${esc(email || "unknown")}</b>.</p>
     <p class="note" style="margin:0">Your role: <b>${esc(myRole)}</b>. ${esc(roleInfo)}</p>
     <p class="note" style="margin:0">Sign-in is Google-only, via Cognito — there is no separate Ledger password to set or reset.</p>`
-        : `<p class="note" style="margin:0">This browser isn't signed in to a Ledger account — data is stored locally only, in this browser.</p>`
+        : `<p class="note" style="margin:0">Not signed in to a Ledger account.</p>`
     }
   </div>
 
@@ -3824,28 +3815,6 @@ document.querySelectorAll("#tabs button").forEach(
     }),
 );
 
-/** First run only, and only into browser storage. Seeding a live Google Sheet
-    behind your back would be the wrong default — do that from Data → Import. */
-async function seedIfEmpty() {
-  if (isRemoteStore(state.store)) return;
-  if (!(await state.store.isEmpty())) return;
-  try {
-    const [rows, budget] = await Promise.all([
-      fetch("./data/seed.json").then((r) => r.json()),
-      fetch("./data/seed-budget.json")
-        .then((r) => r.json())
-        .catch(() => null),
-    ]);
-    await state.store.bulkAdd(rows);
-    if (budget) await state.store.setBudget(budget, currentYear());
-    notice(
-      `Loaded ${rows.length} rows from your Expense.xlsx into browser storage. Connect your Google Sheet under Data to make it the source of truth.`,
-    );
-  } catch {
-    notice('No seed data loaded — add your first entry under "Add".');
-  }
-}
-
 /* Staged, time-based messages for the boot-loading overlay - independent of
    store.js's actual retry count, so this needs no wiring through several
    layers to know "which attempt" is in flight. A cold sign-in can
@@ -3886,23 +3855,9 @@ function revealApp() {
   if (header) header.style.visibility = "";
 }
 
-// "Connected to a real backend" - true for Sheets AND Supabase. Only
-// LocalStore/MemoryStore mean openStore() actually fell back; a resolved
-// Supabase connection is a success, not a degraded state, even though its
-// kind isn't "sheets".
+// True only when actually talking to the API. False for DisconnectedStore
+// (see store.js) - there is no other kind of store in this build.
 const isRemoteStore = (s) => s.kind === "api";
-
-// Shared across every "where is this actually being saved" message (Net
-// worth import/save, transactions import, the wipe confirmation) - used to
-// hardcode "your Google Sheet"/Supabase-specific wording, which understated
-// the blast radius of a destructive action and warned "not connected" on a
-// page that was, in fact, connected.
-const backendLabel = (s) =>
-  s.kind === "api"
-    ? "your Ledger account"
-    : s.kind === "memory"
-      ? "this session only (nothing will be saved after reload)"
-      : "this browser only";
 
 // A tenant that downgraded to Free still HAS its older transactions on the
 // server - the Free plan's 12-month window only hides them from what the
@@ -3922,7 +3877,6 @@ const hiddenHistoryWarning = () =>
 async function boot() {
   startBootMessages();
   state.store = await openStore(notice);
-  await seedIfEmpty();
   await refresh();
   // An already-signed-in user clicking an invite link: showGate()'s own
   // inviteMatch handles the NOT-signed-in case (it feeds the token through
@@ -4003,16 +3957,18 @@ async function boot() {
       },
     );
   }
-  // A configured endpoint that still failed to connect (as opposed to no
-  // endpoint being saved at all, which is a normal, expected state) is the
-  // one case worth a real recovery action, not just informational text. The
+  // There is no local/offline fallback in this build (see store.js) - a
+  // DisconnectedStore here means every read comes back empty and every
+  // write will throw until this is resolved, whether that's because no API
+  // endpoint is configured at all or a configured one just failed to
+  // answer. Either way it's the one state worth a persistent, actionable
+  // banner rather than letting the empty dashboard speak for itself. The
   // retry window in store.js now covers several seconds of genuine cold
-  // starts, but no window is infinite - when it does exhaust, the only
-  // previous recovery path was "go to Data, click Connect & test", which
-  // nothing on screen actually pointed you toward.
-  if (getApiEndpoint() && !isRemoteStore(state.store)) {
+  // starts, but no window is infinite, and this is also the manual recovery
+  // path once it exhausts.
+  if (!isRemoteStore(state.store)) {
     notice(
-      "Could not reach the API just now \u2014 working from this browser\u2019s storage instead.",
+      "Not connected to your Ledger account \u2014 nothing will load or save until you reconnect.",
       "bad",
       {
         label: "Retry connecting",
@@ -4020,7 +3976,7 @@ async function boot() {
           const done = await withBusy("Reconnecting", async () => {
             state.store = await openStore(notice);
             if (!isRemoteStore(state.store))
-              throw new Error("still could not reach the API");
+              throw new Error("still could not reach your Ledger account");
             await refresh();
             await state.store.ensureAllYearsLoaded?.(); // same reasoning as Connect & test: a rare, manual action, worth the accurate total
             state.rows = await state.store.list();
@@ -4033,18 +3989,6 @@ async function boot() {
       },
     );
   }
-  // Tied to the ACTUAL current state - no sheet connected AND no local data
-  // either - not to a one-time "have you ever visited" flag. That flag lived
-  // in localStorage, which never expires: the very first page load after
-  // this feature shipped set it permanently, so it correctly fired once and
-  // then silently never fired again for that browser - including for
-  // someone who still has nothing connected and nothing recorded, which is
-  // exactly the case this was supposed to keep helping with. Checking real
-  // state instead means it naturally stops nagging the moment there is
-  // either a real sheet connection OR real local data worth not disrupting
-  // with a redirect - and keeps helping for as long as neither exists yet.
-  const firstRun =
-    !getApiEndpoint() && !isRemoteStore(state.store) && state.rows.length === 0;
   // Was: `(location.hash || '#dashboard').slice(1) in VIEWS ? location.hash.slice(1) : 'dashboard'`
   // - the '#dashboard' fallback was only used for the membership CHECK, then
   // the true branch re-read the original (still-empty) location.hash a
@@ -4055,7 +3999,7 @@ async function boot() {
   // once and reuse it, rather than deriving it twice from two different
   // values.
   const hashTab = (location.hash || "#dashboard").slice(1);
-  const startTab = firstRun ? "data" : hashTab in VIEWS ? hashTab : "dashboard";
+  const startTab = hashTab in VIEWS ? hashTab : "dashboard";
   if (showPlanGate) {
     renderPlanGate(() => {
       revealApp();
@@ -4097,20 +4041,15 @@ async function boot() {
   // a just-completed sign-in doesn't get shown the gate again.
   consumeAuthRedirect();
 
-  // Sign-in is required whenever this deployment has Cognito configured AT
-  // ALL - a site-wide setting - regardless of whether THIS particular
-  // browser happens to already have an API endpoint saved. It used to also
-  // require an endpoint on this device, which meant a brand new browser
-  // skipped authentication entirely and landed straight on an empty,
-  // unexplained Dashboard instead of ever being asked to sign in.
-  const needsAuth = !!getCognitoConfig().clientId;
-  if (needsAuth && !getIdToken()) {
+  // Sign-in is always required — this is multi-tenant SaaS with no
+  // local/offline mode to fall back to (see store.js), so an unauthenticated
+  // session has nothing to show. If Cognito itself isn't configured for this
+  // deployment, showGate() renders that as its own clear error rather than a
+  // broken sign-in button.
+  if (!getIdToken()) {
     showGate();
     return;
   }
-  // No Cognito configured at all: nothing to protect, go straight in - but
-  // still clear the loading overlay once real content is ready, same as the
-  // authenticated path.
 
   try {
     await boot();
