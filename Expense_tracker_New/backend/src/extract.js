@@ -8,12 +8,12 @@
    own precedent: its Lambda entrypoint has zero direct tests either, only
    the small pure gate functions it exports (assertManagesInvites,
    assertKnownPriceId). Everything handler() composes here - the auth gate,
-   the plan gate, the cap check, the extraction call, the cap-recording
-   insert - is independently tested already (auth.js's own tests,
-   extract-gating.test.js below, extract-route.test.js, ai-import-
-   cap.test.js). handler() itself is thin wiring over already-proven
-   pieces, the same category of code handler.js's action switch already
-   is. */
+   the body parsing/validation, the plan gate, the cap check, the
+   extraction call, the cap-recording insert - is independently tested
+   already (auth.js's own tests, extract-gating.test.js below,
+   extract-route.test.js, ai-import-cap.test.js). handler() itself is thin
+   wiring over already-proven pieces, the same category of code
+   handler.js's action switch already is. */
 
 import { PDFDocument } from "pdf-lib";
 import { requireUser, AuthError } from "./auth.js";
@@ -63,6 +63,71 @@ export async function countPdfPages(bytes) {
   return doc.getPageCount();
 }
 
+/** Parses and validates the raw Lambda event body for POST /extract.
+    Never throws - a malformed body (unparseable JSON, or valid JSON that
+    isn't an object, e.g. a literal `null`) and a PDF pdf-lib can't parse
+    (mislabeled fileType, a corrupted upload) are both client-input
+    problems, exactly like a missing fileBase64, and get the same
+    { ok: false, status, error } shape as those existing checks rather
+    than escaping as a thrown exception. Kept as its own pure(-ish, one
+    pdf-lib call) function, not inlined in handler(), so this parsing path
+    has direct test coverage the same way countPdfPages/
+    assertAiImportAllowed do, instead of only handler()'s own untested
+    body. */
+export async function parseExtractRequest(body) {
+  let payload;
+  try {
+    payload = JSON.parse(body || "{}");
+  } catch {
+    return {
+      ok: false,
+      status: 400,
+      error: "Request body is not valid JSON.",
+    };
+  }
+  const { fileType, fileBase64, categoryNames } = payload || {};
+
+  if (fileType !== "csv" && fileType !== "pdf")
+    return {
+      ok: false,
+      status: 400,
+      error: 'fileType must be "csv" or "pdf".',
+    };
+  if (typeof fileBase64 !== "string" || !fileBase64)
+    return { ok: false, status: 400, error: "fileBase64 is required." };
+  if (!Array.isArray(categoryNames) || categoryNames.length === 0)
+    return { ok: false, status: 400, error: "categoryNames is required." };
+
+  const fileBuffer = Buffer.from(fileBase64, "base64");
+  if (fileBuffer.length > MAX_FILE_BYTES)
+    return {
+      ok: false,
+      status: 400,
+      error: `File is too large (max ${MAX_FILE_BYTES / 1024 / 1024}MB).`,
+    };
+
+  if (fileType === "pdf") {
+    let pageCount;
+    try {
+      pageCount = await countPdfPages(fileBuffer);
+    } catch {
+      return {
+        ok: false,
+        status: 400,
+        error: "Could not read this PDF. Please try a different file.",
+      };
+    }
+    if (pageCount > MAX_PDF_PAGES)
+      return {
+        ok: false,
+        status: 400,
+        error: `This PDF has ${pageCount} pages — the limit is ${MAX_PDF_PAGES}. Try uploading a single month's statement.`,
+      };
+  }
+
+  return { ok: true, fileType, fileBase64, categoryNames, fileBuffer };
+}
+
 export const handler = async (event) => {
   const method = event.requestContext?.http?.method || event.httpMethod;
   if (method === "OPTIONS") return { statusCode: 204, headers: CORS_HEADERS };
@@ -85,31 +150,14 @@ export const handler = async (event) => {
     return json(500, { ok: false, error: "Request failed." });
   }
 
-  const payload = JSON.parse(event.body || "{}");
-  const { fileType, fileBase64, categoryNames } = payload;
-
-  if (fileType !== "csv" && fileType !== "pdf")
-    return json(400, { ok: false, error: 'fileType must be "csv" or "pdf".' });
-  if (typeof fileBase64 !== "string" || !fileBase64)
-    return json(400, { ok: false, error: "fileBase64 is required." });
-  if (!Array.isArray(categoryNames) || categoryNames.length === 0)
-    return json(400, { ok: false, error: "categoryNames is required." });
-
-  const fileBuffer = Buffer.from(fileBase64, "base64");
-  if (fileBuffer.length > MAX_FILE_BYTES)
-    return json(400, {
-      ok: false,
-      error: `File is too large (max ${MAX_FILE_BYTES / 1024 / 1024}MB).`,
-    });
-
-  if (fileType === "pdf") {
-    const pageCount = await countPdfPages(fileBuffer);
-    if (pageCount > MAX_PDF_PAGES)
-      return json(400, {
-        ok: false,
-        error: `This PDF has ${pageCount} pages — the limit is ${MAX_PDF_PAGES}. Try uploading a single month's statement.`,
-      });
-  }
+  // parseExtractRequest never throws - see its own comment - so an
+  // uncaught rejection here can no longer escape handler() with no
+  // CORS_HEADERS attached, the failure mode handler.js's own comment above
+  // requireUser() warns about.
+  const parsed = await parseExtractRequest(event.body);
+  if (!parsed.ok)
+    return json(parsed.status, { ok: false, error: parsed.error });
+  const { fileType, categoryNames, fileBuffer } = parsed;
 
   try {
     const result = await runInTenantTransaction(
