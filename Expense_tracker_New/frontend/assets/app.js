@@ -718,17 +718,6 @@ async function refresh(reentered = false) {
     plan: "free",
     status: "active",
   };
-  state.tenant.aiImportAllowed = !!state.plans?.find(
-    (p) => p.id === state.tenant.plan,
-  )?.features?.aiImport;
-  // Must match AI_IMPORT_MONTHLY_CAP in backend/src/plans.js - not sent
-  // over the wire today, so this is a second, manually-synced copy.
-  // Low-risk (display only, the real enforcement is server-side), but
-  // worth revisiting if backend/src/plans.js's value ever changes.
-  state.tenant.aiImportsRemaining =
-    state.tenant.aiImportsUsedThisMonth != null
-      ? Math.max(0, 20 - state.tenant.aiImportsUsedThisMonth)
-      : null;
   state.userEmail = (await state.store.getUserEmail?.()) || null;
   state.tenants = (await state.store.getMyTenants?.()) || [];
   // Resolve which tenant this session is actively scoped to. "Never set"
@@ -3421,6 +3410,30 @@ function renderBalanceForm(copyFrom) {
 
 /* ====================================================================== DATA */
 function renderData() {
+  // Derived here, at render time, rather than once in refresh() - state.plans
+  // only populates lazily via ensurePlans() (see below), which resolves
+  // AFTER the first refresh() of a fresh session has already run. Caching
+  // these onto state.tenant inside refresh() would freeze aiImportAllowed at
+  // its plans-not-loaded-yet value (false) forever, since nothing calls
+  // refresh() again just because ensurePlans() resolved - only this
+  // function's own ensurePlans() re-render would run, and it needs the
+  // recompute to actually see the update. Recomputing on every render is
+  // cheap (a short array lookup) and keeps state.tenant.aiImportAllowed
+  // truthful for the template below, same as renderBilling/renderPlanGate
+  // deriving straight from state.plans rather than trusting a cached copy.
+  if (state.tenant) {
+    state.tenant.aiImportAllowed = !!state.plans?.find(
+      (p) => p.id === state.tenant.plan,
+    )?.features?.aiImport;
+    // Must match AI_IMPORT_MONTHLY_CAP in backend/src/plans.js - not sent
+    // over the wire today, so this is a second, manually-synced copy.
+    // Low-risk (display only, the real enforcement is server-side), but
+    // worth revisiting if backend/src/plans.js's value ever changes.
+    state.tenant.aiImportsRemaining =
+      state.tenant.aiImportsUsedThisMonth != null
+        ? Math.max(0, 20 - state.tenant.aiImportsUsedThisMonth)
+        : null;
+  }
   const live = state.store.kind === "api";
   const members = state.members || [];
   const invites = state.invites || [];
@@ -3459,7 +3472,7 @@ function renderData() {
         ? `<p class="note" style="margin:0">Checking your plan…</p>`
         : !state.tenant?.aiImportAllowed
           ? `<p class="note" style="margin:0">Upload a bank or credit-card statement (CSV or PDF) and let AI read it for you — <b>available on the Pro and Family plans.</b> <a href="#billing" data-goto-billing>Upgrade from Billing</a>.</p>`
-          : state.tenant?.aiImportsRemaining <= 0
+          : (state.tenant?.aiImportsRemaining ?? Infinity) <= 0
             ? `<p class="note" style="margin:0">You've used all your AI imports for this month. It resets at the start of next month.</p>`
             : `
     <input type="file" id="ai-file" accept=".csv,.pdf">
