@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 process.env.STRIPE_PRICE_ID_PRO = "price_pro_test";
 process.env.STRIPE_PRICE_ID_FAMILY = "price_family_test";
 
-const { SEAT_CAPS, FEATURES, planFromPriceId } =
+const { SEAT_CAPS, FEATURES, planFromPriceId, AI_IMPORT_MONTHLY_CAP } =
   await import("../src/plans.js");
 
 test("SEAT_CAPS has all three tiers with the spec's caps", () => {
@@ -22,6 +22,17 @@ test("FEATURES: only free restricts net worth and history", () => {
     assert.equal(FEATURES[tier].netWorth, true);
     assert.equal(FEATURES[tier].historyMonths, null);
   }
+});
+
+test("FEATURES: aiImport is only true for pro and family", () => {
+  assert.equal(FEATURES.free.aiImport, false);
+  assert.equal(FEATURES.pro.aiImport, true);
+  assert.equal(FEATURES.family.aiImport, true);
+});
+
+test("AI_IMPORT_MONTHLY_CAP is a positive number", () => {
+  assert.equal(typeof AI_IMPORT_MONTHLY_CAP, "number");
+  assert.ok(AI_IMPORT_MONTHLY_CAP > 0);
 });
 
 test("planFromPriceId maps configured price ids to plan names", () => {

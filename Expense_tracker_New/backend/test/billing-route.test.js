@@ -186,13 +186,13 @@ test("getPlans returns every SEAT_CAPS tier, with live amounts for every configu
       id: "free",
       priceId: null,
       seatCap: 1,
-      features: { netWorth: false, historyMonths: 12 },
+      features: { netWorth: false, historyMonths: 12, aiImport: false },
     },
     {
       id: "pro",
       priceId: "price_pro_test",
       seatCap: 2,
-      features: { netWorth: true, historyMonths: null },
+      features: { netWorth: true, historyMonths: null, aiImport: true },
       amount: 700,
       currency: "cad",
     },
@@ -200,7 +200,7 @@ test("getPlans returns every SEAT_CAPS tier, with live amounts for every configu
       id: "family",
       priceId: "price_family_test",
       seatCap: 5,
-      features: { netWorth: true, historyMonths: null },
+      features: { netWorth: true, historyMonths: null, aiImport: true },
       amount: 1300,
       currency: "cad",
     },
@@ -222,7 +222,7 @@ test("getPlans includes a tier even when its price id isn't configured - just wi
     id: "family",
     priceId: null,
     seatCap: 5,
-    features: { netWorth: true, historyMonths: null },
+    features: { netWorth: true, historyMonths: null, aiImport: true },
   });
 });
 
@@ -242,7 +242,7 @@ test("getPlans includes a tier even when its price id fails to resolve - just wi
     id: "pro",
     priceId: "price_pro_test",
     seatCap: 2,
-    features: { netWorth: true, historyMonths: null },
+    features: { netWorth: true, historyMonths: null, aiImport: true },
     amount: 700,
     currency: "cad",
   });
@@ -250,6 +250,6 @@ test("getPlans includes a tier even when its price id fails to resolve - just wi
     id: "family",
     priceId: "price_missing",
     seatCap: 5,
-    features: { netWorth: true, historyMonths: null },
+    features: { netWorth: true, historyMonths: null, aiImport: true },
   });
 });
