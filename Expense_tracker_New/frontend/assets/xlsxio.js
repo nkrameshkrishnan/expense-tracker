@@ -8,6 +8,7 @@ import {
   UNASSIGNED,
   currentYear,
   normalise,
+  formatMoney,
 } from "./store.js";
 
 /** SheetJS is 930KB - roughly 5x this app's own code - and was previously
@@ -36,13 +37,7 @@ function loadXLSX() {
   return xlsxReady;
 }
 
-export const money = (n) =>
-  (n < 0 ? "-" : "") +
-  "$" +
-  Math.abs(n).toLocaleString("en-CA", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+export const money = (n) => formatMoney(n);
 export const pct = (n) => (n * 100).toFixed(1) + "%";
 export const monthOf = (r) => Number(String(r.date).slice(5, 7)) || 0;
 

@@ -52,6 +52,10 @@ export const EXPENSE_CATS = CATEGORIES.filter((c) => c[1] === "Expense").map(
 export const CAT_TYPE = Object.fromEntries(CATEGORIES);
 
 export const TYPES = ["Expense", "Income", "Transfer", "Dividends"];
+// Must match backend/src/routes/tenants.js's CURRENCIES exactly - the
+// backend is the source of truth for what it accepts; this list is what
+// the Profile picker offers. Keep both in sync by hand if this ever grows.
+export const CURRENCIES = ["CAD", "USD", "EUR", "GBP", "INR", "AUD"];
 export const PAYMENTS = [
   "Credit Card",
   "Debit Card",
@@ -102,6 +106,31 @@ export const PERSON_KEY = "ledger.person";
 export const NET_WORTH_ACCOUNTS = [];
 
 export const CUSTOM_KEY = "ledger.customLists";
+
+// The tenant's chosen display currency, set once per refresh() (see
+// app.js) and read by formatMoney below - not React/observable state,
+// just a module-level value every formatter call reads fresh, the same
+// "shared singleton other modules import" shape as CAT_NAMES/ACCOUNTS
+// above. No currency conversion anywhere (see this feature's spec) - this
+// only changes how already-stored numbers are formatted.
+let _currency = "CAD";
+export function setCurrency(code) {
+  _currency = code;
+}
+export function currentCurrency() {
+  return _currency;
+}
+
+/** Formats `n` as money in the tenant's current currency - symbol,
+    decimal places, and placement all come from Intl.NumberFormat's own
+    knowledge of the currency code, not a hand-maintained per-currency
+    table. */
+export function formatMoney(n) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: _currency,
+  }).format(n);
+}
 
 // Deterministic person -> palette-index mapping, so the same name always
 // gets the same colour across swatches/chips/charts without this app
@@ -375,6 +404,7 @@ class ApiStore {
       "delete",
       "clear",
       "setBudget",
+      "setCurrency",
       "setBalances",
       "deleteBalanceDate",
       "deleteDebt",
@@ -634,6 +664,11 @@ class ApiStore {
     await this._refreshMeta();
     return budget;
   }
+  async setCurrency(currency) {
+    await this._post({ action: "setCurrency", currency });
+    await this._refreshMeta();
+    return currency;
+  }
   async _refreshMeta() {
     if (!this.cache) return;
     const gen = this.generation;
@@ -755,6 +790,9 @@ class DisconnectedStore {
     return emptyBudget();
   }
   async setBudget() {
+    notConnected();
+  }
+  async setCurrency() {
     notConnected();
   }
   async getBalances() {
