@@ -14,10 +14,15 @@ export const SEAT_CAPS = {
 };
 
 export const FEATURES = {
-  free: { netWorth: false, historyMonths: 12 },
-  pro: { netWorth: true, historyMonths: null },
-  family: { netWorth: true, historyMonths: null },
+  free: { netWorth: false, historyMonths: 12, aiImport: false },
+  pro: { netWorth: true, historyMonths: null, aiImport: true },
+  family: { netWorth: true, historyMonths: null, aiImport: true },
 };
+
+// A working number, not a hard technical constraint - see this feature's
+// spec (docs/superpowers/specs/2026-08-23-ai-transaction-import-design.md),
+// Open Questions #3. Shared by Pro and Family; not tier-scaled (v1 scope).
+export const AI_IMPORT_MONTHLY_CAP = 20;
 
 /** Maps a Stripe Price id (from a checkout.session.completed event's line
     item) back to one of this app's plan names. Read lazily from
