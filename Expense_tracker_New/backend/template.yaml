@@ -153,7 +153,17 @@ Resources:
               Resource: !GetAtt RateLimitTable.Arn
             - Effect: Allow
               Action: bedrock:InvokeModel
-              Resource: !Sub arn:aws:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}
+              # Covers both invocation paths a Claude model on Bedrock may
+              # need: the bare foundation-model id (BedrockModelId's
+              # default), and - for models that only work via a
+              # cross-region inference profile - the profile ARN plus the
+              # regional foundation-model ARNs it routes to. Profile ids
+              # are AWS-managed, not account-owned, hence the wildcard
+              # scoped to this account/region rather than a single
+              # resource id.
+              Resource:
+                - !Sub arn:aws:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}
+                - !Sub arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/*
       Events:
         Post:
           Type: HttpApi

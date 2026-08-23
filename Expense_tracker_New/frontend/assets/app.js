@@ -3721,6 +3721,15 @@ function renderData() {
     if (!file) return;
     const reviewEl = $("#ai-review");
     const fileType = file.name.toLowerCase().endsWith(".pdf") ? "pdf" : "csv";
+    // Matches backend/src/extract.js's MAX_FILE_BYTES - reject an oversized
+    // file instantly instead of paying for a full upload round trip only
+    // to have the server (or, above ~4-4.5MB, the Lambda platform itself)
+    // reject it.
+    const MAX_FILE_BYTES = 4 * 1024 * 1024;
+    if (file.size > MAX_FILE_BYTES) {
+      reviewEl.innerHTML = `<b class="over">File is too large (max ${MAX_FILE_BYTES / 1024 / 1024}MB).</b>`;
+      return;
+    }
     reviewEl.innerHTML = `<p class="note">Reading your statement — this can take up to 20 seconds…</p>`;
 
     try {

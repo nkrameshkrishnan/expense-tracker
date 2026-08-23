@@ -38,7 +38,13 @@ function json(status, body) {
   };
 }
 
-const MAX_FILE_BYTES = 8 * 1024 * 1024; // 8MB - see spec Architecture §1's rejected S3-direct-upload alternative
+// 4MB raw. Lambda's synchronous invocation payload ceiling is ~6MB, and
+// this file travels base64-encoded (~33% bigger) inside a JSON request
+// body - a raw file much above 4-4.5MB would be rejected by the platform
+// itself before this check ever runs, surfacing as an opaque platform
+// error instead of the message below. See spec Architecture §1's rejected
+// S3-direct-upload alternative.
+const MAX_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_PDF_PAGES = 10; // see Global Constraints in this feature's plan
 
 export class AiImportGateError extends Error {}

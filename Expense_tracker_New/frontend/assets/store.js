@@ -425,6 +425,17 @@ class ApiStore {
         return this._post(payload, attempt + 1, retriedWithoutTenant, path);
       }
       console.error(`[store] POST responded ${res.status}`);
+      // /extract (see extractTransactions below) returns real, specific
+      // user-facing error text on its 4xx/403 responses (plan gate, cap
+      // exceeded, file too large, too many PDF pages, malformed request) -
+      // surface it instead of the generic message below, which would
+      // otherwise hide all of that from the user regardless of what
+      // actually went wrong. Every other action still goes through /data,
+      // whose generic wording stays exactly as it was.
+      if (path === "/extract") {
+        const message = await this._errorText(res);
+        if (message) throw new Error(message);
+      }
       throw new Error(
         "Something went wrong saving your change. Try again in a moment.",
       );

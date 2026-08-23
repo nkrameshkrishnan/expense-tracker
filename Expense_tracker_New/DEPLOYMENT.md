@@ -157,7 +157,12 @@ needs the model itself _enabled_ for your account in this region before
 request access to the Anthropic models if you haven't already. This is
 a real thing to verify, not a formality: a request against a model your
 account hasn't been granted access to fails at call time, not at deploy
-time, so nothing here catches it early.
+time, so nothing here catches it early. Before first real use, also verify
+the configured `BedrockModelId` is actually invokable on-demand in your
+target region (AWS Console → Bedrock → the model's page, or a manual
+`converse`/`invoke-model` call under the same IAM role) — some models only
+work via a cross-region inference profile, in which case you'll need to
+set `BedrockModelId` to that profile's id instead.
 
 3. Deploy takes **10-15 minutes** the first time (Aurora Serverless v2
    cluster creation is the slow part). Watch for `Successfully created/
@@ -252,6 +257,13 @@ console's query editor.
    `relation "tenants" already exists`, the schema was already applied
    (safe to ignore on a re-run of an idempotent statement, but check
    which statement actually failed before assuming that).
+
+   **Already-deployed stack picking up AI import:** re-running the whole
+   file against a database that already has the earlier tables fails on
+   `create table` for each one that already exists. Instead, copy just the
+   `ai_imports` table + its RLS policy block from the end of
+   `db/schema.sql` (the section under the `-- ai_imports` comment) and run
+   only that.
 
 ---
 
