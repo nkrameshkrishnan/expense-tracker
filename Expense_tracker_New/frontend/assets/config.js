@@ -5,12 +5,15 @@
 
    WARNING: whatever lands here IS SERVED TO EVERY VISITOR, same as before.
    That's still fine under this architecture for the same reason it was
-   fine under the Sheets/Supabase one (see Security_Analysis.md, Finding 1):
-   none of these values are secrets. API_ENDPOINT is just a URL.
-   COGNITO_CLIENT_ID identifies the app to Cognito's Hosted UI, it does not
-   authorize anything by itself. Access is decided server-side: API Gateway
-   validates the Cognito-issued JWT on every request, and Postgres RLS
-   (db/schema.sql) scopes every query to the token's tenant. */
+   fine under the Sheets/Supabase one (see the root README.md's "GitHub
+   Secrets cannot keep a secret in a static site"): none of these values are
+   secrets. API_ENDPOINT is just a URL. COGNITO_CLIENT_ID identifies the app
+   to Cognito's Hosted UI, it does not authorize anything by itself. Access
+   is decided server-side: API Gateway validates the Cognito-issued JWT on
+   every request, and Postgres RLS (db/schema.sql) scopes every query to the
+   token's tenant. The real secrets (STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
+   DB credentials) never reach this file — they're Lambda environment
+   variables sourced from AWS Secrets Manager (see backend/template.yaml). */
 
 export const BUILD_STAMP = "dev";
 
