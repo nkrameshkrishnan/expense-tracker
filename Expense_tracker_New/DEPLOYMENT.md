@@ -10,7 +10,7 @@ deliberately a manual-only stub (`.github/workflows/ledger-new-ci.yml`,
 click through yourself.
 
 **Follow the phases in order.** Phase 3 (Stripe) needs the API URL that
-only exists after Phase 1's first deploy, and Phase 1 needs to run a
+only exists after Phase 2's first deploy, and Phase 2 needs to run a
 **second time** once Phase 3 gives you a real webhook secret. That's not a
 mistake in this document — it's the actual dependency order.
 
@@ -23,7 +23,8 @@ most common reason `sam deploy` fails 20 minutes in.
 
 - [ ] **AWS account** with billing enabled and a user/role with permission
       to create: VPC/subnets, RDS/Aurora, Lambda, API Gateway, Cognito,
-      IAM roles, Secrets Manager secrets, SES identities.
+      IAM roles, Secrets Manager secrets, SES identities, a WAFv2 WebACL,
+      and a DynamoDB table.
 - [ ] **AWS CLI v2** installed and configured.
 - [ ] **AWS SAM CLI** installed.
 - [ ] **Node.js 20.x** (matches `template.yaml`'s `Runtime: nodejs20.x`).
@@ -183,11 +184,13 @@ You need `ApiUrl` from Phase 2 before you can do step 2 below.
    - Family
 
    For each, click into the price and copy its **API ID** — it looks like
-   `price_1AbCdEfGhIjKlMnOp`. You'll need both in Phase 6.
+   `price_1AbCdEfGhIjKlMnOp`. You'll need both in Phase 6 — that's the
+   only place they go; the frontend fetches them from the backend's
+   `getPlans` action at runtime, so there's nothing to also enter in
+   Phase 8.
 
-   **Write these down now** — you'll enter each one in TWO places in
-   Phase 6 and Phase 8, and they must match exactly and come from the
-   same mode (test vs. live).
+   **Write these down now**, and make sure they come from the same mode
+   (test vs. live) as the rest of Phase 3.
 
 2. **Register the webhook endpoint.** **Developers → Webhooks → + Add
    endpoint**.
@@ -421,8 +424,9 @@ Don't skip these before pointing this at real money or real user data.
       only. Redeploy: `sam deploy --parameter-overrides AllowedOrigin=https://your-real-origin`.
 - [ ] **Switch Stripe to live mode**: repeat Phase 3 entirely in Stripe's
       live mode (separate Products/Prices/webhook/keys from test mode —
-      nothing carries over), then repeat Phase 6 and Phase 8 with the live
-      values.
+      nothing carries over), then repeat Phase 6 with the live values.
+      Phase 8 needs nothing Stripe-related redone — the frontend has no
+      Stripe price ids of its own to update.
 - [ ] **Confirm SES production access** was granted (Phase 5).
 - [ ] **Set `Stage=prod`** for a genuinely separate production stack
       rather than reusing your `dev` stack, if you want dev/prod isolation
