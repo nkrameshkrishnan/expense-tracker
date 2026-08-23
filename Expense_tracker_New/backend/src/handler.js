@@ -120,7 +120,7 @@ async function handleGet(user, event) {
 
   return runInTenantTransaction(user.tenantId, user.sub, async (execute) => {
     const [tenantRow] = await execute.rows(
-      `select plan, status, stripe_customer_id from tenants where id = cast(current_setting('app.tenant_id', true) as uuid)`,
+      `select plan, status, currency, stripe_customer_id from tenants where id = cast(current_setting('app.tenant_id', true) as uuid)`,
     );
     const features = FEATURES[tenantRow.plan] || FEATURES.free;
 
@@ -167,6 +167,7 @@ async function handleGet(user, event) {
       tenant: {
         plan: tenantRow.plan,
         status: tenantRow.status,
+        currency: tenantRow.currency,
         hasStripeCustomer: !!tenantRow.stripe_customer_id,
       },
     };
@@ -238,6 +239,10 @@ async function handlePost(user, event) {
       }
       case "setBudget":
         await budget.setBudgetRows(execute, payload.year, payload.budget);
+        return { ok: true };
+      case "setCurrency":
+        tenants.assertKnownCurrency(payload.currency);
+        await tenants.setCurrency(execute, payload.currency);
         return { ok: true };
       case "setBalances":
         await balances.setBalances(execute, payload.date, payload.entries);
