@@ -72,7 +72,7 @@ by the shared `Globals.Function.Timeout: 10` in `template.yaml`. This
 feature gets its own function instead, for two concrete reasons:
 
 - **Timeout.** A Bedrock call over a multi-page PDF can reasonably take
-  10–20+ seconds. Raising the *global* Lambda timeout to accommodate that
+  10–20+ seconds. Raising the _global_ Lambda timeout to accommodate that
   would apply to every action in the app, including the ones that are
   supposed to fail fast. `ExtractFunction` gets its own `Timeout: 25`
   (see §5 for why 25, not higher).
@@ -114,14 +114,14 @@ app.
 - **System/user prompt** containing the real category list and an explicit
   explanation of the `Expense/Income/Transfer/Dividends` + always-positive-
   amount convention, so the model maps a statement's own Credit/Debit
-  language into *this app's* model rather than echoing it back verbatim.
+  language into _this app's_ model rather than echoing it back verbatim.
   The category list itself is **supplied by the frontend in the request**
   (`categoryNames`, the same `CAT_NAMES` array `store.js` already exports),
   not a second copy hardcoded on the backend — categories in this app are
   user-owned, inventable vocabulary (`validate.js`'s `validateTransaction`
   deliberately does not allow-list them, unlike the fixed plan tiers), so
   the backend treats the list as request input to validate the model's
-  output against, not something it owns a canonical copy of. `type` *is*
+  output against, not something it owns a canonical copy of. `type` _is_
   allow-listed against `validate.js`'s existing `TYPES` constant, which
   already is backend-owned structural data.
 - **CSV**: the raw file text, inline in the prompt (small enough that a
@@ -180,9 +180,17 @@ Success response:
 {
   "ok": true,
   "transactions": [
-    { "date": "2026-08-03", "type": "Expense", "category": "Dining Out",
-      "subcategory": "", "description": "STARBUCKS #4521", "amount": 6.75,
-      "payment": "Credit Card", "account": "", "confidence": "high" }
+    {
+      "date": "2026-08-03",
+      "type": "Expense",
+      "category": "Dining Out",
+      "subcategory": "",
+      "description": "STARBUCKS #4521",
+      "amount": 6.75,
+      "payment": "Credit Card",
+      "account": "",
+      "confidence": "high"
+    }
   ],
   "skipped": 2
 }
@@ -212,7 +220,7 @@ create policy ai_imports_isolation on ai_imports
   with check (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
 ```
 
-One row per extraction *attempt that reached Bedrock and got a response* —
+One row per extraction _attempt that reached Bedrock and got a response_ —
 not one row per successfully-imported transaction, and not one row for a
 request that failed before calling Bedrock (a throttled/errored Bedrock
 call didn't cost the household a usable result, so it shouldn't cost their
@@ -220,7 +228,7 @@ cap either). A request that reaches Bedrock and gets back zero
 transactions still counts — it was still a real, billed call.
 
 `ExtractFunction` checks the count for the current calendar month
-(`created_at >= date_trunc('month', now())`) *before* calling Bedrock, and
+(`created_at >= date_trunc('month', now())`) _before_ calling Bedrock, and
 rejects with `{ ok: false, error: "You've used your N AI imports this
 month." }` once at `AI_IMPORT_MONTHLY_CAP` (a new constant in `plans.js`,
 alongside `SEAT_CAPS`). No reset job or cron needed — the rolling
@@ -228,8 +236,8 @@ calendar-month window is just a `WHERE` clause.
 
 This is deliberately **not** the `RateLimitTable` DynamoDB table added in
 the API-hardening work — that's a 60-second-window per-IP abuse guard, a
-different concern from a monthly per-tenant *billing-adjacent feature
-cap*. Conflating them would make both harder to reason about, and this
+different concern from a monthly per-tenant _billing-adjacent feature
+cap_. Conflating them would make both harder to reason about, and this
 one needs a real per-tenant audit trail (Postgres, queryable, RLS-scoped)
 more than it needs DynamoDB's speed.
 
@@ -275,7 +283,7 @@ long.
 as one row per transaction — date, type, category, description, amount,
 a checkbox (default checked), and a visible flag on any `confidence:
 "low"` row. An "Import N selected" button collects the checked rows and
-calls the *existing* `state.store.bulkAdd()` path unchanged — this is
+calls the _existing_ `state.store.bulkAdd()` path unchanged — this is
 where the new code stops and the already-built, already-tested import
 path takes over. No new row-level editing UI (see Non-goals);
 `skipped` (rows the model returned but that failed schema validation) is
@@ -295,11 +303,11 @@ send a file to.
 ## Error handling & edge cases
 
 - **Cap exceeded** → checked before any Bedrock call, `{ ok: false, error:
-  "You've used your N AI imports this month." }`, does not touch
+"You've used your N AI imports this month." }`, does not touch
   `ai_imports`.
 - **File too large / too many PDF pages** → checked client-side (page
   count requires reading the PDF first — a lightweight client-side PDF
-  page-count check, not a full parse) *and* server-side (the source of
+  page-count check, not a full parse) _and_ server-side (the source of
   truth), rejected before the Bedrock call, does not touch `ai_imports`.
 - **Bedrock call fails** (throttled, service error, malformed response
   before any usable JSON) → `{ ok: false, error: "..." }`, does **not**
@@ -320,7 +328,7 @@ send a file to.
 test.js`. No test makes a real, billable Bedrock call. Real coverage:
 
 - Cap enforcement at exactly the limit, one over, and confirming a
-  failed-before-Bedrock-response call does *not* increment it.
+  failed-before-Bedrock-response call does _not_ increment it.
 - Prompt construction — the real `CAT_NAMES` list and type-taxonomy
   explanation actually appear in what gets sent.
 - Response validation — a malformed/partial model response is rejected
