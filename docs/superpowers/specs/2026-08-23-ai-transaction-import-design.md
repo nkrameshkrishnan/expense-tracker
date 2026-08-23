@@ -111,11 +111,19 @@ app.
 
 `ExtractFunction` calls Bedrock's Converse API with:
 
-- **System/user prompt** containing this app's real `CAT_NAMES` list (the
-  exact `store.js` `CATEGORIES` names, not a paraphrase) and an explicit
+- **System/user prompt** containing the real category list and an explicit
   explanation of the `Expense/Income/Transfer/Dividends` + always-positive-
   amount convention, so the model maps a statement's own Credit/Debit
   language into *this app's* model rather than echoing it back verbatim.
+  The category list itself is **supplied by the frontend in the request**
+  (`categoryNames`, the same `CAT_NAMES` array `store.js` already exports),
+  not a second copy hardcoded on the backend — categories in this app are
+  user-owned, inventable vocabulary (`validate.js`'s `validateTransaction`
+  deliberately does not allow-list them, unlike the fixed plan tiers), so
+  the backend treats the list as request input to validate the model's
+  output against, not something it owns a canonical copy of. `type` *is*
+  allow-listed against `validate.js`'s existing `TYPES` constant, which
+  already is backend-owned structural data.
 - **CSV**: the raw file text, inline in the prompt (small enough that a
   `document` content block isn't needed).
 - **PDF**: the base64 file bytes as a `document` content block. Bedrock's
@@ -158,7 +166,12 @@ this automatically inherits the existing `CorsConfiguration`, no new CORS
 setup needed). Request body:
 
 ```json
-{ "fileName": "statement.pdf", "fileType": "csv" | "pdf", "fileBase64": "..." }
+{
+  "fileName": "statement.pdf",
+  "fileType": "csv" | "pdf",
+  "fileBase64": "...",
+  "categoryNames": ["Salary", "Rent / Housing", "Groceries", "..."]
+}
 ```
 
 Success response:
