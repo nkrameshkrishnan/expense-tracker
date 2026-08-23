@@ -575,14 +575,14 @@ class ApiStore {
   async createPortalSession(returnUrl) {
     return this._post({ action: "createPortalSession", returnUrl });
   }
-  /** Live Stripe amounts for the paid plans, keyed by plan id - see
-      backend/src/routes/billing.js's getPlanPricing for what's actually in
-      each entry. Callers fall back to PLANS' static display copy (app.js)
-      when a plan id is missing from the result, so a partial or empty
-      response here degrades gracefully rather than breaking the page. */
-  async getPlanPricing() {
-    const r = await this._post({ action: "getPlanPricing" });
-    return r.pricing || {};
+  /** The full plan list (id, seatCap, features, priceId, and live amount/
+      currency when Stripe resolves it) - see backend/src/routes/billing.js's
+      getPlans for what's actually in each entry. This is the only place
+      app.js learns which tiers exist at all; it keeps no independent list
+      of its own (see app.js's PLAN_COPY). */
+  async getPlans() {
+    const r = await this._post({ action: "getPlans" });
+    return r.plans || [];
   }
   async setBalances(date, entries) {
     await this._post({ action: "setBalances", date, entries });
@@ -760,12 +760,14 @@ class DisconnectedStore {
   async isEmpty() {
     return true;
   }
-  // A read, not a write - fails open with an empty result (rather than
-  // notConnected()'s throw) so the Billing/plan-gate pages still render
-  // using PLANS' static fallback prices while disconnected, instead of
-  // erroring out over something as low-stakes as a price display.
-  async getPlanPricing() {
-    return {};
+  // A read, not a write - fails open with an empty list (rather than
+  // notConnected()'s throw), so the Billing/plan-gate pages still render
+  // their shell instead of erroring out. There is no static fallback list
+  // any more (see app.js's PLAN_COPY, which only has display copy, not
+  // plan existence) - an empty result means those pages show "plans
+  // unavailable" rather than a stale-but-plausible-looking price.
+  async getPlans() {
+    return [];
   }
 }
 

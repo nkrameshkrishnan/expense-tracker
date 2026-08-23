@@ -18,7 +18,6 @@ import {
   NET_WORTH_ACCOUNTS,
   personColorIndex,
 } from "./store.js";
-import { STRIPE_PRICE_ID_PRO, STRIPE_PRICE_ID_FAMILY } from "./config.js";
 import {
   aggregate,
   money,
@@ -59,94 +58,136 @@ const state = {
   balances: [],
   debts: [],
   filter: { q: "", cat: "", month: "", type: "" },
-  // Live Stripe amounts, fetched lazily once (see ensurePlanPricing) - null
-  // until then, at which point renderPlanGate/renderBilling prefer it over
-  // PLANS' static display copy. Never invalidated: prices essentially never
-  // change mid-session, and a reload naturally clears this.
-  planPricing: null,
+  // The full plan list, fetched lazily once (see ensurePlans) - null until
+  // then. backend/src/routes/billing.js's getPlans is the only place this
+  // app learns which tiers exist, what they cost, and what they enforce;
+  // see PLAN_COPY below for the one thing that still lives client-side.
+  // Never invalidated: tiers essentially never change mid-session, and a
+  // reload naturally clears this.
+  plans: null,
 };
 
 /* ------------------------------------------------------------------ plans
-   The three pricing tiers, shown at signup (renderPlanGate) and again on
-   the Billing tab (renderBilling). Personal-finance app, not a team tool -
-   Family is deliberately the top tier; there is no unlimited-seat
-   "Business" plan. Mirrors backend/src/plans.js's SEAT_CAPS/FEATURES -
-   nothing enforces the two copies matching, so a tier added or changed on
-   the server needs the same edit made here by hand. The two renderers
-   deliberately do not share markup/CSS: the signup gate is a one-time,
-   full-viewport decision (bigger cards, its own visual weight), while the
-   Billing tab is a page you return to, sitting alongside this app's other
-   panels - collapsing them into one component would make whichever one
-   changes next drag the other along with it. */
-const PLANS = [
-  {
-    id: "free",
+   Pure display copy, keyed by plan id - label and blurb are the only
+   per-plan facts that can't come from the backend, since they're
+   marketing text, not business logic. Everything that determines what a
+   plan actually DOES or COSTS (seat cap, features, price) comes from
+   state.plans (getPlans(), see ensurePlans below) - this app keeps no
+   independent list of which tiers exist, so a tier added or removed on
+   the server just works here without a matching edit. Personal-finance
+   app, not a team tool - Family is deliberately the top tier; there is no
+   unlimited-seat "Business" plan. A plan id with no entry here (a new
+   tier added server-side before its copy is written) still renders, with
+   a generic fallback label/blurb - see planCopy() below. The signup gate
+   (renderPlanGate) and the Billing tab (renderBilling) deliberately do
+   not share markup/CSS: the gate is a one-time, full-viewport decision
+   (bigger cards, its own visual weight), while Billing is a page you
+   return to, sitting alongside this app's other panels - collapsing them
+   into one component would make whichever one changes next drag the
+   other along with it. They DO share the small data helpers below
+   (planCopy/planFeatureList/planSeatsLabel/formatPlanAmount/
+   formatPlanPeriod) - those are pure derivation, not markup, so sharing
+   them carries none of that risk. */
+const PLAN_COPY = {
+  free: {
     label: "Free",
-    amount: "$0",
-    period: "/mo",
-    priceId: null,
-    seats: "1 person",
     blurb: "Track your own spending, no card required.",
-    features: ["Last 12 months of history"],
   },
-  {
-    id: "pro",
+  pro: {
     label: "Pro",
-    amount: "$7",
-    period: "/mo CAD",
-    priceId: STRIPE_PRICE_ID_PRO,
-    seats: "2 people",
     blurb: "Built for two people running one household.",
-    features: ["Full history, every year", "Net worth tracking"],
     recommended: true,
   },
-  {
-    id: "family",
+  family: {
     label: "Family",
-    amount: "$13",
-    period: "/mo CAD",
-    priceId: STRIPE_PRICE_ID_FAMILY,
-    seats: "5 people",
     blurb: "Room for kids, parents, or a shared place.",
-    features: ["Full history, every year", "Net worth tracking"],
   },
-];
+};
 
-/** Formats a plan's price for display, preferring the live Stripe amount
-    (state.planPricing, cents) over PLANS' static "$7" copy above when it's
-    available - the two can drift once a Price is ever changed in the
-    Stripe Dashboard without this array being updated to match. Only the
-    number is derived live; the period ("/mo CAD") stays static copy, since
-    interval/currency are effectively fixed for a given deployment. */
+/** A plan id's display label/blurb/recommended flag, falling back to
+    something generic (rather than refusing to render) for a tier that
+    exists server-side but has no entry above yet. */
+function planCopy(id) {
+  return (
+    PLAN_COPY[id] || {
+      label: id.charAt(0).toUpperCase() + id.slice(1),
+      blurb: "",
+      recommended: false,
+    }
+  );
+}
+
+/** Formats a plan's price from state.plans' live Stripe amount (cents) -
+    there is no static fallback number any more, since a hardcoded one is
+    exactly the kind of duplicate that can silently drift from what Stripe
+    actually charges. Free has no Stripe Price at all (nothing to buy), so
+    it's always "$0"; a paid plan whose price hasn't resolved (Stripe
+    unreachable, a misconfigured id) shows "—" rather than inventing a
+    number. */
 function formatPlanAmount(p) {
-  const live = state.planPricing?.[p.id];
-  if (!live) return p.amount;
-  const amount = live.amount / 100;
+  if (p.id === "free") return "$0";
+  if (p.amount == null) return "—";
+  const amount = p.amount / 100;
   return `$${Number.isInteger(amount) ? amount : amount.toFixed(2)}`;
+}
+
+/** "/mo CAD" - derived from the live Price's currency rather than
+    hardcoded per plan, so it can't advertise the wrong currency if a
+    deployment is ever priced in something other than CAD. Free has no
+    currency (no Stripe Price), so it's just "/mo". */
+function formatPlanPeriod(p) {
+  return p.currency ? `/mo ${p.currency.toUpperCase()}` : "/mo";
+}
+
+/** "2 people" / "Unlimited people" - derived from the enforced seatCap
+    rather than hand-authored, so the copy can't say something the backend
+    doesn't actually allow. */
+function planSeatsLabel(seatCap) {
+  if (seatCap === 1) return "1 person";
+  if (seatCap === Infinity) return "Unlimited people";
+  return `${seatCap} people`;
+}
+
+/** Feature bullet list, derived from the enforced FEATURES flags rather
+    than hand-authored copy - the bug this closes: hand-authored text
+    could keep advertising "Net worth tracking" after a FEATURES flag
+    flipped it off server-side, since nothing would ever catch the two
+    falling out of sync. */
+function planFeatureList(features) {
+  const list = [
+    features.historyMonths == null
+      ? "Full history, every year"
+      : `Last ${features.historyMonths} months of history`,
+  ];
+  if (features.netWorth) list.push("Net worth tracking");
+  return list;
 }
 
 // Fetched once per session, lazily, the first time either renderPlanGate or
 // renderBilling needs it - same "load on first actual use" shape as
-// xlsxio.js's lazy SheetJS import, rather than adding a Stripe round trip
-// to every refresh() when most sessions never look at a plan price at all.
-// A rerender callback (rather than returning the data) lets both callers
-// pass "render again, now with live prices" without this function needing
-// to know which page is currently showing.
-let _planPricingInFlight = null;
-function ensurePlanPricing(onLoaded) {
-  if (state.planPricing) return;
-  if (!_planPricingInFlight) {
-    _planPricingInFlight = state.store
-      .getPlanPricing()
-      .then((pricing) => {
-        state.planPricing = pricing;
+// xlsxio.js's lazy SheetJS import, rather than adding a round trip to every
+// refresh() when most sessions never look at a plan price at all. A
+// rerender callback (rather than returning the data) lets both callers
+// pass "render again, now with the plan list" without this function
+// needing to know which page is currently showing. DisconnectedStore's
+// getPlans() resolves to [] (not a rejection), so a disconnected session
+// caches that outcome too instead of retrying on every render - only a
+// genuine unexpected error leaves state.plans null to retry next time.
+let _plansInFlight = null;
+function ensurePlans(onLoaded) {
+  if (state.plans) return;
+  if (!_plansInFlight) {
+    _plansInFlight = state.store
+      .getPlans()
+      .then((plans) => {
+        state.plans = plans;
       })
-      .catch(() => {}) // fail open - PLANS' static copy keeps showing
+      .catch(() => {}) // fail open - state.plans stays null, callers show "unavailable"
       .finally(() => {
-        _planPricingInFlight = null;
+        _plansInFlight = null;
       });
   }
-  _planPricingInFlight.then(onLoaded);
+  _plansInFlight.then(onLoaded);
 }
 
 /* Shown once, the first time a brand-new household's owner signs in with no
@@ -329,6 +370,7 @@ function renderPlanGate(onFree) {
   if (bootOverlay) bootOverlay.hidden = true;
   const gate = $("#plan-gate");
   gate.hidden = false;
+  const plans = state.plans || [];
   gate.innerHTML = `
     <div class="plan-gate-card">
       <div class="plan-gate-mark">&#8214;</div>
@@ -336,22 +378,33 @@ function renderPlanGate(onFree) {
       <h1 class="plan-gate-title">How many people will use this ledger?</h1>
       <p class="plan-gate-sub">Pick a starting plan for this household. Nothing here is permanent — change or cancel it anytime from the Billing tab.</p>
       <div class="plan-grid">
-        ${PLANS.map(
-          (p) => `
-        <div class="plan-card${p.recommended ? " recommended" : ""}">
-          ${p.recommended ? '<div class="plan-badge">Most households</div>' : ""}
-          <div class="plan-name">${esc(p.label)}</div>
-          <div class="plan-price"><span class="plan-amount">${esc(formatPlanAmount(p))}</span><span class="plan-period">${esc(p.period)}</span></div>
-          <div class="plan-seats">${esc(p.seats)}</div>
-          <p class="plan-blurb">${esc(p.blurb)}</p>
+        ${
+          !state.plans
+            ? `<p class="plan-gate-note">Loading plans…</p>`
+            : plans.length === 0
+              ? `<p class="plan-gate-note">Plans are temporarily unavailable. Try reconnecting from the banner above, then reload.</p>`
+              : plans
+                  .map((p) => {
+                    const copy = planCopy(p.id);
+                    return `
+        <div class="plan-card${copy.recommended ? " recommended" : ""}">
+          ${copy.recommended ? '<div class="plan-badge">Most households</div>' : ""}
+          <div class="plan-name">${esc(copy.label)}</div>
+          <div class="plan-price"><span class="plan-amount">${esc(formatPlanAmount(p))}</span><span class="plan-period">${esc(formatPlanPeriod(p))}</span></div>
+          <div class="plan-seats">${esc(planSeatsLabel(p.seatCap))}</div>
+          <p class="plan-blurb">${esc(copy.blurb)}</p>
           <ul class="plan-features">
-            ${p.features.map((f) => `<li>${esc(f)}</li>`).join("")}
+            ${planFeatureList(p.features)
+              .map((f) => `<li>${esc(f)}</li>`)
+              .join("")}
           </ul>
           <button class="btn ${p.id === "free" ? "ghost" : ""} plan-cta" data-plan-id="${esc(p.id)}" data-price-id="${esc(p.priceId || "")}">
-            ${p.id === "free" ? "Continue with Free" : `Choose ${esc(p.label)}`}
+            ${p.id === "free" ? "Continue with Free" : `Choose ${esc(copy.label)}`}
           </button>
-        </div>`,
-        ).join("")}
+        </div>`;
+                  })
+                  .join("")
+        }
       </div>
       <p class="plan-gate-error" id="plan-gate-error" hidden></p>
       <p class="plan-gate-note">Only the owner sets this. Anyone you invite later joins under whichever plan is active when they accept.</p>
@@ -388,11 +441,11 @@ function renderPlanGate(onFree) {
     });
   });
 
-  // Renders immediately with PLANS' static prices above; if live ones
-  // arrive after, silently re-render with them - but only if this gate is
+  // First render shows "Loading plans…" above; once the fetch resolves,
+  // silently re-render with the real list - but only if this gate is
   // still the thing on screen (the owner may have already picked a plan
-  // and moved on by the time the fetch resolves).
-  ensurePlanPricing(() => {
+  // and moved on by the time it resolves).
+  ensurePlans(() => {
     if (!gate.hidden) renderPlanGate(onFree);
   });
 }
@@ -3659,7 +3712,9 @@ function renderBilling() {
   const hasSubscription = tenant.plan !== "free";
   const showDowngradeBanner =
     tenant.plan === "free" && !!tenant.hasStripeCustomer;
-  const planMeta = PLANS.find((p) => p.id === tenant.plan) || PLANS[0];
+  const plans = state.plans || [];
+  const planMeta = plans.find((p) => p.id === tenant.plan);
+  const currentLabel = planCopy(tenant.plan).label;
   const statusLabel =
     tenant.status === "past_due"
       ? "Payment failed"
@@ -3676,8 +3731,12 @@ function renderBilling() {
   <div class="panel billing-current">
     <div class="billing-current-top">
       <div>
-        <div class="billing-current-plan">${esc(planMeta.label)}</div>
-        <div class="muted">${esc(planMeta.seats)} &middot; <span class="num">${esc(formatPlanAmount(planMeta))}</span>${esc(planMeta.period)}</div>
+        <div class="billing-current-plan">${esc(currentLabel)}</div>
+        <div class="muted">${
+          planMeta
+            ? `${esc(planSeatsLabel(planMeta.seatCap))} &middot; <span class="num">${esc(formatPlanAmount(planMeta))}</span>${esc(formatPlanPeriod(planMeta))}`
+            : esc(state.plans ? "Plan details unavailable" : "Loading…")
+        }</div>
       </div>
       <span class="status-pill ${statusClass}">${esc(statusLabel)}</span>
     </div>
@@ -3699,29 +3758,40 @@ function renderBilling() {
   </div>
 
   <div class="eyebrow">Plans</div>
-  <div class="billing-plan-grid">
-    ${PLANS.map((p) => {
-      const isCurrent = p.id === tenant.plan;
-      return `
-      <div class="billing-plan-card${isCurrent ? " current" : ""}${p.recommended && !isCurrent ? " recommended" : ""}">
-        ${p.recommended && !isCurrent ? '<div class="billing-plan-tag">Most households</div>' : ""}
-        <div class="billing-plan-name">${esc(p.label)}</div>
-        <div class="billing-plan-price"><span class="num">${esc(formatPlanAmount(p))}</span><span class="muted">${esc(p.period)}</span></div>
-        <div class="muted" style="margin:2px 0 10px">${esc(p.seats)}</div>
-        <p class="note" style="margin:0 0 10px">${esc(p.blurb)}</p>
+  ${
+    !state.plans
+      ? `<p class="note">Loading plans…</p>`
+      : plans.length === 0
+        ? `<p class="note">Plans are temporarily unavailable. Try reconnecting from the banner above, then reload.</p>`
+        : `<div class="billing-plan-grid">
+    ${plans
+      .map((p) => {
+        const isCurrent = p.id === tenant.plan;
+        const copy = planCopy(p.id);
+        return `
+      <div class="billing-plan-card${isCurrent ? " current" : ""}${copy.recommended && !isCurrent ? " recommended" : ""}">
+        ${copy.recommended && !isCurrent ? '<div class="billing-plan-tag">Most households</div>' : ""}
+        <div class="billing-plan-name">${esc(copy.label)}</div>
+        <div class="billing-plan-price"><span class="num">${esc(formatPlanAmount(p))}</span><span class="muted">${esc(formatPlanPeriod(p))}</span></div>
+        <div class="muted" style="margin:2px 0 10px">${esc(planSeatsLabel(p.seatCap))}</div>
+        <p class="note" style="margin:0 0 10px">${esc(copy.blurb)}</p>
         <ul class="billing-plan-features">
-          ${p.features.map((f) => `<li>${esc(f)}</li>`).join("")}
+          ${planFeatureList(p.features)
+            .map((f) => `<li>${esc(f)}</li>`)
+            .join("")}
         </ul>
         ${
           isCurrent
             ? '<span class="billing-plan-current-tag">Current plan</span>'
             : !canManageBilling || hasSubscription || !p.priceId
               ? ""
-              : `<button class="btn ghost" data-upgrade-plan="${esc(p.priceId)}">Choose ${esc(p.label)}</button>`
+              : `<button class="btn ghost" data-upgrade-plan="${esc(p.priceId)}">Choose ${esc(copy.label)}</button>`
         }
       </div>`;
-    }).join("")}
-  </div>
+      })
+      .join("")}
+  </div>`
+  }
 
   ${
     hasSubscription && canManageBilling
@@ -3763,11 +3833,11 @@ function renderBilling() {
     renderBilling();
   });
 
-  // Renders immediately with PLANS' static prices above; if live ones
-  // arrive after, silently re-render with them - but only if Billing is
-  // still the tab on screen (the user may have already navigated away by
-  // the time the fetch resolves).
-  ensurePlanPricing(() => {
+  // First render shows "Loading plans…" above; once the fetch resolves,
+  // silently re-render with the real list - but only if Billing is still
+  // the tab on screen (the user may have already navigated away by the
+  // time it resolves).
+  ensurePlans(() => {
     if (state.tab === "billing") renderBilling();
   });
 }

@@ -25,10 +25,9 @@ export const COGNITO_CLIENT_ID = "";
 export const COGNITO_DOMAIN = ""; // e.g. ledger-dev-123456789012.auth.us-east-1.amazoncognito.com
 export const COGNITO_REGION = "";
 
-/* Stripe Price ids for the paid plans (Pro/Family). Not secrets - a Price
-   id only identifies which subscription tier a Checkout Session is for -
-   but they are deploy-specific (different per Stripe account/mode), so
-   they reach the frontend the same build-time-injection way API_ENDPOINT
-   does rather than being hardcoded. */
-export const STRIPE_PRICE_ID_PRO = "";
-export const STRIPE_PRICE_ID_FAMILY = "";
+/* No Stripe Price ids here any more - backend/src/routes/billing.js's
+   getPlans() is now the only place the frontend learns a plan's Stripe
+   price id (along with everything else about it: seats, features, live
+   amount). Previously this file duplicated STRIPE_PRICE_ID_PRO/_FAMILY
+   for app.js's own PLANS array to reference directly; that array is gone,
+   so there's nothing left here to inject them into. */

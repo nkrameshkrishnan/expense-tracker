@@ -10,7 +10,7 @@ import { stripe } from "../src/stripe.js";
 import {
   createCheckoutSession,
   createPortalSession,
-  getPlanPricing,
+  getPlans,
 } from "../src/routes/billing.js";
 
 afterEach(() => mock.restoreAll());
@@ -168,7 +168,7 @@ test("createPortalSession uses the tenant's existing Stripe customer id", async 
   }
 });
 
-test("getPlanPricing returns live amounts for every configured price id", async () => {
+test("getPlans returns every SEAT_CAPS tier, with live amounts for every configured price id", async () => {
   process.env.STRIPE_PRICE_ID_PRO = "price_pro_test";
   process.env.STRIPE_PRICE_ID_FAMILY = "price_family_test";
   mock.method(stripe.prices, "retrieve", async (id) => {
@@ -179,15 +179,35 @@ test("getPlanPricing returns live amounts for every configured price id", async 
     return byId[id];
   });
 
-  const pricing = await getPlanPricing(stripe);
+  const plans = await getPlans(stripe);
 
-  assert.deepEqual(pricing, {
-    pro: { amount: 700, currency: "cad" },
-    family: { amount: 1300, currency: "cad" },
-  });
+  assert.deepEqual(plans, [
+    {
+      id: "free",
+      priceId: null,
+      seatCap: 1,
+      features: { netWorth: false, historyMonths: 12 },
+    },
+    {
+      id: "pro",
+      priceId: "price_pro_test",
+      seatCap: 2,
+      features: { netWorth: true, historyMonths: null },
+      amount: 700,
+      currency: "cad",
+    },
+    {
+      id: "family",
+      priceId: "price_family_test",
+      seatCap: 5,
+      features: { netWorth: true, historyMonths: null },
+      amount: 1300,
+      currency: "cad",
+    },
+  ]);
 });
 
-test("getPlanPricing omits a plan whose price id isn't configured", async () => {
+test("getPlans includes a tier even when its price id isn't configured - just without amount/currency", async () => {
   process.env.STRIPE_PRICE_ID_PRO = "price_pro_test";
   process.env.STRIPE_PRICE_ID_FAMILY = "";
   mock.method(stripe.prices, "retrieve", async () => ({
@@ -195,12 +215,18 @@ test("getPlanPricing omits a plan whose price id isn't configured", async () => 
     currency: "cad",
   }));
 
-  const pricing = await getPlanPricing(stripe);
+  const plans = await getPlans(stripe);
+  const family = plans.find((p) => p.id === "family");
 
-  assert.deepEqual(pricing, { pro: { amount: 700, currency: "cad" } });
+  assert.deepEqual(family, {
+    id: "family",
+    priceId: null,
+    seatCap: 5,
+    features: { netWorth: true, historyMonths: null },
+  });
 });
 
-test("getPlanPricing omits a plan whose price id fails to resolve, keeps the rest", async () => {
+test("getPlans includes a tier even when its price id fails to resolve - just without amount/currency", async () => {
   process.env.STRIPE_PRICE_ID_PRO = "price_pro_test";
   process.env.STRIPE_PRICE_ID_FAMILY = "price_missing";
   mock.method(stripe.prices, "retrieve", async (id) => {
@@ -208,7 +234,22 @@ test("getPlanPricing omits a plan whose price id fails to resolve, keeps the res
     return { unit_amount: 700, currency: "cad" };
   });
 
-  const pricing = await getPlanPricing(stripe);
+  const plans = await getPlans(stripe);
+  const pro = plans.find((p) => p.id === "pro");
+  const family = plans.find((p) => p.id === "family");
 
-  assert.deepEqual(pricing, { pro: { amount: 700, currency: "cad" } });
+  assert.deepEqual(pro, {
+    id: "pro",
+    priceId: "price_pro_test",
+    seatCap: 2,
+    features: { netWorth: true, historyMonths: null },
+    amount: 700,
+    currency: "cad",
+  });
+  assert.deepEqual(family, {
+    id: "family",
+    priceId: "price_missing",
+    seatCap: 5,
+    features: { netWorth: true, historyMonths: null },
+  });
 });

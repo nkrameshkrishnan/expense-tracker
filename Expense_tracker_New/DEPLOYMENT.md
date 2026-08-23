@@ -322,8 +322,7 @@ for a bug report.
 ## Phase 8 — Frontend configuration
 
 1. Open `Expense_tracker_New/frontend/assets/config.js` in this repo.
-2. Fill in every blank export using your Phase 2 stack outputs and Phase 3
-   Stripe price IDs:
+2. Fill in every blank export using your Phase 2 stack outputs:
    ```js
    export const API_ENDPOINT = "<ApiUrl output>";
    export const COGNITO_USER_POOL_ID = "<UserPoolId output>";
@@ -331,15 +330,12 @@ for a bug report.
    export const COGNITO_DOMAIN =
      "<UserPoolDomain output, without the https:// prefix>";
    export const COGNITO_REGION = "<your AWS region, e.g. us-east-1>";
-   export const STRIPE_PRICE_ID_PRO = "<price_... from Phase 3>";
-   export const STRIPE_PRICE_ID_FAMILY = "<price_... from Phase 3>";
    ```
-   **These three Stripe price IDs must be byte-identical to the ones you
-   set as SAM deploy parameters in Phase 6** — `handler.js` validates a
-   Checkout Session's `priceId` against the backend's own three
-   (`plans.js`) before creating it, so a mismatch here fails loudly (a
-   clean rejected request) rather than silently — but it's still a
-   misconfiguration only you catch by matching these carefully.
+   No Stripe price IDs go here — the frontend fetches the plan list (id,
+   seats, features, Stripe price id, live amount) from the backend's
+   `getPlans` action at runtime, reading the same `StripePriceIdPro`/
+   `StripePriceIdFamily` values you set as SAM deploy parameters in Phase 6.
+   There is nothing to keep in sync by hand between frontend and backend.
 3. `COGNITO_DOMAIN` is used bare (no `https://`) by
    `frontend/assets/app.js`'s `cognitoAuthorizeUrl()` — copy just the
    hostname portion of the `UserPoolDomain` output.

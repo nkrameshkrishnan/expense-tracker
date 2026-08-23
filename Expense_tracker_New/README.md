@@ -192,25 +192,21 @@ the Stripe or AWS consoles, and the feature is either broken or quietly
 wrong without them. Nothing in this repo can detect that they were skipped,
 so treat them as part of the deploy rather than as optional polish.
 
-**1. Create the two Products/Prices, then transcribe each price id twice.**
-Create a recurring monthly Price for Pro and Family in the Stripe
-Dashboard — personal-finance app, not a team tool, so there is no
-unlimited-seat Business tier. Each resulting `price_...` id has to be
-copied into **two independent places**:
+**1. Create the two Products/Prices, then set them as SAM deploy
+parameters.** Create a recurring monthly Price for Pro and Family in the
+Stripe Dashboard — personal-finance app, not a team tool, so there is no
+unlimited-seat Business tier. Each resulting `price_...` id becomes a SAM
+deploy parameter (`StripePriceIdPro` / `StripePriceIdFamily`), which
+`backend/src/plans.js`'s `planFromPriceId` maps back to a plan name when
+the webhook arrives.
 
-- `frontend/assets/config.js` — `STRIPE_PRICE_ID_PRO` / `_FAMILY`, which
-  is what the Billing panel's plan buttons send up as `priceId`.
-- the SAM deploy parameters `StripePriceIdPro` / `StripePriceIdFamily`,
-  which is what `planFromPriceId` (`backend/src/plans.js`) maps back to a
-  plan name when the webhook arrives.
-
-Nothing keeps those two copies in sync. They must match exactly, and they
-must come from the **same mode** — a test-mode id on one side and a
-live-mode id on the other is the easiest way to break this feature.
-`handler.js` validates the incoming `priceId` against the backend's own
-two before creating a Checkout Session, so a mismatch fails the request
-outright instead of charging a card the webhook then cannot interpret; the
-failure is loud, but it is still a misconfiguration only you can fix.
+That's the **only** place these ids live. The frontend has no copy of its
+own to fall out of sync with it — `getPlans` (`backend/src/routes/billing.js`)
+reads the same env vars and hands the price id to the Billing panel/signup
+gate at runtime, so there's nothing to keep matched by hand across a
+frontend/backend boundary. What still matters: use the **same mode**
+(test vs. live) for these ids as everything else in Phase 3 — a test-mode
+Price alongside live-mode secrets is the easiest way to break checkout.
 
 **2. Register the webhook endpoint and copy its signing secret.** In
 Stripe → Developers → Webhooks, add an endpoint pointing at the stack's

@@ -1,47 +1,53 @@
-/* Checkout/Portal session creation, plus live plan pricing. The first two
+/* Checkout/Portal session creation, plus the live plan list. The first two
    assume they're called inside an already tenant-scoped transaction (see
    db.js's runInTenantTransaction), same trust boundary as every other
    routes/*.js module - tenantId is passed explicitly (rather than read
    back out of the DB) because the caller already has it from the
    verified JWT, and the customer-lookup UPDATE below needs to target the
-   right row under RLS regardless. getPlanPricing is different: it isn't
-   tenant data at all (the same two prices for every tenant), so it
-   takes no execute/tenantId and needs no transaction. */
+   right row under RLS regardless. getPlans is different: it isn't tenant
+   data at all (the same plan list for every tenant), so it takes no
+   execute/tenantId and needs no transaction. */
 
-/** Live Stripe Price amounts for the two paid plans, keyed by plan id.
-    frontend/assets/app.js's PLANS array carries static display copy
-    ("$7"/mo") that can drift from whatever a Price is actually configured
-    for in the Stripe Dashboard - this is the authoritative source the
-    frontend prefers when it can reach it, falling back to that static
-    copy otherwise (no deployment, a network hiccup, etc). Looks up only
-    whichever price ids are actually configured for THIS deployment (a
-    dev/test env may have some or none set) and skips one that fails to
-    resolve rather than failing the whole response - a bad id for one
-    plan shouldn't take down the other. */
-export async function getPlanPricing(stripe) {
-  const ids = {
-    pro: process.env.STRIPE_PRICE_ID_PRO,
-    family: process.env.STRIPE_PRICE_ID_FAMILY,
+import { SEAT_CAPS, FEATURES } from "../plans.js";
+
+/** The full plan list - one entry per tier in SEAT_CAPS/FEATURES (plans.js
+    is the only place a tier is declared to exist; this just adds each
+    one's Stripe price id and live amount on top), in SEAT_CAPS' own
+    insertion order. This is the single source frontend/assets/app.js
+    renders Billing and the signup plan gate from, instead of keeping its
+    own independent copy of which tiers exist and what they enforce - so
+    seatCap/features can never silently drift out of sync with what's
+    actually enforced server-side. priceId is null for a tier with no
+    configured Stripe price (Free, or a dev/test env missing one); amount/
+    currency are simply absent if that price id fails to resolve - a bad
+    Stripe id shouldn't remove the whole tier, since seatCap/features are
+    already known locally regardless of Stripe being reachable. */
+export async function getPlans(stripe) {
+  const priceIds = {
+    pro: process.env.STRIPE_PRICE_ID_PRO || null,
+    family: process.env.STRIPE_PRICE_ID_FAMILY || null,
   };
-  const entries = await Promise.all(
-    Object.entries(ids)
-      .filter(([, id]) => id)
-      .map(async ([plan, id]) => {
-        try {
-          const price = await stripe.prices.retrieve(id);
-          return [
-            plan,
-            { amount: price.unit_amount, currency: price.currency },
-          ];
-        } catch (err) {
-          console.error(
-            `[billing] could not resolve price for ${plan}: ${err.message}`,
-          );
-          return null;
-        }
-      }),
+  return Promise.all(
+    Object.keys(SEAT_CAPS).map(async (id) => {
+      const priceId = priceIds[id] || null;
+      const plan = {
+        id,
+        priceId,
+        seatCap: SEAT_CAPS[id],
+        features: FEATURES[id],
+      };
+      if (!priceId) return plan;
+      try {
+        const price = await stripe.prices.retrieve(priceId);
+        return { ...plan, amount: price.unit_amount, currency: price.currency };
+      } catch (err) {
+        console.error(
+          `[billing] could not resolve price for ${id}: ${err.message}`,
+        );
+        return plan;
+      }
+    }),
   );
-  return Object.fromEntries(entries.filter(Boolean));
 }
 
 export async function createCheckoutSession(
