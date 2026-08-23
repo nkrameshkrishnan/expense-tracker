@@ -229,10 +229,15 @@ function showGate(message) {
 
   const { domain, clientId } = getCognitoConfig();
   if (!domain || !clientId) {
+    // The exact fix (COGNITO_DOMAIN/COGNITO_CLIENT_ID in config.js) is
+    // real, but meaningless to whoever is actually looking at the sign-in
+    // screen — keep it in the console for whoever's debugging the
+    // deployment, and keep the on-screen copy in plain language.
+    console.error(
+      "Cognito not configured: set COGNITO_DOMAIN and COGNITO_CLIENT_ID in assets/config.js (see backend/template.yaml's outputs).",
+    );
     $("#gsi-button").innerHTML =
-      `<p class="gate-error">No Cognito configuration found. Set COGNITO_DOMAIN and
-       COGNITO_CLIENT_ID in assets/config.js (see backend/template.yaml's outputs),
-       then reload.</p>`;
+      `<p class="gate-error">Sign-in isn't set up for this site yet. Please check back later.</p>`;
     return;
   }
   $("#gsi-button").innerHTML =
