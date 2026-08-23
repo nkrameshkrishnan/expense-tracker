@@ -3331,7 +3331,6 @@ function renderBalanceForm(copyFrom) {
 /* ====================================================================== DATA */
 function renderData() {
   const live = state.store.kind === "api";
-  const who = state.store.user?.email || "";
   const members = state.members || [];
   const invites = state.invites || [];
   const tenants = state.tenants || [];
@@ -3340,24 +3339,6 @@ function renderData() {
 
   view.innerHTML = `
   <div class="head"><div><h1>Data</h1><p class="sub">Where your data lives, and how to get it in and out.</p></div></div>
-
-  <div class="eyebrow">Ledger API connection</div>
-  <div class="panel stack">
-    ${
-      live
-        ? `<p class="note" style="margin:0">Status: <b>connected \u2014 reading and writing your Ledger account live${who ? " as " + esc(who) : ""}</b>.
-      Access: <b>Google sign-in via Cognito</b>, verified on every request by the API and by row-level
-      security scoped to your tenant \u2014 there is no separate token to manage here.</p>
-    <div class="actions">
-      <button class="btn ghost" id="reload">Reload from server</button>
-    </div>`
-        : `<p class="note" style="margin:0">Status: <b style="color:var(--danger,#c00)">Unable to connect to your account right now.</b>
-      This usually resolves on its own \u2014 try again in a moment. If it continues, contact support.</p>
-    <div class="actions">
-      <button class="btn" id="retry-connect">Try again</button>
-    </div>`
-    }
-  </div>
 
   <div class="eyebrow">Export</div>
   <div class="panel stack">
@@ -3475,25 +3456,6 @@ function renderData() {
     <span class="muted">Export first \u2014 this cannot be undone.</span>
   </div></div>`;
 
-  // No manual endpoint entry - the backend is always build-configured for
-  // a real deployment. If it can't be reached, that's a connection error
-  // to recover from, not a raw URL field to hand-configure (see the
-  // "not live" branch of the panel above).
-  $("#retry-connect")?.addEventListener("click", async () => {
-    const done = await withBusy("Reconnecting", async () => {
-      state.store = await openStore(notice);
-      if (!isRemoteStore(state.store))
-        throw new Error("still could not reach the API");
-      await refresh();
-      await state.store.ensureAllYearsLoaded?.();
-      state.rows = await state.store.list();
-    });
-    if (done) {
-      notice(`Connected \u2014 ${state.rows.length} rows loaded.`, "ok");
-      renderData();
-    }
-  });
-
   $("#tenant-switcher")?.addEventListener("change", (e) => {
     switchActiveTenant(e.target.value);
   });
@@ -3532,17 +3494,6 @@ function renderData() {
         renderData();
       }
     });
-  });
-
-  $("#reload")?.addEventListener("click", async () => {
-    const done = await withBusy("Reloading from the sheet", async () => {
-      state.store.cache = null;
-      await refresh();
-    });
-    if (done) {
-      renderData();
-      notice(`Reloaded ${state.rows.length} rows.`, "ok");
-    }
   });
 
   view.querySelectorAll("[data-assign]").forEach(
@@ -3811,7 +3762,7 @@ function renderProfile() {
     <p class="note" style="margin:0">Signed in as <b>${esc(email || "unknown")}</b>.</p>
     <p class="note" style="margin:0">Your role: <b>${esc(myRole)}</b>. ${esc(roleInfo)}</p>
     <p class="note" style="margin:0">Sign-in is Google-only, via Cognito — there is no separate Ledger password to set or reset.</p>`
-        : `<p class="note" style="margin:0">This browser isn't signed in to a Ledger account — data is stored locally only. Connect from Data &rarr; Ledger API connection.</p>`
+        : `<p class="note" style="margin:0">This browser isn't signed in to a Ledger account — data is stored locally only, in this browser.</p>`
     }
   </div>
 
