@@ -128,6 +128,7 @@ Phase 6 with those).
    | Parameter `StripeWebhookSecret`      | `whsec_placeholder` for now                                                     |
    | Parameter `StripePriceIdPro`         | `price_placeholder_pro` for now                                                 |
    | Parameter `StripePriceIdFamily`      | `price_placeholder_family` for now                                              |
+   | Parameter `BedrockModelId`           | leave the default unless you need a different region/model                      |
    | Parameter `SesFromAddress`           | a real email you can verify later, e.g. `billing@yourdomain.com`                |
    | Confirm changes before deploy        | `Y`                                                                             |
    | Allow SAM CLI IAM role creation      | `Y`                                                                             |
@@ -149,6 +150,14 @@ Phase 6 with those).
    your actual served URL looks like once you check it in Phase 8; you can
    redeploy this one parameter later if you got it wrong (Cognito rejects
    sign-in with a mismatched redirect otherwise).
+
+**Bedrock model access**: unlike the other parameters above, `BedrockModelId`
+needs the model itself _enabled_ for your account in this region before
+`ExtractFunction` can call it — AWS Console → Bedrock → Model access,
+request access to the Anthropic models if you haven't already. This is
+a real thing to verify, not a formality: a request against a model your
+account hasn't been granted access to fails at call time, not at deploy
+time, so nothing here catches it early.
 
 3. Deploy takes **10-15 minutes** the first time (Aurora Serverless v2
    cluster creation is the slow part). Watch for `Successfully created/

@@ -51,6 +51,14 @@ Parameters:
     Type: String
   StripePriceIdFamily:
     Type: String
+  BedrockModelId:
+    Type: String
+    Default: anthropic.claude-3-5-sonnet-20241022-v2:0
+    Description: >-
+      Bedrock model id for AI transaction extraction (extract.js). Model
+      availability varies by region and requires enabling model access in
+      the AWS account first - verify both before deploying to a new
+      region (see this feature's spec, Open Questions #1-2).
   SesFromAddress:
     Type: String
     Description: Verified SES sender address for billing notification emails.
@@ -116,6 +124,48 @@ Resources:
           Properties:
             ApiId: !Ref HttpApi
             Path: /data
+            Method: OPTIONS
+
+  ExtractFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: extract.handler
+      Timeout: 25 # under API Gateway's hard 29s integration ceiling - see this feature's spec, Architecture §2
+      Environment:
+        Variables:
+          RATE_LIMIT_TABLE: !Ref RateLimitTable
+          BEDROCK_MODEL_ID: !Ref BedrockModelId
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - rds-data:ExecuteStatement
+                - rds-data:BeginTransaction
+                - rds-data:CommitTransaction
+                - rds-data:RollbackTransaction
+              Resource: !GetAtt DbCluster.DBClusterArn
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref DbSecret
+            - Effect: Allow
+              Action: dynamodb:UpdateItem
+              Resource: !GetAtt RateLimitTable.Arn
+            - Effect: Allow
+              Action: bedrock:InvokeModel
+              Resource: !Sub arn:aws:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}
+      Events:
+        Post:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /extract
+            Method: POST
+        Options:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /extract
             Method: OPTIONS
 
   PostConfirmationFunction:
