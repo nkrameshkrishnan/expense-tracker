@@ -18,6 +18,7 @@ const money0 = (v) =>
   new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: currentCurrency(),
+    currencyDisplay: "narrowSymbol",
     maximumFractionDigits: 0,
   }).format(v);
 

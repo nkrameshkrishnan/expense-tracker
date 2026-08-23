@@ -9,6 +9,7 @@ import {
   currentYear,
   normalise,
   formatMoney,
+  currentCurrency,
 } from "./store.js";
 
 /** SheetJS is 930KB - roughly 5x this app's own code - and was previously
@@ -244,7 +245,7 @@ export async function exportWorkbook(rows, budget) {
       "Category",
       "Subcategory",
       "Description",
-      "Amount (CAD)",
+      `Amount (${currentCurrency()})`,
       "Payment Method",
       "Account",
       "Recurring?",

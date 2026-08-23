@@ -129,6 +129,7 @@ export function formatMoney(n) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: _currency,
+    currencyDisplay: "narrowSymbol",
   }).format(n);
 }
 

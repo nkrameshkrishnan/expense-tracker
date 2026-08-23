@@ -721,6 +721,9 @@ async function refresh(reentered = false) {
     status: "active",
   };
   setCurrentCurrency(state.tenant.currency || "CAD");
+  const headerCurrency = $("#header-currency");
+  if (headerCurrency)
+    headerCurrency.textContent = `· ${state.tenant.currency || "CAD"}`;
   state.userEmail = (await state.store.getUserEmail?.()) || null;
   state.tenants = (await state.store.getMyTenants?.()) || [];
   // Resolve which tenant this session is actively scoped to. "Never set"
