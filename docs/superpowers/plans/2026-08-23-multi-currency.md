@@ -208,14 +208,12 @@ alter table tenants add column currency text not null default 'CAD';
 ```
 ````
 
-````
-
 - [ ] **Step 8: Commit**
 
 ```bash
 git add Expense_tracker_New/db/schema.sql Expense_tracker_New/backend/src/routes/tenants.js Expense_tracker_New/backend/test/tenants-route.test.js Expense_tracker_New/DEPLOYMENT.md
 git commit -m "feat: add tenant currency column and validation/mutation functions"
-````
+```
 
 ---
 
