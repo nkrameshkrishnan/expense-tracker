@@ -17,6 +17,7 @@ create table tenants (
   name        text not null,
   plan        text not null default 'free',
   status      text not null default 'active', -- active | past_due
+  currency    text not null default 'CAD', -- CAD | USD | EUR | GBP | INR | AUD - display only, see routes/tenants.js's CURRENCIES
   stripe_customer_id     text,
   stripe_subscription_id text,
   created_at  timestamptz not null default now()

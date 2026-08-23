@@ -6,6 +6,35 @@
 
 import { SEAT_CAPS } from "../plans.js";
 
+/** The six currencies this app formats amounts in - a curated list, not
+    the full ISO 4217 set (~180 codes), since most would never actually
+    be used and a short list is easy to keep correctly formatted (see
+    frontend/assets/store.js's formatMoney). Extending this list later is
+    a one-line addition here AND in store.js's matching CURRENCIES export -
+    keep them in sync. */
+export const CURRENCIES = ["CAD", "USD", "EUR", "GBP", "INR", "AUD"];
+
+/** Throws if `currency` isn't one of CURRENCIES. Mirrors this file's
+    sibling validation pattern (handler.js's assertKnownPriceId): a
+    client-supplied value gets checked against a known-good list before
+    it's trusted, rather than stored/used as-is. */
+export function assertKnownCurrency(currency) {
+  if (!CURRENCIES.includes(currency))
+    throw new Error(`Unknown currency: ${currency}`);
+}
+
+/** Sets the current tenant's display currency. No conversion happens
+    anywhere - this only changes how already-stored amounts are
+    formatted on the frontend (see this feature's spec). Caller must
+    validate with assertKnownCurrency first; this function trusts its
+    input. */
+export async function setCurrency(execute, currency) {
+  await execute(
+    `update tenants set currency = :currency where id = cast(current_setting('app.tenant_id', true) as uuid)`,
+    { currency },
+  );
+}
+
 export async function getMembership(execute, userSub) {
   const rows = await execute.rows(
     `select role from tenant_users where user_sub = :userSub`,
