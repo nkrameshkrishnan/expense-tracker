@@ -240,3 +240,22 @@ alter table debts force row level security;
 create policy debts_isolation on debts
   using (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
   with check (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
+
+-- --------------------------------------------------------------- ai_imports
+-- One row per extraction attempt that reached Bedrock and got a response
+-- back (see backend/src/extract.js) - this is a cost-control record, not
+-- a log of successful imports. A request that fails before Bedrock
+-- responds (throttled, service error) never reaches the insert that
+-- creates one of these rows.
+create table ai_imports (
+  id          bigint generated always as identity primary key,
+  tenant_id   uuid not null default nullif(current_setting('app.tenant_id', true), '')::uuid references tenants(id) on delete cascade,
+  created_at  timestamptz not null default now()
+);
+create index ai_imports_tenant_created_idx on ai_imports (tenant_id, created_at);
+
+alter table ai_imports enable row level security;
+alter table ai_imports force row level security;
+create policy ai_imports_isolation on ai_imports
+  using (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+  with check (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
