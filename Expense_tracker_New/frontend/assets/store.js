@@ -60,18 +60,12 @@ export const PAYMENTS = [
   "Pre-authorized Debit",
   "Other",
 ];
-export const ACCOUNTS = [
-  "CIBC Chequing",
-  "WealthSimple Chequing",
-  "Savings",
-  "Visa",
-  "Mastercard",
-  "Amex",
-  "WealthSimple TFSA",
-  "WealthSimple RRSP",
-  "WealthSimple Non-registered",
-  "Cash Wallet",
-];
+// Generic account-type labels, not any real bank/brokerage's names - this
+// app is multi-tenant (see NET_WORTH_ACCOUNTS/BUILTIN.person above), so a
+// built-in default list is every new tenant's starting point, not one
+// household's actual accounts. Real, specific accounts come from what a
+// tenant adds via "+ New" (see app.js's addCustom/listFor).
+export const ACCOUNTS = ["Checking", "Savings", "Credit Card", "Cash"];
 export const MONTHS = [
   "Jan",
   "Feb",
