@@ -222,9 +222,9 @@ function showGate(message) {
       <h1 class="gate-title">Ledger</h1>
       <p class="gate-sub">${esc(message || "Sign in with Google to continue.")}</p>
       <div id="gsi-button"></div>
-      <p class="gate-note">Access is verified server-side: the API checks your signed
-        Cognito token on every request, and Postgres row-level security scopes every
-        query to your tenant. Signing in here does not grant access on its own.</p>
+      <p class="gate-note">Every request is checked on our servers, and your
+        household's data is always kept separate from every other household's.
+        Signing in here does not grant access on its own.</p>
     </div>`;
 
   const { domain, clientId } = getCognitoConfig();
@@ -810,7 +810,7 @@ function renderDashboard() {
 
   if (typeof Chart === "undefined") {
     notice(
-      "Chart.js did not load, so charts are unavailable. Everything else works.",
+      "Charts couldn't load. Everything else on this page still works.",
       "bad",
     );
     return;
@@ -3098,8 +3098,8 @@ function renderBalanceForm(copyFrom) {
   </div>
 
   <p class="note"><b>Import file\u2026</b> loads a <code>.json</code> or <code>.csv</code> from your machine
-    (columns <code>date, account, owner, kind, balance</code>). It is read in the browser and written straight
-    to your sheet &mdash; never uploaded, never stored in the repository.</p>
+    (columns <code>date, account, owner, kind, balance</code>). It's read in your browser, then saved to
+    your Ledger account the same way as anything you enter by hand.</p>
   <p class="note">Enter liabilities as positive numbers &mdash; a $500 card balance is <code>500</code>, and it is
     subtracted from net worth automatically. Balances never affect your income, expense or budget figures.</p>`;
 
@@ -3345,8 +3345,8 @@ function renderData() {
     <input type="file" id="file" accept=".xlsx,.xls,.csv">
     <div class="actions"><label><input type="checkbox" id="replace"> Replace everything first</label></div>
     <div id="imp" class="note"></div>
-    <p class="note">Needs a flat table with at least <code>Date</code> and <code>Amount</code> columns. Rows are
-    sent to the API in batches of 500.</p>
+    <p class="note">Needs a flat table with at least <code>Date</code> and <code>Amount</code> columns. Large
+    files are uploaded automatically in the background, a little at a time.</p>
   </div>
 
   <div class="eyebrow">People</div>
@@ -3566,7 +3566,7 @@ function renderData() {
       const done = await withBusy(`Writing ${rows.length} rows`, async () => {
         if (replacing) await state.store.clear(); // the same flag the confirmation above described
         await state.store.bulkAdd(rows, (n, total) => {
-          notice(`Writing to the sheet\u2026 ${n} of ${total} rows`);
+          notice(`Saving\u2026 ${n} of ${total} rows`);
         });
         await refresh();
       });
@@ -3592,7 +3592,7 @@ function renderData() {
     )
       return;
     if (!confirm("Really sure? Export a backup first if you have not.")) return;
-    const done = await withBusy("Clearing the sheet", async () => {
+    const done = await withBusy("Deleting your transactions", async () => {
       await state.store.clear();
       await refresh();
     });
@@ -3757,7 +3757,7 @@ function renderProfile() {
         ? `
     <p class="note" style="margin:0">Signed in as <b>${esc(email || "unknown")}</b>.</p>
     <p class="note" style="margin:0">Your role: <b>${esc(myRole)}</b>. ${esc(roleInfo)}</p>
-    <p class="note" style="margin:0">Sign-in is Google-only, via Cognito — there is no separate Ledger password to set or reset.</p>`
+    <p class="note" style="margin:0">Sign-in is Google-only — there's no separate Ledger password to set or reset.</p>`
         : `<p class="note" style="margin:0">Not signed in to a Ledger account.</p>`
     }
   </div>
@@ -3823,10 +3823,10 @@ document.querySelectorAll("#tabs button").forEach(
 /* Staged, time-based messages for the boot-loading overlay - independent of
    store.js's actual retry count, so this needs no wiring through several
    layers to know "which attempt" is in flight. A cold sign-in can
-   legitimately take up to ~13 seconds (7 retries against a cold Apps Script
-   deployment, worst case), and a silent unlabeled spinner for that whole
-   window is indistinguishable from a frozen page to a real person watching
-   it - a direct report confirmed exactly that impression. */
+   legitimately take several seconds (retries against a cold Lambda/Aurora
+   start, worst case), and a silent unlabeled spinner for that whole window
+   is indistinguishable from a frozen page to a real person watching it - a
+   direct report confirmed exactly that impression. */
 let _bootMsgTimers = [];
 function startBootMessages() {
   stopBootMessages();
@@ -3836,7 +3836,7 @@ function startBootMessages() {
     [0, ""],
     [1800, "Connecting\u2026"],
     [4500, "Still connecting \u2014 first sign-in can take a little longer"],
-    [8000, "Waking up the sheet \u2014 almost there"],
+    [8000, "Almost there \u2014 waking up your account"],
   ];
   _bootMsgTimers = stages.map(([delay, text]) =>
     setTimeout(() => {

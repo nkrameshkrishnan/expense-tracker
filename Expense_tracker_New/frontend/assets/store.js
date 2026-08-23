@@ -335,8 +335,13 @@ class ApiStore {
         await sleep(500 * attempt);
         return this._get(opts, attempt + 1, retriedWithoutTenant);
       }
+      // networkErr.message is a raw browser string ("Failed to fetch" and
+      // similar) - meaningless to whoever is reading the banner it ends up
+      // in. Keep it in the console for debugging; the thrown message stays
+      // plain language, since callers show it to the user as-is.
+      console.error(`[store] GET failed: ${networkErr.message}`);
       throw new Error(
-        `Could not reach the API (${networkErr.message}). Check your connection.`,
+        "Couldn't reach your Ledger account. Check your connection and try again.",
       );
     }
     if (res.status === 401) {
@@ -354,10 +359,14 @@ class ApiStore {
         await sleep(500 * attempt);
         return this._get(opts, attempt + 1, retriedWithoutTenant);
       }
-      throw new Error(`API responded ${res.status}.`);
+      console.error(`[store] GET responded ${res.status}`);
+      throw new Error(
+        "Something went wrong loading your data. Try again in a moment.",
+      );
     }
     const data = await res.json();
-    if (!data.ok) throw new Error(data.error || "API refused the request.");
+    if (!data.ok)
+      throw new Error(data.error || "Something went wrong. Try again.");
     return data;
   }
 
@@ -385,8 +394,11 @@ class ApiStore {
         await sleep(600);
         return this._post(payload, attempt + 1, retriedWithoutTenant);
       }
+      // See the matching comment in _get() above - keep the raw browser
+      // error out of what the user actually sees.
+      console.error(`[store] POST failed: ${networkErr.message}`);
       throw new Error(
-        `Could not reach the API (${networkErr.message}). Check your connection and try again.`,
+        "Couldn't reach your Ledger account. Check your connection and try again.",
       );
     }
     if (res.status === 401) {
@@ -407,10 +419,14 @@ class ApiStore {
         await sleep(600);
         return this._post(payload, attempt + 1, retriedWithoutTenant);
       }
-      throw new Error(`API responded ${res.status}.`);
+      console.error(`[store] POST responded ${res.status}`);
+      throw new Error(
+        "Something went wrong saving your change. Try again in a moment.",
+      );
     }
     const data = await res.json();
-    if (!data.ok) throw new Error(data.error || "Write rejected by the API.");
+    if (!data.ok)
+      throw new Error(data.error || "Something went wrong. Try again.");
     return data;
   }
 
@@ -752,10 +768,11 @@ export async function openStore(onNotice) {
       await s.ping();
       return s;
     } catch (e) {
-      onNotice?.(
-        `Could not connect to your Ledger account: ${e.message}`,
-        "bad",
-      );
+      // e.message is already user-appropriate (see _get/_post above), but
+      // stitching it onto a lead-in phrase here reads redundant ("Could not
+      // connect...: Couldn't reach..."). Log the detail, show one message.
+      console.error(`[store] openStore failed: ${e.message}`);
+      onNotice?.("Could not connect to your Ledger account.", "bad");
       return new DisconnectedStore();
     }
   }
