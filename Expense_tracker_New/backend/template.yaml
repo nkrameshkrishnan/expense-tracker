@@ -51,8 +51,6 @@ Parameters:
     Type: String
   StripePriceIdFamily:
     Type: String
-  StripePriceIdBusiness:
-    Type: String
   SesFromAddress:
     Type: String
     Description: Verified SES sender address for billing notification emails.
@@ -73,7 +71,6 @@ Globals:
         STRIPE_SECRET_KEY: !Ref StripeSecretKey
         STRIPE_PRICE_ID_PRO: !Ref StripePriceIdPro
         STRIPE_PRICE_ID_FAMILY: !Ref StripePriceIdFamily
-        STRIPE_PRICE_ID_BUSINESS: !Ref StripePriceIdBusiness
         SES_FROM_ADDRESS: !Ref SesFromAddress
 
 Resources:

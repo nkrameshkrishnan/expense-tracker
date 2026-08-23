@@ -127,7 +127,6 @@ Phase 6 with those).
    | Parameter `StripeWebhookSecret`      | `whsec_placeholder` for now                                                     |
    | Parameter `StripePriceIdPro`         | `price_placeholder_pro` for now                                                 |
    | Parameter `StripePriceIdFamily`      | `price_placeholder_family` for now                                              |
-   | Parameter `StripePriceIdBusiness`    | `price_placeholder_business` for now                                            |
    | Parameter `SesFromAddress`           | a real email you can verify later, e.g. `billing@yourdomain.com`                |
    | Confirm changes before deploy        | `Y`                                                                             |
    | Allow SAM CLI IAM role creation      | `Y`                                                                             |
@@ -175,17 +174,16 @@ updated stack` at the end.
 
 You need `ApiUrl` from Phase 2 before you can do step 2 below.
 
-1. **Create the three Prices.** In the Stripe Dashboard (test mode to
-   start): **Product catalog → + Add product**. Create three separate
-   products (or one product with three prices — either works, but three
+1. **Create the two Prices.** In the Stripe Dashboard (test mode to
+   start): **Product catalog → + Add product**. Create two separate
+   products (or one product with two prices — either works, but two
    separate products is simpler to read later), each with a **recurring
    monthly** price:
    - Pro
    - Family
-   - Business
 
    For each, click into the price and copy its **API ID** — it looks like
-   `price_1AbCdEfGhIjKlMnOp`. You'll need all three in Phase 6.
+   `price_1AbCdEfGhIjKlMnOp`. You'll need both in Phase 6.
 
    **Write these down now** — you'll enter each one in TWO places in
    Phase 6 and Phase 8, and they must match exactly and come from the
@@ -277,13 +275,12 @@ sam deploy \
     StripeSecretKey=<sk_test_... from Phase 3 step 5> \
     StripeWebhookSecret=<whsec_... from Phase 3 step 2> \
     StripePriceIdPro=<price_... from Phase 3 step 1> \
-    StripePriceIdFamily=<price_... from Phase 3 step 1> \
-    StripePriceIdBusiness=<price_... from Phase 3 step 1>
+    StripePriceIdFamily=<price_... from Phase 3 step 1>
 ```
 
 Because you saved arguments to `samconfig.toml` in Phase 2, this reuses
 your prior stack name/region/other-parameter values automatically — you
-only need to override the five that changed. This redeploy is much faster
+only need to override the four that changed. This redeploy is much faster
 than the first (~2-3 minutes; no new infrastructure, just Lambda env vars).
 
 ---
@@ -336,7 +333,6 @@ for a bug report.
    export const COGNITO_REGION = "<your AWS region, e.g. us-east-1>";
    export const STRIPE_PRICE_ID_PRO = "<price_... from Phase 3>";
    export const STRIPE_PRICE_ID_FAMILY = "<price_... from Phase 3>";
-   export const STRIPE_PRICE_ID_BUSINESS = "<price_... from Phase 3>";
    ```
    **These three Stripe price IDs must be byte-identical to the ones you
    set as SAM deploy parameters in Phase 6** — `handler.js` validates a

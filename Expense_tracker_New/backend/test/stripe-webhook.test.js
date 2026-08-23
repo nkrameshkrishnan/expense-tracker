@@ -15,7 +15,6 @@ import {
 process.env.STRIPE_WEBHOOK_SECRET = "whsec_test";
 process.env.STRIPE_PRICE_ID_PRO = "price_pro_test";
 process.env.STRIPE_PRICE_ID_FAMILY = "price_family_test";
-process.env.STRIPE_PRICE_ID_BUSINESS = "price_business_test";
 
 afterEach(() => mock.restoreAll());
 

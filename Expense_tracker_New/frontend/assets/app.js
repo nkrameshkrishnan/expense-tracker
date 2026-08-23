@@ -18,11 +18,7 @@ import {
   NET_WORTH_ACCOUNTS,
   personColorIndex,
 } from "./store.js";
-import {
-  STRIPE_PRICE_ID_PRO,
-  STRIPE_PRICE_ID_FAMILY,
-  STRIPE_PRICE_ID_BUSINESS,
-} from "./config.js";
+import { STRIPE_PRICE_ID_PRO, STRIPE_PRICE_ID_FAMILY } from "./config.js";
 import {
   aggregate,
   money,
@@ -71,15 +67,17 @@ const state = {
 };
 
 /* ------------------------------------------------------------------ plans
-   The four pricing tiers, shown at signup (renderPlanGate) and again on the
-   Billing tab (renderBilling). Mirrors backend/src/plans.js's
-   SEAT_CAPS/FEATURES - nothing enforces the two copies matching, so a tier
-   added or changed on the server needs the same edit made here by hand.
-   The two renderers deliberately do not share markup/CSS: the signup gate
-   is a one-time, full-viewport decision (bigger cards, its own visual
-   weight), while the Billing tab is a page you return to, sitting alongside
-   this app's other panels - collapsing them into one component would make
-   whichever one changes next drag the other along with it. */
+   The three pricing tiers, shown at signup (renderPlanGate) and again on
+   the Billing tab (renderBilling). Personal-finance app, not a team tool -
+   Family is deliberately the top tier; there is no unlimited-seat
+   "Business" plan. Mirrors backend/src/plans.js's SEAT_CAPS/FEATURES -
+   nothing enforces the two copies matching, so a tier added or changed on
+   the server needs the same edit made here by hand. The two renderers
+   deliberately do not share markup/CSS: the signup gate is a one-time,
+   full-viewport decision (bigger cards, its own visual weight), while the
+   Billing tab is a page you return to, sitting alongside this app's other
+   panels - collapsing them into one component would make whichever one
+   changes next drag the other along with it. */
 const PLANS = [
   {
     id: "free",
@@ -110,16 +108,6 @@ const PLANS = [
     priceId: STRIPE_PRICE_ID_FAMILY,
     seats: "5 people",
     blurb: "Room for kids, parents, or a shared place.",
-    features: ["Full history, every year", "Net worth tracking"],
-  },
-  {
-    id: "business",
-    label: "Business",
-    amount: "$24",
-    period: "/mo CAD",
-    priceId: STRIPE_PRICE_ID_BUSINESS,
-    seats: "Unlimited people",
-    blurb: "For a team's books, not a household's.",
     features: ["Full history, every year", "Net worth tracking"],
   },
 ];

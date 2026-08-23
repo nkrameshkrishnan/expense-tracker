@@ -82,20 +82,20 @@ test("transactions round-trip: bulk insert, list, years, update, delete, clear",
       ]);
       assert.equal(inserted, 2);
 
-      const all = await tx.listTransactions(execute, {}, FEATURES.business);
+      const all = await tx.listTransactions(execute, {}, FEATURES.family);
       assert.equal(all.length, 2);
       for (const r of all) assert.equal(r.tenant_id, tenantId);
 
       // Covers finding I3: this ran `extract(year from date)::int` on every
       // GET /data, and the Data API's named-param parser reads `:int` as an
       // unbound bind param. The harness's execute shim reproduces that.
-      const years = await tx.listTransactionYears(execute, FEATURES.business);
+      const years = await tx.listTransactionYears(execute, FEATURES.family);
       assert.deepEqual(years, [2026, 2025]);
 
       const scoped = await tx.listTransactions(
         execute,
         { txYear: 2026 },
-        FEATURES.business,
+        FEATURES.family,
       );
       assert.equal(scoped.length, 1);
       assert.equal(Number(scoped[0].amount), 20);
@@ -111,13 +111,13 @@ test("transactions round-trip: bulk insert, list, years, update, delete, clear",
 
       await tx.deleteTransaction(execute, scoped[0].id);
       assert.equal(
-        (await tx.listTransactions(execute, {}, FEATURES.business)).length,
+        (await tx.listTransactions(execute, {}, FEATURES.family)).length,
         1,
       );
 
       await tx.clearTransactions(execute);
       assert.equal(
-        (await tx.listTransactions(execute, {}, FEATURES.business)).length,
+        (await tx.listTransactions(execute, {}, FEATURES.family)).length,
         0,
       );
     });
@@ -158,13 +158,13 @@ test("setBalances writes rows stamped with the caller's tenant_id", async () => 
         { account: "Chequing", amount: 1000, owner: "Ramesh", kind: "Asset" },
         { account: "Visa", amount: 250.5, owner: "Joint", kind: "Liability" },
       ]);
-      const rows = await balances.listBalances(execute, FEATURES.business);
+      const rows = await balances.listBalances(execute, FEATURES.family);
       assert.equal(rows.length, 2);
       for (const r of rows) assert.equal(r.tenant_id, tenantId);
 
       await balances.deleteBalanceDate(execute, "2026-02-28");
       assert.equal(
-        (await balances.listBalances(execute, FEATURES.business)).length,
+        (await balances.listBalances(execute, FEATURES.family)).length,
         0,
       );
     });
@@ -249,7 +249,7 @@ test("route writes land in the calling tenant only, never another one", async ()
     );
 
     const seenByA = await withTenant(client, tenantA, "a-sub", async (c) =>
-      tx.listTransactions(makeExecute(c), {}, FEATURES.business),
+      tx.listTransactions(makeExecute(c), {}, FEATURES.family),
     );
     assert.equal(seenByA.length, 1);
     assert.equal(seenByA[0].description, "A row");
@@ -258,7 +258,7 @@ test("route writes land in the calling tenant only, never another one", async ()
     // Belt and braces: read past RLS as the table owner would see it if the
     // default had stamped the wrong tenant.
     const seenByB = await withTenant(client, tenantB, "b-sub", async (c) =>
-      tx.listTransactions(makeExecute(c), {}, FEATURES.business),
+      tx.listTransactions(makeExecute(c), {}, FEATURES.family),
     );
     assert.equal(seenByB.length, 1);
     assert.equal(seenByB[0].description, "B row");

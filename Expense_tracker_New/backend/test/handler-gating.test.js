@@ -5,7 +5,6 @@ import { stripe } from "../src/stripe.js";
 
 process.env.STRIPE_PRICE_ID_PRO = "price_pro_test";
 process.env.STRIPE_PRICE_ID_FAMILY = "price_family_test";
-process.env.STRIPE_PRICE_ID_BUSINESS = "price_business_test";
 
 afterEach(() => mock.restoreAll());
 
@@ -47,11 +46,7 @@ test("assertKnownPriceId rejects an unrecognized price id without calling Stripe
 });
 
 test("assertKnownPriceId accepts each configured price id", () => {
-  for (const id of [
-    "price_pro_test",
-    "price_family_test",
-    "price_business_test",
-  ])
+  for (const id of ["price_pro_test", "price_family_test"])
     assert.doesNotThrow(() => assertKnownPriceId(id));
 });
 

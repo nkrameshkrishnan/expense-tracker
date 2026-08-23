@@ -181,7 +181,7 @@ test("createTransaction rejects a malformed record instead of storing it", async
 
     // Nothing above may have left a row behind.
     const rows = await withTenant(client, tenantId, "owner-sub", (c) =>
-      tx.listTransactions(makeExecute(c), {}, FEATURES.business),
+      tx.listTransactions(makeExecute(c), {}, FEATURES.family),
     );
     assert.equal(rows.length, 0);
   } finally {
@@ -234,7 +234,7 @@ test("a rejected bulk import leaves no partial rows behind", async () => {
     );
 
     const rows = await withTenant(client, tenantId, "owner-sub", (c) =>
-      tx.listTransactions(makeExecute(c), {}, FEATURES.business),
+      tx.listTransactions(makeExecute(c), {}, FEATURES.family),
     );
     assert.equal(rows.length, 0, "a half-imported file must not survive");
   } finally {
@@ -282,7 +282,7 @@ test("setBalances coerces amounts and kinds, rejects a blank account", async () 
       await balances.setBalances(execute, "2026-02-28", [
         { account: "Visa", amount: -250.555, owner: "Joint", kind: "Bogus" },
       ]);
-      const rows = await balances.listBalances(execute, FEATURES.business);
+      const rows = await balances.listBalances(execute, FEATURES.family);
       assert.equal(rows.length, 1);
       assert.equal(Number(rows[0].amount), 250.56); // abs + cents
       assert.equal(rows[0].kind, "Asset"); // unknown kind falls back

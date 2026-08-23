@@ -5,10 +5,10 @@
    back out of the DB) because the caller already has it from the
    verified JWT, and the customer-lookup UPDATE below needs to target the
    right row under RLS regardless. getPlanPricing is different: it isn't
-   tenant data at all (the same three prices for every tenant), so it
+   tenant data at all (the same two prices for every tenant), so it
    takes no execute/tenantId and needs no transaction. */
 
-/** Live Stripe Price amounts for the three paid plans, keyed by plan id.
+/** Live Stripe Price amounts for the two paid plans, keyed by plan id.
     frontend/assets/app.js's PLANS array carries static display copy
     ("$7"/mo") that can drift from whatever a Price is actually configured
     for in the Stripe Dashboard - this is the authoritative source the
@@ -17,12 +17,11 @@
     whichever price ids are actually configured for THIS deployment (a
     dev/test env may have some or none set) and skips one that fails to
     resolve rather than failing the whole response - a bad id for one
-    plan shouldn't take down the other two. */
+    plan shouldn't take down the other. */
 export async function getPlanPricing(stripe) {
   const ids = {
     pro: process.env.STRIPE_PRICE_ID_PRO,
     family: process.env.STRIPE_PRICE_ID_FAMILY,
-    business: process.env.STRIPE_PRICE_ID_BUSINESS,
   };
   const entries = await Promise.all(
     Object.entries(ids)
