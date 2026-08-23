@@ -10,6 +10,7 @@ import { stripe } from "../src/stripe.js";
 import {
   createCheckoutSession,
   createPortalSession,
+  getPlanPricing,
 } from "../src/routes/billing.js";
 
 afterEach(() => mock.restoreAll());
@@ -165,4 +166,57 @@ test("createPortalSession uses the tenant's existing Stripe customer id", async 
   } finally {
     await client.end();
   }
+});
+
+test("getPlanPricing returns live amounts for every configured price id", async () => {
+  process.env.STRIPE_PRICE_ID_PRO = "price_pro_test";
+  process.env.STRIPE_PRICE_ID_FAMILY = "price_family_test";
+  process.env.STRIPE_PRICE_ID_BUSINESS = "price_business_test";
+  mock.method(stripe.prices, "retrieve", async (id) => {
+    const byId = {
+      price_pro_test: { unit_amount: 700, currency: "cad" },
+      price_family_test: { unit_amount: 1300, currency: "cad" },
+      price_business_test: { unit_amount: 2400, currency: "cad" },
+    };
+    return byId[id];
+  });
+
+  const pricing = await getPlanPricing(stripe);
+
+  assert.deepEqual(pricing, {
+    pro: { amount: 700, currency: "cad" },
+    family: { amount: 1300, currency: "cad" },
+    business: { amount: 2400, currency: "cad" },
+  });
+});
+
+test("getPlanPricing omits a plan whose price id isn't configured", async () => {
+  process.env.STRIPE_PRICE_ID_PRO = "price_pro_test";
+  process.env.STRIPE_PRICE_ID_FAMILY = "";
+  process.env.STRIPE_PRICE_ID_BUSINESS = "";
+  mock.method(stripe.prices, "retrieve", async () => ({
+    unit_amount: 700,
+    currency: "cad",
+  }));
+
+  const pricing = await getPlanPricing(stripe);
+
+  assert.deepEqual(pricing, { pro: { amount: 700, currency: "cad" } });
+});
+
+test("getPlanPricing omits a plan whose price id fails to resolve, keeps the rest", async () => {
+  process.env.STRIPE_PRICE_ID_PRO = "price_pro_test";
+  process.env.STRIPE_PRICE_ID_FAMILY = "price_missing";
+  process.env.STRIPE_PRICE_ID_BUSINESS = "price_business_test";
+  mock.method(stripe.prices, "retrieve", async (id) => {
+    if (id === "price_missing") throw new Error("No such price");
+    return { unit_amount: 700, currency: "cad" };
+  });
+
+  const pricing = await getPlanPricing(stripe);
+
+  assert.deepEqual(pricing, {
+    pro: { amount: 700, currency: "cad" },
+    business: { amount: 700, currency: "cad" },
+  });
 });

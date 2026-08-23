@@ -63,6 +63,11 @@ const state = {
   balances: [],
   debts: [],
   filter: { q: "", cat: "", month: "", type: "" },
+  // Live Stripe amounts, fetched lazily once (see ensurePlanPricing) - null
+  // until then, at which point renderPlanGate/renderBilling prefer it over
+  // PLANS' static display copy. Never invalidated: prices essentially never
+  // change mid-session, and a reload naturally clears this.
+  planPricing: null,
 };
 
 /* ------------------------------------------------------------------ plans
@@ -118,6 +123,43 @@ const PLANS = [
     features: ["Full history, every year", "Net worth tracking"],
   },
 ];
+
+/** Formats a plan's price for display, preferring the live Stripe amount
+    (state.planPricing, cents) over PLANS' static "$7" copy above when it's
+    available - the two can drift once a Price is ever changed in the
+    Stripe Dashboard without this array being updated to match. Only the
+    number is derived live; the period ("/mo CAD") stays static copy, since
+    interval/currency are effectively fixed for a given deployment. */
+function formatPlanAmount(p) {
+  const live = state.planPricing?.[p.id];
+  if (!live) return p.amount;
+  const amount = live.amount / 100;
+  return `$${Number.isInteger(amount) ? amount : amount.toFixed(2)}`;
+}
+
+// Fetched once per session, lazily, the first time either renderPlanGate or
+// renderBilling needs it - same "load on first actual use" shape as
+// xlsxio.js's lazy SheetJS import, rather than adding a Stripe round trip
+// to every refresh() when most sessions never look at a plan price at all.
+// A rerender callback (rather than returning the data) lets both callers
+// pass "render again, now with live prices" without this function needing
+// to know which page is currently showing.
+let _planPricingInFlight = null;
+function ensurePlanPricing(onLoaded) {
+  if (state.planPricing) return;
+  if (!_planPricingInFlight) {
+    _planPricingInFlight = state.store
+      .getPlanPricing()
+      .then((pricing) => {
+        state.planPricing = pricing;
+      })
+      .catch(() => {}) // fail open - PLANS' static copy keeps showing
+      .finally(() => {
+        _planPricingInFlight = null;
+      });
+  }
+  _planPricingInFlight.then(onLoaded);
+}
 
 /* Shown once, the first time a brand-new household's owner signs in with no
    plan chosen yet. Keyed by nothing more than "has this browser seen it" -
@@ -311,7 +353,7 @@ function renderPlanGate(onFree) {
         <div class="plan-card${p.recommended ? " recommended" : ""}">
           ${p.recommended ? '<div class="plan-badge">Most households</div>' : ""}
           <div class="plan-name">${esc(p.label)}</div>
-          <div class="plan-price"><span class="plan-amount">${esc(p.amount)}</span><span class="plan-period">${esc(p.period)}</span></div>
+          <div class="plan-price"><span class="plan-amount">${esc(formatPlanAmount(p))}</span><span class="plan-period">${esc(p.period)}</span></div>
           <div class="plan-seats">${esc(p.seats)}</div>
           <p class="plan-blurb">${esc(p.blurb)}</p>
           <ul class="plan-features">
@@ -356,6 +398,14 @@ function renderPlanGate(onFree) {
         errEl.hidden = false;
       }
     });
+  });
+
+  // Renders immediately with PLANS' static prices above; if live ones
+  // arrive after, silently re-render with them - but only if this gate is
+  // still the thing on screen (the owner may have already picked a plan
+  // and moved on by the time the fetch resolves).
+  ensurePlanPricing(() => {
+    if (!gate.hidden) renderPlanGate(onFree);
   });
 }
 
@@ -3639,7 +3689,7 @@ function renderBilling() {
     <div class="billing-current-top">
       <div>
         <div class="billing-current-plan">${esc(planMeta.label)}</div>
-        <div class="muted">${esc(planMeta.seats)} &middot; <span class="num">${esc(planMeta.amount)}</span>${esc(planMeta.period)}</div>
+        <div class="muted">${esc(planMeta.seats)} &middot; <span class="num">${esc(formatPlanAmount(planMeta))}</span>${esc(planMeta.period)}</div>
       </div>
       <span class="status-pill ${statusClass}">${esc(statusLabel)}</span>
     </div>
@@ -3668,7 +3718,7 @@ function renderBilling() {
       <div class="billing-plan-card${isCurrent ? " current" : ""}${p.recommended && !isCurrent ? " recommended" : ""}">
         ${p.recommended && !isCurrent ? '<div class="billing-plan-tag">Most households</div>' : ""}
         <div class="billing-plan-name">${esc(p.label)}</div>
-        <div class="billing-plan-price"><span class="num">${esc(p.amount)}</span><span class="muted">${esc(p.period)}</span></div>
+        <div class="billing-plan-price"><span class="num">${esc(formatPlanAmount(p))}</span><span class="muted">${esc(p.period)}</span></div>
         <div class="muted" style="margin:2px 0 10px">${esc(p.seats)}</div>
         <p class="note" style="margin:0 0 10px">${esc(p.blurb)}</p>
         <ul class="billing-plan-features">
@@ -3723,6 +3773,14 @@ function renderBilling() {
     // Re-renders this same page's plan cards - resubscribing is just
     // choosing a plan again, no separate flow needed.
     renderBilling();
+  });
+
+  // Renders immediately with PLANS' static prices above; if live ones
+  // arrive after, silently re-render with them - but only if Billing is
+  // still the tab on screen (the user may have already navigated away by
+  // the time the fetch resolves).
+  ensurePlanPricing(() => {
+    if (state.tab === "billing") renderBilling();
   });
 }
 

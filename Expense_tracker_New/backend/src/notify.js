@@ -6,6 +6,14 @@ import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
 
 const ses = new SESClient({});
 
+/* Must match the Stripe Dashboard's dunning retry window (Settings →
+   Billing → Subscriptions and emails → Manage failed payments — see
+   DEPLOYMENT.md's Phase 3, step 3). Stripe has no API or webhook that
+   reports this setting back, so there is no way to read it at send time -
+   this constant is the one place to update if that Dashboard setting ever
+   changes, instead of a number buried in the email prose below. */
+const RETRY_WINDOW_DAYS = 30;
+
 async function send(toEmail, subject, bodyText) {
   await ses.send(
     new SendEmailCommand({
@@ -24,7 +32,7 @@ export async function sendPastDueEmail(toEmail) {
     toEmail,
     "Your Ledger payment failed",
     "We couldn't process your latest payment. Please update your card in the Billing panel to keep full access. " +
-      "We'll retry automatically for 30 days; if the payment still hasn't gone through by then, your account will move to the Free plan.",
+      `We'll retry automatically for ${RETRY_WINDOW_DAYS} days; if the payment still hasn't gone through by then, your account will move to the Free plan.`,
   );
 }
 

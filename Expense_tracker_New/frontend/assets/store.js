@@ -575,6 +575,15 @@ class ApiStore {
   async createPortalSession(returnUrl) {
     return this._post({ action: "createPortalSession", returnUrl });
   }
+  /** Live Stripe amounts for the paid plans, keyed by plan id - see
+      backend/src/routes/billing.js's getPlanPricing for what's actually in
+      each entry. Callers fall back to PLANS' static display copy (app.js)
+      when a plan id is missing from the result, so a partial or empty
+      response here degrades gracefully rather than breaking the page. */
+  async getPlanPricing() {
+    const r = await this._post({ action: "getPlanPricing" });
+    return r.pricing || {};
+  }
   async setBalances(date, entries) {
     await this._post({ action: "setBalances", date, entries });
     await this._refreshMeta();
@@ -750,6 +759,13 @@ class DisconnectedStore {
   }
   async isEmpty() {
     return true;
+  }
+  // A read, not a write - fails open with an empty result (rather than
+  // notConnected()'s throw) so the Billing/plan-gate pages still render
+  // using PLANS' static fallback prices while disconnected, instead of
+  // erroring out over something as low-stakes as a price display.
+  async getPlanPricing() {
+    return {};
   }
 }
 

@@ -207,7 +207,8 @@ You need `ApiUrl` from Phase 2 before you can do step 2 below.
    and emails → Manage failed payments**. Set the retry schedule to
    **30 days**, then **cancel the subscription**. This Dashboard setting
    _is_ the grace period the app's past-due email promises — there is no
-   code enforcing it.
+   API/webhook that reports it back, so if you ever change it here, also
+   update `RETRY_WINDOW_DAYS` in `backend/src/notify.js` to match.
 
 4. **Disable plan-switching in the Customer Portal.** **Settings →
    Billing → Customer portal**. Under the features section:

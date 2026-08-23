@@ -18,6 +18,7 @@ import * as tenants from "./routes/tenants.js";
 import {
   createCheckoutSession,
   createPortalSession,
+  getPlanPricing,
 } from "./routes/billing.js";
 import { stripe } from "./stripe.js";
 import { FEATURES, planFromPriceId } from "./plans.js";
@@ -175,6 +176,13 @@ async function handleGet(user, event) {
 async function handlePost(user, event) {
   const payload = JSON.parse(event.body || "{}");
   const { action } = payload;
+
+  // getPlanPricing isn't tenant data at all - the same three Stripe prices
+  // for every tenant - so unlike joinTenant/listMyTenants below it needs no
+  // transaction of any kind, tenant-scoped or provisioning.
+  if (action === "getPlanPricing") {
+    return { ok: true, pricing: await getPlanPricing(stripe) };
+  }
 
   // joinTenant/listMyTenants are inherently cross-tenant: joining a tenant
   // not yet belonged to, or listing every tenant belonged to. Neither can
