@@ -370,7 +370,12 @@ class ApiStore {
     return data;
   }
 
-  async _post(payload, attempt = 1, retriedWithoutTenant = false) {
+  async _post(
+    payload,
+    attempt = 1,
+    retriedWithoutTenant = false,
+    path = "/data",
+  ) {
     const idempotent = [
       "update",
       "delete",
@@ -383,7 +388,7 @@ class ApiStore {
     ].includes(payload.action);
     let res;
     try {
-      res = await fetch(`${this.endpoint}/data`, {
+      res = await fetch(`${this.endpoint}${path}`, {
         method: "POST",
         headers: this._headers({ "Content-Type": "application/json" }),
         body: JSON.stringify(payload),
@@ -392,7 +397,7 @@ class ApiStore {
     } catch (networkErr) {
       if (idempotent && attempt < 2) {
         await sleep(600);
-        return this._post(payload, attempt + 1, retriedWithoutTenant);
+        return this._post(payload, attempt + 1, retriedWithoutTenant, path);
       }
       // See the matching comment in _get() above - keep the raw browser
       // error out of what the user actually sees.
@@ -408,7 +413,7 @@ class ApiStore {
       // nothing was written and there is nothing to double-apply.
       if (!retriedWithoutTenant && this._isTenantRejection(message)) {
         this._dropActiveTenant();
-        return this._post(payload, 1, true);
+        return this._post(payload, 1, true, path);
       }
       const err = new Error("Sign-in expired. Please sign in again.");
       err.auth = true;
@@ -417,7 +422,7 @@ class ApiStore {
     if (!res.ok) {
       if (idempotent && res.status >= 500 && attempt < 2) {
         await sleep(600);
-        return this._post(payload, attempt + 1, retriedWithoutTenant);
+        return this._post(payload, attempt + 1, retriedWithoutTenant, path);
       }
       console.error(`[store] POST responded ${res.status}`);
       throw new Error(
@@ -583,6 +588,20 @@ class ApiStore {
   async getPlans() {
     const r = await this._post({ action: "getPlans" });
     return r.plans || [];
+  }
+  /** Uploads a CSV/PDF for AI extraction - see backend/src/extract.js.
+      Unlike every other ApiStore method, this can legitimately take up to
+      ~20 seconds (a Bedrock call over a multi-page PDF), so callers
+      should show a loading message that says so rather than the instant-
+      feeling wording used everywhere else in this app. */
+  async extractTransactions(fileName, fileType, fileBase64, categoryNames) {
+    const r = await this._post(
+      { fileName, fileType, fileBase64, categoryNames },
+      1,
+      false,
+      "/extract",
+    );
+    return { transactions: r.transactions || [], skipped: r.skipped || 0 };
   }
   async setBalances(date, entries) {
     await this._post({ action: "setBalances", date, entries });
@@ -768,6 +787,9 @@ class DisconnectedStore {
   // unavailable" rather than a stale-but-plausible-looking price.
   async getPlans() {
     return [];
+  }
+  async extractTransactions() {
+    notConnected();
   }
 }
 
