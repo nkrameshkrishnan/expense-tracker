@@ -15,8 +15,6 @@
    DB credentials) never reach this file — they're Lambda environment
    variables sourced from AWS Secrets Manager (see backend/template.yaml). */
 
-export const BUILD_STAMP = "dev";
-
 /* API Gateway base URL from template.yaml's ApiUrl output, e.g.
    https://abc123.execute-api.us-east-1.amazonaws.com/dev */
 export const API_ENDPOINT = "";

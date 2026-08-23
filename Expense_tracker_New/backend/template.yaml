@@ -171,6 +171,20 @@ Resources:
     Type: AWS::Serverless::HttpApi
     Properties:
       StageName: !Ref Stage
+      # API Gateway account-level throttling (token bucket, shared across every
+      # request to every route on this stage — not per-IP or per-tenant, since
+      # HttpApi has no built-in per-client throttling without API keys/usage
+      # plans or a WAF rate-based rule). This is the free, no-extra-AWS-spend
+      # first line of defense against a runaway client or credential-stuffing
+      # traffic driving up the Lambda/Aurora bill, sized generously enough
+      # that one household's refresh() (up to ~10 sequential GETs) never gets
+      # anywhere close to it. Revisit upward as real concurrent usage grows,
+      # and consider a WAF rate-based rule (true per-IP limiting) or Cognito
+      # Advanced Security before this genuinely needs to hold back abuse
+      # rather than just cap the blast radius.
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 20
+        ThrottlingRateLimit: 10
       CorsConfiguration:
         AllowOrigins: [!Ref AllowedOrigin]
         # x-active-tenant is allowed: auth.js validates it against real
