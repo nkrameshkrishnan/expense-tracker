@@ -166,6 +166,14 @@ set `BedrockModelId` to that profile's id instead.
 
 The Guardrail itself (`AiImportGuardrail`) is fully defined in `template.yaml` and needs no separate manual enablement, unlike model access above.
 
+**GuardDuty Malware Protection**: this feature's `AiUploadsMalwareProtectionPlan`
+resource requires GuardDuty itself to already be enabled for this AWS
+account and region. If it isn't, enable it once via AWS Console → GuardDuty
+→ Get Started (or `aws guardduty create-detector --enable`) before this
+stack deploys - the `AWS::GuardDuty::MalwareProtectionPlan` resource will
+fail to create otherwise. This is a one-time, account-level step, not
+something `template.yaml` can express.
+
 3. Deploy takes **10-15 minutes** the first time (Aurora Serverless v2
    cluster creation is the slow part). Watch for `Successfully created/
 updated stack` at the end.

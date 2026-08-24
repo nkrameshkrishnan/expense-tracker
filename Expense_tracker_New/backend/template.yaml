@@ -83,6 +83,64 @@ Globals:
 
 Resources:
   # --------------------------------------------------------------- Compute
+  AiUploadsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      CorsConfiguration:
+        CorsRules:
+          - AllowedMethods: [PUT]
+            AllowedOrigins: [!Ref AllowedOrigin]
+            AllowedHeaders: ["*"]
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireUploadsAfterOneDay
+            Status: Enabled
+            ExpirationInDays: 1
+
+  AiUploadsMalwareProtectionPlan:
+    Type: AWS::GuardDuty::MalwareProtectionPlan
+    Properties:
+      Role: !GetAtt AiUploadsMalwareProtectionRole.Arn
+      ProtectedResource:
+        S3Bucket:
+          BucketName: !Ref AiUploadsBucket
+      Actions:
+        Tagging:
+          Status: ENABLED
+
+  AiUploadsMalwareProtectionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: malware-protection-plan.guardduty.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: AiUploadsMalwareScanAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObjectTagging
+                  - s3:GetBucketLocation
+                Resource:
+                  - !GetAtt AiUploadsBucket.Arn
+                  - !Sub ${AiUploadsBucket.Arn}/*
+
   DataFunction:
     Type: AWS::Serverless::Function
     Properties:
