@@ -148,6 +148,14 @@ export function personColorIndex(name) {
   return h % PERSON_PALETTE_SIZE;
 }
 
+export const CATEGORY_PALETTE_SIZE = 8;
+export function categoryColorIndex(name) {
+  const s = String(name || "");
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h % CATEGORY_PALETTE_SIZE;
+}
+
 /* ----------------------------------------------------------- Cognito auth
    Config precedence matches the original project: what's typed under a
    runtime settings screen (localStorage) wins over build-time config.js

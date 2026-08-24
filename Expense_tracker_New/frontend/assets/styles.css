@@ -929,8 +929,9 @@ code {
   gap: 0;
 }
 .tx-group {
-  border: 1px solid var(--rule-2);
-  background: #fff;
+  background: var(--card-bg);
+  box-shadow: var(--shadow-card);
+  border-radius: var(--radius-md);
   margin-bottom: 10px;
 }
 .tx-group-header {
@@ -941,12 +942,10 @@ code {
   padding: 7px 12px;
   background: var(--paper-2);
   border-bottom: 1px solid var(--rule);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
   position: sticky;
   top: 52px;
   z-index: 3;
-  border-left: 0;
-  border-right: 0;
-  border-top: 0;
   cursor: pointer;
   font-family: var(--disp);
   text-align: left;
@@ -956,13 +955,14 @@ code {
 }
 .tx-group.closed .tx-group-header {
   border-bottom: 0;
+  border-radius: var(--radius-md);
 }
 .tx-group-chevron {
   font-size: 10px;
   color: var(--ink-3);
   margin-right: 8px;
   flex-shrink: 0;
-  transition: transform 0.15s;
+  transition: transform var(--motion-fast);
   display: inline-block;
 }
 .tx-group.closed .tx-group-chevron {
@@ -1028,19 +1028,25 @@ code {
   align-items: center;
   padding: 9px 12px;
   border-bottom: 1px solid var(--rule);
-  transition: background 0.1s;
+  transition: background var(--motion-fast), box-shadow var(--motion-fast);
 }
 .tx-row:last-child {
   border-bottom: 0;
 }
+.tx-group-body .tx-row:last-child {
+  border-bottom-left-radius: var(--radius-md);
+  border-bottom-right-radius: var(--radius-md);
+}
 .tx-row:hover {
   background: #fffdf5;
+  box-shadow: var(--shadow-card);
 }
 .tx-row.tx-income {
   background: #f7fdf9;
 }
 .tx-row.tx-income:hover {
   background: #edfbf3;
+  box-shadow: var(--shadow-card);
 }
 .tx-row.tx-transfer {
   opacity: 0.7;
@@ -1645,6 +1651,25 @@ details[open] .add-details-toggle::before {
   border-color: #7c3aed;
   color: #7c3aed;
 }
+
+/* category chip on transaction rows */
+.category-chip {
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  margin-right: 4px;
+  white-space: nowrap;
+  color: #fff;
+}
+.category-chip.category-color-0 { background: var(--cat-color-0); }
+.category-chip.category-color-1 { background: var(--cat-color-1); }
+.category-chip.category-color-2 { background: var(--cat-color-2); }
+.category-chip.category-color-3 { background: var(--cat-color-3); }
+.category-chip.category-color-4 { background: var(--cat-color-4); }
+.category-chip.category-color-5 { background: var(--cat-color-5); }
+.category-chip.category-color-6 { background: var(--cat-color-6); }
+.category-chip.category-color-7 { background: var(--cat-color-7); }
 
 /* add-page person picker */
 .add-person-row {

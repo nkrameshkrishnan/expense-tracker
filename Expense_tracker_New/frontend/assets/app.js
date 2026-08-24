@@ -17,6 +17,7 @@ import {
   setIdToken,
   NET_WORTH_ACCOUNTS,
   personColorIndex,
+  categoryColorIndex,
   CURRENCIES,
   setCurrency as setCurrentCurrency,
 } from "./store.js";
@@ -503,6 +504,12 @@ const personColorClass = (p) =>
   p && p !== UNASSIGNED
     ? `person-color-${personColorIndex(p)}`
     : "person-color-none";
+
+/** Colour class for a category chip, derived the same way as
+    personColorClass — a stable hash of the category name, not a lookup
+    table, so a new category just works without a matching edit here. */
+const categoryColorClass = (cat) =>
+  `category-color-${categoryColorIndex(cat)}`;
 
 /** Merged, de-duplicated, sorted option list for a dropdown. */
 function listFor(kind, forCategory) {
@@ -1758,7 +1765,7 @@ function renderTransactions() {
         </div>
         <div class="tx-meta">
           ${!state.person ? `<span class="person-chip ${personColorClass(r.person || UNASSIGNED)}" data-p="${esc(r.person || UNASSIGNED)}">${esc(r.person || UNASSIGNED)}</span>` : ""}
-          <span class="tx-cat">${esc(r.category)}${r.subcategory ? " · " + esc(r.subcategory) : ""}</span>
+          <span class="tx-cat"><span class="category-chip ${categoryColorClass(r.category)}">${esc(r.category)}</span>${r.subcategory ? " · " + esc(r.subcategory) : ""}</span>
           ${r.payment ? `<span class="tx-sep">·</span><span class="tx-pay">${esc(r.payment)}</span>` : ""}
         </div>
       </div>
