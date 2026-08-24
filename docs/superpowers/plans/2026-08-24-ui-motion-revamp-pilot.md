@@ -591,7 +591,7 @@ Expected: exits 0, no output.
 - [ ] **Step 5: Verify in browser**
 
 Serve and bypass the gate, land on Dashboard:
-- On first load, KPI numbers count up from 0 (or their starting state) to their real values.
+- On first load, KPI numbers show their real values immediately, with no animation — `buildDashboardShell` (the first-render path) only stores `state._dashLastAgg`, it never calls `countUp`. **Correction from an earlier draft of this step:** count-up is intentionally scoped to the patch path only (below), not first paint — animating away from $0.00 on a page's very first render would make it look emptier for longer, which is the wrong tradeoff for a finance dashboard's perceived load time.
 - Change the month or year selector: KPI numbers visibly count up from their *previous* displayed value to the new one (not an instant swap, and not re-counting from zero).
 - A metric that's a placeholder ("—", e.g. Savings rate with no income) sets instantly with no animation, and doesn't error when income later becomes positive (test by switching to a month/year with income if data permits, or just confirm no console error occurs).
 - No console errors.

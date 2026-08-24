@@ -207,7 +207,7 @@ export function viewTransition(renderFn) {
 
 | Element | Motion | Duration | Notes |
 |---|---|---|---|
-| KPI tile value | count-up | 500–700ms, `power2.out` | Fires on `buildDashboardShell` AND `updateDashboardValues` (the month/year patch path) — both, or switching months only animates once per session. |
+| KPI tile value | count-up | 500–700ms, `power2.out` | Fires only on `updateDashboardValues` (the month/year patch path), not on `buildDashboardShell`'s first render — first paint shows real values immediately with no animation (animating away from $0.00 on first load would make the page look emptier for longer). `buildDashboardShell` still stores `state._dashLastAgg` on every render, so every *subsequent* patch-path switch has a valid "from" value to animate away from, not just the first one. |
 | KPI tiles entrance | stagger fade+rise | 350ms, 40ms stagger | Grid order (left-to-right, top-to-bottom). |
 | Chart panels entrance | stagger fade+rise | 350ms, 40ms stagger | Starts after KPI stagger completes, not simultaneously. |
 | Chart draw-in | Chart.js `animation.duration` | 600ms, `easeOutQuart` | Per-chart, via existing `charts.js` functions — a filter-triggered re-render of one chart must not replay its panel's entrance stagger. |
