@@ -116,11 +116,15 @@ test("parseExtractRequest rejects an oversized clean file before fetching its by
       calls.push(command.constructor.name);
       if (command.constructor.name === "GetObjectTaggingCommand")
         return {
-          TagSet: [{ Key: "GuardDutyMalwareScanStatus", Value: "NO_THREATS_FOUND" }],
+          TagSet: [
+            { Key: "GuardDutyMalwareScanStatus", Value: "NO_THREATS_FOUND" },
+          ],
         };
       if (command.constructor.name === "HeadObjectCommand")
         return { ContentLength: 5 * 1024 * 1024 };
-      throw new Error(`unexpected command in this test: ${command.constructor.name}`);
+      throw new Error(
+        `unexpected command in this test: ${command.constructor.name}`,
+      );
     },
   };
   const result = await parseExtractRequest(
@@ -135,7 +139,10 @@ test("parseExtractRequest rejects an oversized clean file before fetching its by
   assert.equal(result.ok, false);
   assert.equal(result.status, 400);
   assert.match(result.error, /too large/i);
-  assert.ok(!calls.includes("GetObjectCommand"), "must not fetch bytes for an oversized file");
+  assert.ok(
+    !calls.includes("GetObjectCommand"),
+    "must not fetch bytes for an oversized file",
+  );
 });
 
 test("parseExtractRequest accepts a clean, correctly-sized file and returns its bytes", async () => {
@@ -146,7 +153,9 @@ test("parseExtractRequest accepts a clean, correctly-sized file and returns its 
     send: async (command) => {
       if (command.constructor.name === "GetObjectTaggingCommand")
         return {
-          TagSet: [{ Key: "GuardDutyMalwareScanStatus", Value: "NO_THREATS_FOUND" }],
+          TagSet: [
+            { Key: "GuardDutyMalwareScanStatus", Value: "NO_THREATS_FOUND" },
+          ],
         };
       if (command.constructor.name === "HeadObjectCommand")
         return { ContentLength: pdfBytes.length };
@@ -175,7 +184,9 @@ test("parseExtractRequest returns a clean 500 instead of throwing when HeadObjec
     send: async (command) => {
       if (command.constructor.name === "GetObjectTaggingCommand")
         return {
-          TagSet: [{ Key: "GuardDutyMalwareScanStatus", Value: "NO_THREATS_FOUND" }],
+          TagSet: [
+            { Key: "GuardDutyMalwareScanStatus", Value: "NO_THREATS_FOUND" },
+          ],
         };
       if (command.constructor.name === "HeadObjectCommand")
         throw new Error("S3 unavailable");
@@ -200,7 +211,9 @@ test("parseExtractRequest returns a clean 500 instead of throwing when GetObject
     send: async (command) => {
       if (command.constructor.name === "GetObjectTaggingCommand")
         return {
-          TagSet: [{ Key: "GuardDutyMalwareScanStatus", Value: "NO_THREATS_FOUND" }],
+          TagSet: [
+            { Key: "GuardDutyMalwareScanStatus", Value: "NO_THREATS_FOUND" },
+          ],
         };
       if (command.constructor.name === "HeadObjectCommand")
         return { ContentLength: 100 };
@@ -227,7 +240,9 @@ test("parseExtractRequest returns a clean 500 instead of throwing when reading t
     send: async (command) => {
       if (command.constructor.name === "GetObjectTaggingCommand")
         return {
-          TagSet: [{ Key: "GuardDutyMalwareScanStatus", Value: "NO_THREATS_FOUND" }],
+          TagSet: [
+            { Key: "GuardDutyMalwareScanStatus", Value: "NO_THREATS_FOUND" },
+          ],
         };
       if (command.constructor.name === "HeadObjectCommand")
         return { ContentLength: 100 };
@@ -261,7 +276,9 @@ test("parseExtractRequest returns a clean 400 for a pdf fileType whose bytes are
     send: async (command) => {
       if (command.constructor.name === "GetObjectTaggingCommand")
         return {
-          TagSet: [{ Key: "GuardDutyMalwareScanStatus", Value: "NO_THREATS_FOUND" }],
+          TagSet: [
+            { Key: "GuardDutyMalwareScanStatus", Value: "NO_THREATS_FOUND" },
+          ],
         };
       if (command.constructor.name === "HeadObjectCommand")
         return { ContentLength: garbageBytes.length };

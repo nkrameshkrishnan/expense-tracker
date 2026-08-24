@@ -410,6 +410,8 @@ class ApiStore {
       "deleteBalanceDate",
       "deleteDebt",
       "updateDebt",
+      "getUploadUrl",
+      "getScanStatus",
     ].includes(payload.action);
     let res;
     try {
@@ -638,26 +640,35 @@ class ApiStore {
     return r.status;
   }
   /** Uploads `file` to S3, polls for a GuardDuty scan verdict, then calls
-      /extract once the file is confirmed clean. Polls every 2 seconds for
-      up to 60 seconds - if the scan hasn't resolved by then, this gives
+      /extract once the file is confirmed clean. Polls with exponential
+      backoff (starts at 2s, doubles each iteration, capped at 8s) for up
+      to 60 seconds total - if the scan hasn't resolved by then, this gives
       up rather than polling forever (see this feature's spec, Section B,
-      Error handling). An infected or otherwise non-clean verdict throws
-      before /extract is ever called - the same fail-closed behavior
-      ExtractFunction's own server-side check enforces independently. */
+      Error handling). Backoff instead of a fixed 2s interval cuts the
+      worst-case poll count from ~30 down to ~7-8, which matters because
+      each poll is a real request against the same per-IP rate limit
+      (60 req/60s) every other action shares - a fixed interval could burn
+      roughly half that budget on one import alone. An infected or
+      otherwise non-clean verdict throws before /extract is ever called -
+      the same fail-closed behavior ExtractFunction's own server-side
+      check enforces independently. */
   async extractTransactions(fileName, fileType, file, categoryNames) {
     const { url, key } = await this.getUploadUrl(fileType);
     await this.uploadToS3(url, file);
 
     const POLL_INTERVAL_MS = 2000;
+    const POLL_INTERVAL_MAX_MS = 8000;
     const POLL_TIMEOUT_MS = 60000;
     const deadline = Date.now() + POLL_TIMEOUT_MS;
+    let pollInterval = POLL_INTERVAL_MS;
     let status = "pending";
     while (status === "pending") {
       if (Date.now() > deadline)
         throw new Error(
           "This file is taking longer than expected to scan. Try again in a moment.",
         );
-      await sleep(POLL_INTERVAL_MS);
+      await sleep(pollInterval);
+      pollInterval = Math.min(pollInterval * 2, POLL_INTERVAL_MAX_MS);
       status = await this.getScanStatus(key);
     }
     if (status !== "clean")

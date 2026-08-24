@@ -200,6 +200,15 @@ export const handler = async (event) => {
     return json(parsed.status, { ok: false, error: parsed.error });
   const { fileType, categoryNames, fileBuffer, s3Key } = parsed;
 
+  // parseExtractRequest has no access to `user` (it validates the S3
+  // object itself, not who's asking for it), so the tenant-prefix check
+  // on s3Key has to happen here, before s3Key is used for anything else -
+  // otherwise a caller authenticated as one tenant could pass another
+  // tenant's key (predictable only by knowing/guessing a UUID) and this
+  // would happily extract and bill it against the wrong tenant's cap.
+  if (!s3Key.startsWith(`${user.tenantId}/`))
+    return json(400, { ok: false, error: "s3Key is required." });
+
   try {
     const result = await runInTenantTransaction(
       user.tenantId,
@@ -278,7 +287,9 @@ export const handler = async (event) => {
       // 1-day lifecycle rule (see template.yaml's AiUploadsBucket) is the
       // backstop. Still worth logging so a persistent cleanup problem is
       // visible.
-      console.error(`[${user.tenantId}] failed to delete ${s3Key}: ${err.message}`);
+      console.error(
+        `[${user.tenantId}] failed to delete ${s3Key}: ${err.message}`,
+      );
     }
   }
 };

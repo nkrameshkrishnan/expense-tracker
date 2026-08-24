@@ -37,11 +37,17 @@ test("getScanStatus maps NO_THREATS_FOUND to clean", async () => {
     send: async (command) => {
       calls.push(command);
       return {
-        TagSet: [{ Key: "GuardDutyMalwareScanStatus", Value: "NO_THREATS_FOUND" }],
+        TagSet: [
+          { Key: "GuardDutyMalwareScanStatus", Value: "NO_THREATS_FOUND" },
+        ],
       };
     },
   };
-  const result = await getScanStatus(s3Client, "test-bucket", "tenant-abc/x.pdf");
+  const result = await getScanStatus(
+    s3Client,
+    "test-bucket",
+    "tenant-abc/x.pdf",
+  );
   assert.deepEqual(result, { status: "clean" });
   assert.ok(calls[0] instanceof GetObjectTaggingCommand);
 });
@@ -52,13 +58,21 @@ test("getScanStatus maps THREATS_FOUND to infected", async () => {
       TagSet: [{ Key: "GuardDutyMalwareScanStatus", Value: "THREATS_FOUND" }],
     }),
   };
-  const result = await getScanStatus(s3Client, "test-bucket", "tenant-abc/x.pdf");
+  const result = await getScanStatus(
+    s3Client,
+    "test-bucket",
+    "tenant-abc/x.pdf",
+  );
   assert.deepEqual(result, { status: "infected" });
 });
 
 test("getScanStatus maps an absent tag to pending", async () => {
   const s3Client = { send: async () => ({ TagSet: [] }) };
-  const result = await getScanStatus(s3Client, "test-bucket", "tenant-abc/x.pdf");
+  const result = await getScanStatus(
+    s3Client,
+    "test-bucket",
+    "tenant-abc/x.pdf",
+  );
   assert.deepEqual(result, { status: "pending" });
 });
 
@@ -69,8 +83,16 @@ test("getScanStatus maps UNSUPPORTED/ACCESS_DENIED/FAILED to error", async () =>
         TagSet: [{ Key: "GuardDutyMalwareScanStatus", Value: value }],
       }),
     };
-    const result = await getScanStatus(s3Client, "test-bucket", "tenant-abc/x.pdf");
-    assert.deepEqual(result, { status: "error" }, `expected ${value} to map to error`);
+    const result = await getScanStatus(
+      s3Client,
+      "test-bucket",
+      "tenant-abc/x.pdf",
+    );
+    assert.deepEqual(
+      result,
+      { status: "error" },
+      `expected ${value} to map to error`,
+    );
   }
 });
 
@@ -80,7 +102,11 @@ test("getScanStatus maps a tag-read failure to error, not a thrown exception", a
       throw new Error("NoSuchKey");
     },
   };
-  const result = await getScanStatus(s3Client, "test-bucket", "tenant-abc/x.pdf");
+  const result = await getScanStatus(
+    s3Client,
+    "test-bucket",
+    "tenant-abc/x.pdf",
+  );
   assert.deepEqual(result, { status: "error" });
 });
 
@@ -92,7 +118,11 @@ test("headObjectSize returns the object's ContentLength", async () => {
       return { ContentLength: 12345 };
     },
   };
-  const size = await headObjectSize(s3Client, "test-bucket", "tenant-abc/x.pdf");
+  const size = await headObjectSize(
+    s3Client,
+    "test-bucket",
+    "tenant-abc/x.pdf",
+  );
   assert.equal(size, 12345);
   assert.ok(calls[0] instanceof HeadObjectCommand);
 });
