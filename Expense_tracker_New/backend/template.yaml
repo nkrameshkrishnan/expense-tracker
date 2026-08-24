@@ -134,12 +134,39 @@ Resources:
             Statement:
               - Effect: Allow
                 Action:
-                  - s3:GetObject
-                  - s3:PutObjectTagging
                   - s3:GetBucketLocation
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:GetBucketNotification
+                  - s3:PutBucketNotification
                 Resource:
                   - !GetAtt AiUploadsBucket.Arn
+              - Effect: Allow
+                Action:
+                  - s3:GetObjectTagging
+                  - s3:PutObjectTagging
+                  - s3:GetObjectVersionTagging
+                  - s3:PutObjectVersionTagging
+                Resource:
                   - !Sub ${AiUploadsBucket.Arn}/*
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource:
+                  - !Sub ${AiUploadsBucket.Arn}/malware-protection-resource-validation-object
+              - Effect: Allow
+                Action:
+                  - events:PutRule
+                  - events:DeleteRule
+                  - events:PutTargets
+                  - events:RemoveTargets
+                  - events:DescribeRule
+                  - events:ListTargetsByRule
+                Resource:
+                  - !Sub arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/DO-NOT-DELETE-AmazonGuardDutyMalwareProtectionS3*
+                Condition:
+                  StringLike:
+                    events:ManagedBy: malware-protection-plan.guardduty.amazonaws.com
 
   DataFunction:
     Type: AWS::Serverless::Function
