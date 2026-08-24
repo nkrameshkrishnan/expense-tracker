@@ -66,6 +66,7 @@ const legendTop = {
     labels: { boxWidth: 10, boxHeight: 10, padding: 14 },
   },
 };
+const drawIn = { duration: 600, easing: "easeOutQuart" };
 
 export function incomeVsExpense(series) {
   mount("c-ie", {
@@ -88,6 +89,7 @@ export function incomeVsExpense(series) {
     options: {
       maintainAspectRatio: false,
       responsive: true,
+      animation: drawIn,
       plugins: legendTop,
       scales: { x: gridX, y: gridY },
     },
@@ -110,6 +112,7 @@ export function netByMonth(series) {
     options: {
       maintainAspectRatio: false,
       responsive: true,
+      animation: drawIn,
       plugins: { legend: { display: false } },
       scales: { x: gridX, y: gridY },
     },
@@ -144,6 +147,7 @@ export function trend(series) {
     options: {
       maintainAspectRatio: false,
       responsive: true,
+      animation: drawIn,
       plugins: legendTop,
       scales: { x: gridX, y: gridY },
     },
@@ -175,6 +179,7 @@ export function actualVsBudget(catRows) {
       indexAxis: "y",
       maintainAspectRatio: false,
       responsive: true,
+      animation: drawIn,
       plugins: legendTop,
       scales: {
         x: { ...gridY },
@@ -198,6 +203,7 @@ export function topFive(top5) {
     options: {
       maintainAspectRatio: false,
       responsive: true,
+      animation: drawIn,
       plugins: { legend: { display: false } },
       scales: { x: { ...gridX, ticks: { font: { size: 10 } } }, y: gridY },
     },
@@ -221,6 +227,7 @@ export function paymentSplit(byPayment) {
     options: {
       maintainAspectRatio: false,
       responsive: true,
+      animation: drawIn,
       cutout: "55%",
       plugins: {
         legend: {
@@ -262,6 +269,7 @@ export function personSplit(breakdown) {
     options: {
       maintainAspectRatio: false,
       responsive: true,
+      animation: drawIn,
       cutout: "55%",
       plugins: {
         legend: {
@@ -287,6 +295,7 @@ export function personByMonth(series, months) {
     options: {
       maintainAspectRatio: false,
       responsive: true,
+      animation: drawIn,
       plugins: legendTop,
       scales: {
         x: { ...gridX, stacked: false },
@@ -419,6 +428,7 @@ export function dividendsTrend(series) {
     options: {
       maintainAspectRatio: false,
       responsive: true,
+      animation: drawIn,
       plugins: { legend: { display: false } },
       scales: { x: gridX, y: gridY },
     },
