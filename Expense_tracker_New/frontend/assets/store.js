@@ -625,14 +625,46 @@ class ApiStore {
     const r = await this._post({ action: "getPlans" });
     return r.plans || [];
   }
-  /** Uploads a CSV/PDF for AI extraction - see backend/src/extract.js.
-      Unlike every other ApiStore method, this can legitimately take up to
-      ~20 seconds (a Bedrock call over a multi-page PDF), so callers
-      should show a loading message that says so rather than the instant-
-      feeling wording used everywhere else in this app. */
-  async extractTransactions(fileName, fileType, fileBase64, categoryNames) {
+  async getUploadUrl(fileType) {
+    const r = await this._post({ action: "getUploadUrl", fileType });
+    return { url: r.url, key: r.key };
+  }
+  async uploadToS3(url, file) {
+    const res = await fetch(url, { method: "PUT", body: file });
+    if (!res.ok) throw new Error("Could not upload this file. Try again.");
+  }
+  async getScanStatus(key) {
+    const r = await this._post({ action: "getScanStatus", key });
+    return r.status;
+  }
+  /** Uploads `file` to S3, polls for a GuardDuty scan verdict, then calls
+      /extract once the file is confirmed clean. Polls every 2 seconds for
+      up to 60 seconds - if the scan hasn't resolved by then, this gives
+      up rather than polling forever (see this feature's spec, Section B,
+      Error handling). An infected or otherwise non-clean verdict throws
+      before /extract is ever called - the same fail-closed behavior
+      ExtractFunction's own server-side check enforces independently. */
+  async extractTransactions(fileName, fileType, file, categoryNames) {
+    const { url, key } = await this.getUploadUrl(fileType);
+    await this.uploadToS3(url, file);
+
+    const POLL_INTERVAL_MS = 2000;
+    const POLL_TIMEOUT_MS = 60000;
+    const deadline = Date.now() + POLL_TIMEOUT_MS;
+    let status = "pending";
+    while (status === "pending") {
+      if (Date.now() > deadline)
+        throw new Error(
+          "This file is taking longer than expected to scan. Try again in a moment.",
+        );
+      await sleep(POLL_INTERVAL_MS);
+      status = await this.getScanStatus(key);
+    }
+    if (status !== "clean")
+      throw new Error("This file could not be processed.");
+
     const r = await this._post(
-      { fileName, fileType, fileBase64, categoryNames },
+      { fileType, s3Key: key, categoryNames },
       1,
       false,
       "/extract",
@@ -833,6 +865,15 @@ class DisconnectedStore {
     return [];
   }
   async extractTransactions() {
+    notConnected();
+  }
+  async getUploadUrl() {
+    notConnected();
+  }
+  async uploadToS3() {
+    notConnected();
+  }
+  async getScanStatus() {
     notConnected();
   }
 }
