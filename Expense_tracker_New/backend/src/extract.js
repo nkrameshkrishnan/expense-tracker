@@ -44,12 +44,9 @@ function json(status, body) {
   };
 }
 
-// 4MB raw. Lambda's synchronous invocation payload ceiling is ~6MB, and
-// this file travels base64-encoded (~33% bigger) inside a JSON request
-// body - a raw file much above 4-4.5MB would be rejected by the platform
-// itself before this check ever runs, surfacing as an opaque platform
-// error instead of the message below. See spec Architecture §1's rejected
-// S3-direct-upload alternative.
+// 4MB raw. Checked against the S3 object's own ContentLength via
+// headObjectSize - before any bytes are fetched - now that the file
+// arrives via S3 instead of the request body.
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_PDF_PAGES = 10; // see Global Constraints in this feature's plan
 
@@ -123,7 +120,12 @@ export async function parseExtractRequest(body, s3Client, bucket) {
       error: "This file could not be processed.",
     };
 
-  const size = await headObjectSize(s3Client, bucket, s3Key);
+  let size;
+  try {
+    size = await headObjectSize(s3Client, bucket, s3Key);
+  } catch {
+    return { ok: false, status: 500, error: "Request failed." };
+  }
   if (size > MAX_FILE_BYTES)
     return {
       ok: false,
@@ -131,10 +133,15 @@ export async function parseExtractRequest(body, s3Client, bucket) {
       error: `File is too large (max ${MAX_FILE_BYTES / 1024 / 1024}MB).`,
     };
 
-  const object = await s3Client.send(
-    new GetObjectCommand({ Bucket: bucket, Key: s3Key }),
-  );
-  const fileBuffer = Buffer.from(await object.Body.transformToByteArray());
+  let fileBuffer;
+  try {
+    const object = await s3Client.send(
+      new GetObjectCommand({ Bucket: bucket, Key: s3Key }),
+    );
+    fileBuffer = Buffer.from(await object.Body.transformToByteArray());
+  } catch {
+    return { ok: false, status: 500, error: "Request failed." };
+  }
 
   if (fileType === "pdf") {
     let pageCount;

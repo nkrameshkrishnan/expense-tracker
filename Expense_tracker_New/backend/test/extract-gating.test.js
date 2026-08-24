@@ -169,3 +169,116 @@ test("parseExtractRequest accepts a clean, correctly-sized file and returns its 
   assert.ok(Buffer.isBuffer(result.fileBuffer));
   assert.equal(result.fileBuffer.length, pdfBytes.length);
 });
+
+test("parseExtractRequest returns a clean 500 instead of throwing when HeadObjectCommand fails", async () => {
+  const s3Client = {
+    send: async (command) => {
+      if (command.constructor.name === "GetObjectTaggingCommand")
+        return {
+          TagSet: [{ Key: "GuardDutyMalwareScanStatus", Value: "NO_THREATS_FOUND" }],
+        };
+      if (command.constructor.name === "HeadObjectCommand")
+        throw new Error("S3 unavailable");
+      throw new Error(`unexpected command: ${command.constructor.name}`);
+    },
+  };
+  const result = await parseExtractRequest(
+    JSON.stringify({
+      fileType: "csv",
+      s3Key: "tenant-abc/x.csv",
+      categoryNames: ["Groceries"],
+    }),
+    s3Client,
+    "test-bucket",
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 500);
+});
+
+test("parseExtractRequest returns a clean 500 instead of throwing when GetObjectCommand fails", async () => {
+  const s3Client = {
+    send: async (command) => {
+      if (command.constructor.name === "GetObjectTaggingCommand")
+        return {
+          TagSet: [{ Key: "GuardDutyMalwareScanStatus", Value: "NO_THREATS_FOUND" }],
+        };
+      if (command.constructor.name === "HeadObjectCommand")
+        return { ContentLength: 100 };
+      if (command.constructor.name === "GetObjectCommand")
+        throw new Error("S3 unavailable");
+      throw new Error(`unexpected command: ${command.constructor.name}`);
+    },
+  };
+  const result = await parseExtractRequest(
+    JSON.stringify({
+      fileType: "csv",
+      s3Key: "tenant-abc/x.csv",
+      categoryNames: ["Groceries"],
+    }),
+    s3Client,
+    "test-bucket",
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 500);
+});
+
+test("parseExtractRequest returns a clean 500 instead of throwing when reading the object body fails", async () => {
+  const s3Client = {
+    send: async (command) => {
+      if (command.constructor.name === "GetObjectTaggingCommand")
+        return {
+          TagSet: [{ Key: "GuardDutyMalwareScanStatus", Value: "NO_THREATS_FOUND" }],
+        };
+      if (command.constructor.name === "HeadObjectCommand")
+        return { ContentLength: 100 };
+      if (command.constructor.name === "GetObjectCommand")
+        return {
+          Body: {
+            transformToByteArray: async () => {
+              throw new Error("stream interrupted");
+            },
+          },
+        };
+      throw new Error(`unexpected command: ${command.constructor.name}`);
+    },
+  };
+  const result = await parseExtractRequest(
+    JSON.stringify({
+      fileType: "csv",
+      s3Key: "tenant-abc/x.csv",
+      categoryNames: ["Groceries"],
+    }),
+    s3Client,
+    "test-bucket",
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 500);
+});
+
+test("parseExtractRequest returns a clean 400 for a pdf fileType whose bytes aren't a real PDF", async () => {
+  const garbageBytes = Buffer.from("not a real pdf");
+  const s3Client = {
+    send: async (command) => {
+      if (command.constructor.name === "GetObjectTaggingCommand")
+        return {
+          TagSet: [{ Key: "GuardDutyMalwareScanStatus", Value: "NO_THREATS_FOUND" }],
+        };
+      if (command.constructor.name === "HeadObjectCommand")
+        return { ContentLength: garbageBytes.length };
+      if (command.constructor.name === "GetObjectCommand")
+        return { Body: { transformToByteArray: async () => garbageBytes } };
+      throw new Error(`unexpected command: ${command.constructor.name}`);
+    },
+  };
+  const result = await parseExtractRequest(
+    JSON.stringify({
+      fileType: "pdf",
+      s3Key: "tenant-abc/x.pdf",
+      categoryNames: ["Groceries"],
+    }),
+    s3Client,
+    "test-bucket",
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 400);
+});
