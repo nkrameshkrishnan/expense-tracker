@@ -1060,19 +1060,7 @@ function buildDashboardShell(a, label, people, pSeries, showCompare) {
   const panelEls = view.querySelectorAll(".panel");
   revealStagger(kpiEls);
   const kpiFinish = 0.35 + Math.max(0, kpiEls.length - 1) * 0.04; // duration + stagger tail, matches revealStagger's defaults
-  if (window.gsap && panelEls.length) {
-    gsap.set(panelEls, { opacity: 0, y: 8 });
-    gsap.to(panelEls, {
-      opacity: 1,
-      y: 0,
-      duration: 0.35,
-      stagger: 0.04,
-      delay: kpiFinish,
-      ease: "power2.out",
-    });
-  } else {
-    panelEls.forEach((el) => (el.style.opacity = 1));
-  }
+  revealStagger(panelEls, { delay: kpiFinish });
   state._dashLastAgg = a;
 }
 

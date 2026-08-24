@@ -66,7 +66,7 @@ const legendTop = {
     labels: { boxWidth: 10, boxHeight: 10, padding: 14 },
   },
 };
-const drawIn = { duration: 600, easing: "easeOutQuart" };
+const drawIn = { duration: 600, easing: "easeOutQuart", delay: 550 };
 
 export function incomeVsExpense(series) {
   mount("c-ie", {

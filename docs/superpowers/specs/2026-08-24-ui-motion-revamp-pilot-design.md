@@ -216,7 +216,7 @@ export function viewTransition(renderFn) {
 | ~~Skeleton loading~~ | — | — | **Dropped, see note below.** |
 | Transactions group expand | chevron rotate | 150ms | Purely visual toggle, independent of the subtotal count-up below. |
 | Transactions group header subtotal | count-up | 500–700ms | Once per group key (via `txRevealed`, same gate as row entrance) — fires when the group is first rendered, not on expand/collapse, since the header is visible in both states. |
-| Transactions row entrance | stagger fade+rise | 350ms, 40ms stagger | Only for rows newly revealed (group expand, or initial newest-group load) — not replayed on unrelated re-renders (e.g. typing in the search filter). |
+| Transactions row entrance | stagger fade+rise | 350ms, 40ms stagger | Only the first time a group is ever rendered (tracked via the `txRevealed` Set, keyed by group) — whether that first render is expanded (the newest group on initial load) or the user's first click to expand it. Re-expanding a group already in `txRevealed` does not replay the stagger, nor do unrelated re-renders (e.g. typing in the search filter). |
 | Filter pill (`.fpill`) add/remove | scale+fade | 150ms | |
 | Transactions row delete | fade + height-collapse | 250ms | Via `exitCollapse()`, awaited before the row leaves the DOM/state. |
 | Per-row transaction amounts | **none** | — | Explicitly no count-up — animating 20+ individual values at once is the "wall of motion" this spec avoids. Only aggregate totals (page header, group subtotals) count up. |
@@ -343,11 +343,14 @@ to reach the disconnected-but-real app shell) plus browser automation to:
 
 1. Confirm Dashboard KPI tiles and chart panels render as elevated cards
    (radius + shadow visible), with hover-lift on mouse-over.
-2. Confirm KPI values count up on first load AND on switching
-   month/year (the patch path) — not just once per session.
+2. Confirm KPI values count up when switching month/year (the patch
+   path) — not on first load, where they should appear instantly with
+   no animation.
 3. Confirm chart panels stagger in after KPI tiles, not simultaneously.
 4. Confirm Transactions rows carry category chips in the new palette,
-   stagger in on group expand, and collapse-fade on delete.
+   stagger in the first time a group is ever revealed (not on every
+   expand — re-expanding an already-revealed group is instant), and
+   collapse-fade on delete.
 5. Confirm `prefers-reduced-motion: reduce` (via Chrome DevTools
    emulation) disables stagger/slide/lift and shows final states
    immediately, with no console errors.

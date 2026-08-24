@@ -35,7 +35,10 @@ export function countUp(el, from, to, fmt, duration = 0.6) {
 /** Staggers an array/NodeList of elements in with an 8px rise + fade.
     No-ops (sets opacity 1 immediately) under reduced motion or a missing
     GSAP, and does nothing at all for an empty list. */
-export function revealStagger(els, { stagger = 0.04, duration = 0.35 } = {}) {
+export function revealStagger(
+  els,
+  { stagger = 0.04, duration = 0.35, delay = 0 } = {},
+) {
   const list = Array.from(els || []);
   if (!list.length) return;
   if (reduced() || !window.gsap) {
@@ -45,7 +48,7 @@ export function revealStagger(els, { stagger = 0.04, duration = 0.35 } = {}) {
   gsap.fromTo(
     list,
     { opacity: 0, y: 8 },
-    { opacity: 1, y: 0, duration, stagger, ease: "power2.out" },
+    { opacity: 1, y: 0, duration, stagger, delay, ease: "power2.out" },
   );
 }
 
