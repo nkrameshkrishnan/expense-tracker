@@ -135,14 +135,21 @@ Resources:
               - Effect: Allow
                 Action:
                   - s3:GetBucketLocation
-                  - s3:GetObject
                   - s3:ListBucket
                   - s3:GetBucketNotification
                   - s3:PutBucketNotification
                 Resource:
                   - !GetAtt AiUploadsBucket.Arn
+              # The actual scan read - GuardDuty fetches each uploaded
+              # object's bytes to scan them, so this is the one grant the
+              # whole feature is pointless without. Object-level action,
+              # must be scoped to /* (a bucket-ARN-only grant, as an
+              # earlier revision of this policy briefly had, matches
+              # nothing and leaves every object stuck at ACCESS_DENIED).
               - Effect: Allow
                 Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
                   - s3:GetObjectTagging
                   - s3:PutObjectTagging
                   - s3:GetObjectVersionTagging
@@ -160,13 +167,23 @@ Resources:
                   - events:DeleteRule
                   - events:PutTargets
                   - events:RemoveTargets
-                  - events:DescribeRule
-                  - events:ListTargetsByRule
                 Resource:
                   - !Sub arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/DO-NOT-DELETE-AmazonGuardDutyMalwareProtectionS3*
                 Condition:
                   StringLike:
                     events:ManagedBy: malware-protection-plan.guardduty.amazonaws.com
+              # Separate, unconditioned statement: AWS's documented policy
+              # keeps the two read-only rule calls outside the
+              # events:ManagedBy condition - that context key isn't
+              # present on a plain describe/list call, so bundling these
+              # in with the conditioned write actions above would silently
+              # deny both.
+              - Effect: Allow
+                Action:
+                  - events:DescribeRule
+                  - events:ListTargetsByRule
+                Resource:
+                  - !Sub arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/DO-NOT-DELETE-AmazonGuardDutyMalwareProtectionS3*
 
   DataFunction:
     Type: AWS::Serverless::Function
