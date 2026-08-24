@@ -164,6 +164,8 @@ target region (AWS Console → Bedrock → the model's page, or a manual
 work via a cross-region inference profile, in which case you'll need to
 set `BedrockModelId` to that profile's id instead.
 
+The Guardrail itself (`AiImportGuardrail`) is fully defined in `template.yaml` and needs no separate manual enablement, unlike model access above.
+
 3. Deploy takes **10-15 minutes** the first time (Aurora Serverless v2
    cluster creation is the slow part). Watch for `Successfully created/
 updated stack` at the end.

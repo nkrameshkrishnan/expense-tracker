@@ -126,6 +126,46 @@ Resources:
             Path: /data
             Method: OPTIONS
 
+  AiImportGuardrail:
+    Type: AWS::Bedrock::Guardrail
+    Properties:
+      Name: ai-import-guardrail
+      Description: Content safety and prompt-attack defense for the AI transaction import feature - see docs/superpowers/specs/2026-08-23-ai-import-security-hardening-design.md, Section A.
+      BlockedInputMessaging: "This file could not be processed."
+      BlockedOutputsMessaging: "This file could not be processed."
+      ContentPolicyConfig:
+        FiltersConfig:
+          - Type: HATE
+            InputStrength: MEDIUM
+            OutputStrength: MEDIUM
+          - Type: INSULTS
+            InputStrength: MEDIUM
+            OutputStrength: MEDIUM
+          - Type: SEXUAL
+            InputStrength: MEDIUM
+            OutputStrength: MEDIUM
+          - Type: VIOLENCE
+            InputStrength: MEDIUM
+            OutputStrength: MEDIUM
+          - Type: MISCONDUCT
+            InputStrength: MEDIUM
+            OutputStrength: MEDIUM
+          - Type: PROMPT_ATTACK
+            InputStrength: MEDIUM
+            OutputStrength: NONE
+      SensitiveInformationPolicyConfig:
+        PiiEntitiesConfig:
+          - Type: CREDIT_DEBIT_CARD_NUMBER
+            Action: ANONYMIZE
+          - Type: US_SOCIAL_SECURITY_NUMBER
+            Action: ANONYMIZE
+
+  AiImportGuardrailVersion:
+    Type: AWS::Bedrock::GuardrailVersion
+    Properties:
+      GuardrailIdentifier: !GetAtt AiImportGuardrail.GuardrailId
+      Description: v1 - initial content filters + prompt-attack detection
+
   ExtractFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -136,6 +176,8 @@ Resources:
         Variables:
           RATE_LIMIT_TABLE: !Ref RateLimitTable
           BEDROCK_MODEL_ID: !Ref BedrockModelId
+          BEDROCK_GUARDRAIL_ID: !GetAtt AiImportGuardrail.GuardrailId
+          BEDROCK_GUARDRAIL_VERSION: !GetAtt AiImportGuardrailVersion.Version
       Policies:
         - Statement:
             - Effect: Allow
@@ -164,6 +206,9 @@ Resources:
               Resource:
                 - !Sub arn:aws:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}
                 - !Sub arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/*
+            - Effect: Allow
+              Action: bedrock:ApplyGuardrail
+              Resource: !GetAtt AiImportGuardrail.GuardrailArn
       Events:
         Post:
           Type: HttpApi
