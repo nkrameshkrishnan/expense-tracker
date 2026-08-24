@@ -508,6 +508,8 @@ At the very end of `buildDashboardShell` (after the stagger code added in Task 2
 
 Replace the current body of `updateDashboardValues` (which sets `.v`/`.m` text directly via a local `setKpi(key, v, m)` helper) with a version that counts up from `state._dashLastAgg` to the new aggregate `a`, falling back to an instant set when there's no previous value or the metric is a non-numeric placeholder ("—"):
 
+**Ruling (found during Task 2's review):** the code below already includes a fix for a real, confirmed bug — `#kpi-net`/`#kpi-budgetused` each get a `card-hoverable` class in Task 2 (via `cardHoverable()` in `buildDashboardShell`), but this function's original `netEl.className = ...`/`budEl.className = ...` lines do a bare overwrite that silently strips it, and `boot()`'s background `ensureAllYearsLoaded()` callback re-renders through this exact function on nearly every real session — not an edge case. The two `className` lines below include `card-hoverable` in the template string specifically to preserve it. Do not remove `card-hoverable` from those two lines as "not part of this task's scope" — it is a required fix carried forward from Task 2's review finding, not stray code.
+
 ```js
 function updateDashboardValues(a, label, people, pSeries, showCompare) {
   const sub = $("#dash-sub");
@@ -541,7 +543,7 @@ function updateDashboardValues(a, label, people, pSeries, showCompare) {
   setKpiMeta("expense", `${a.count} entries`);
 
   const netEl = $("#kpi-net");
-  if (netEl) netEl.className = `kpi ${a.net < 0 ? "neg" : "pos"}`;
+  if (netEl) netEl.className = `kpi card-hoverable ${a.net < 0 ? "neg" : "pos"}`;
   setKpiNumber("net", prev?.net, a.net, money);
   setKpiMeta("net", a.net < 0 ? "spending exceeds income" : "");
 
@@ -553,7 +555,7 @@ function updateDashboardValues(a, label, people, pSeries, showCompare) {
   setKpiMeta("savings", a.income > 0 ? "" : "needs income data");
 
   const budEl = $("#kpi-budgetused");
-  if (budEl) budEl.className = `kpi ${a.budgetUsed > 1 ? "neg" : ""}`;
+  if (budEl) budEl.className = `kpi card-hoverable ${a.budgetUsed > 1 ? "neg" : ""}`;
   if (a.expenseBudget > 0 && prev?.expenseBudget > 0) {
     setKpiNumber("budgetused", prev.budgetUsed, a.budgetUsed, pct);
   } else {
