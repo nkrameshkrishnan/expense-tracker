@@ -186,9 +186,19 @@ export const handler = async (event) => {
 
         const fileContent =
           fileType === "csv" ? fileBuffer.toString("utf8") : fileBuffer;
-        let extracted;
+        // A GuardrailInterventionError is deliberately NOT rethrown here -
+        // db.js's withDataApiTransaction rolls back and rethrows on ANY
+        // callback exception (see stripeWebhook.js's notifyBestEffort
+        // comment for the same precedent), so throwing after
+        // recordAttempt() would undo the very cap-count write this is
+        // trying to commit. A guardrail intervention is a real, billed
+        // Bedrock call that reached and responded - same reasoning as
+        // "the model found zero transactions" already counting against
+        // the cap - so this returns a sentinel instead, letting the
+        // transaction commit normally, and handler() below branches on
+        // it after the transaction has already committed.
         try {
-          extracted = await extractTransactions(bedrock, {
+          const extracted = await extractTransactions(bedrock, {
             fileType,
             fileContent,
             categoryNames,
@@ -196,24 +206,24 @@ export const handler = async (event) => {
             guardrailId: process.env.BEDROCK_GUARDRAIL_ID,
             guardrailVersion: process.env.BEDROCK_GUARDRAIL_VERSION,
           });
+          await recordAttempt(execute);
+          return { extracted };
         } catch (err) {
-          if (err instanceof GuardrailInterventionError)
-            await recordAttempt(execute);
-          throw err;
+          if (!(err instanceof GuardrailInterventionError)) throw err;
+          await recordAttempt(execute);
+          return { guardrailBlocked: true };
         }
-        await recordAttempt(execute);
-        return extracted;
       },
     );
-    return json(200, { ok: true, ...result });
-  } catch (err) {
-    if (err instanceof AiImportGateError)
-      return json(403, { ok: false, error: err.message });
-    if (err instanceof GuardrailInterventionError)
+    if (result.guardrailBlocked)
       return json(400, {
         ok: false,
         error: "This file could not be processed.",
       });
+    return json(200, { ok: true, ...result.extracted });
+  } catch (err) {
+    if (err instanceof AiImportGateError)
+      return json(403, { ok: false, error: err.message });
     console.error(
       `[${user.tenantId}] extract failed: ${err.message}`,
       err.stack,
