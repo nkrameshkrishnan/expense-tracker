@@ -3736,17 +3736,13 @@ function renderData() {
       reviewEl.innerHTML = `<b class="over">File is too large (max ${MAX_FILE_BYTES / 1024 / 1024}MB).</b>`;
       return;
     }
-    reviewEl.innerHTML = `<p class="note">Reading your statement — this can take up to 20 seconds…</p>`;
+    reviewEl.innerHTML = `<p class="note">Uploading your statement…</p>`;
 
     try {
-      const buf = await file.arrayBuffer();
-      const fileBase64 = btoa(
-        new Uint8Array(buf).reduce((s, b) => s + String.fromCharCode(b), ""),
-      );
       const { transactions, skipped } = await state.store.extractTransactions(
         file.name,
         fileType,
-        fileBase64,
+        file,
         CAT_NAMES,
       );
       renderAiReviewTable(reviewEl, transactions, skipped);
