@@ -14,6 +14,25 @@
   --blue: #1d4ed8;
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --disp: "Space Grotesk", system-ui, -apple-system, Segoe UI, sans-serif;
+  /* ---- elevation & motion (added for the card/motion revamp) ---- */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --card-bg: #ffffff;
+  --shadow-card: 0 1px 2px rgba(18, 22, 28, 0.04), 0 8px 24px -8px rgba(18, 22, 28, 0.1);
+  --shadow-card-hover: 0 2px 4px rgba(18, 22, 28, 0.06), 0 16px 32px -12px rgba(18, 22, 28, 0.16);
+  --shadow-focus: 0 0 0 3px rgba(180, 83, 9, 0.25);
+  --motion-fast: 150ms;
+  --motion-base: 250ms;
+  --motion-slow: 600ms;
+  --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --cat-color-0: #7c9885;
+  --cat-color-1: #7a92a8;
+  --cat-color-2: #b98a6b;
+  --cat-color-3: #9b7ba8;
+  --cat-color-4: #c2a04a;
+  --cat-color-5: #6b7684;
+  --cat-color-6: #7f9270;
+  --cat-color-7: #ab6f5c;
 }
 * {
   box-sizing: border-box;
@@ -2503,4 +2522,28 @@ tr:hover .nw-del-acct {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--ink-3);
+}
+
+/* ---------- card hover-lift (added for the card/motion revamp) ---------- */
+.card-hoverable {
+  transition:
+    box-shadow var(--motion-fast) var(--motion-ease),
+    transform var(--motion-fast) var(--motion-ease);
+}
+.card-hoverable:hover {
+  box-shadow: var(--shadow-card-hover);
+  transform: translateY(-2px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .card-hoverable {
+    transition: none;
+  }
+  .card-hoverable:hover {
+    transform: none;
+  }
+}
+
+#view button:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
 }
