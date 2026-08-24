@@ -21,7 +21,7 @@ import {
   CURRENCIES,
   setCurrency as setCurrentCurrency,
 } from "./store.js";
-import { cardHoverable, revealStagger, countUp, viewTransition } from "./motion.js";
+import { cardHoverable, revealStagger, countUp, viewTransition, exitCollapse } from "./motion.js";
 import {
   aggregate,
   money,
@@ -1700,9 +1700,16 @@ const txCollapsed = new Set();
    substitute. Same lifetime as txCollapsed: never explicitly cleared,
    lives for as long as the page does. */
 const txRevealed = new Set();
+/* Snapshot of the filter state as of the last renderTransactions() call,
+   used to tell "a filter pill that's newly active" (animate in) from "a
+   pill that was already showing" (leave alone) across a full-rebuild
+   re-render triggered by typing in the search box. */
+let txPrevFilter = { q: "", cat: "", type: "", month: "" };
 
 function renderTransactions() {
   const f = state.filter;
+  const prevFilter = txPrevFilter;
+  txPrevFilter = { q: f.q, cat: f.cat, type: f.type, month: f.month };
   let rows = scoped();
   if (f.q) {
     const q = f.q.toLowerCase();
@@ -1906,6 +1913,13 @@ function renderTransactions() {
     }
   });
 
+  ["q", "cat", "type", "month"].forEach((k) => {
+    if (!prevFilter[k] && f[k]) {
+      const el = view.querySelector(`.fpill[data-clear="${k}"]`);
+      if (el) revealStagger([el], { stagger: 0 });
+    }
+  });
+
   // — month group collapse/expand
   view.querySelectorAll("[data-toggle]").forEach(
     (btn) =>
@@ -1986,7 +2000,8 @@ function renderTransactions() {
   // — active filter pills
   view.querySelectorAll("[data-clear]").forEach(
     (el) =>
-      (el.onclick = () => {
+      (el.onclick = async () => {
+        await exitCollapse(el);
         state.filter[el.dataset.clear] = "";
         refilter();
       }),
@@ -2035,6 +2050,8 @@ function renderTransactions() {
             await refresh();
           });
           if (done) {
+            row.style.opacity = "";
+            await exitCollapse(row);
             renderTransactions();
             notice("Entry deleted.", "ok");
           } else row.style.opacity = "";

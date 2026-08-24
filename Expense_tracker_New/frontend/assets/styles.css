@@ -917,6 +917,7 @@ code {
   cursor: pointer;
   letter-spacing: 0.03em;
   border: 1px solid var(--ink);
+  overflow: hidden;
 }
 .fpill:hover {
   background: #000;
