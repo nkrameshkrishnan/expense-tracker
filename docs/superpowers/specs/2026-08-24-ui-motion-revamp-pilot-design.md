@@ -36,8 +36,9 @@ tooling, no new script tags beyond the one GSAP `<script defer>`.
    other tab (which shares `.kpi`/`.panel` CSS classes with Dashboard)
    picks up the same visual treatment for free, even without new motion.
 2. Real, purposeful motion: count-up numbers, staggered entrance, chart
-   draw-in, hover-lift, skeleton loading, animated tab transitions —
-   scoped to Dashboard and Transactions' own render/patch functions.
+   draw-in, hover-lift, animated tab transitions — scoped to Dashboard and
+   Transactions' own render/patch functions. (Skeleton loading was
+   considered and dropped — see the note under "Motion System" below.)
 3. `prefers-reduced-motion: reduce` disables all non-essential motion
    (stagger, slide, lift) in one place, not per call site.
 4. No regression to the existing fast-path DOM-patching behavior
@@ -212,13 +213,15 @@ export function viewTransition(renderFn) {
 | Chart draw-in | Chart.js `animation.duration` | 600ms, `easeOutQuart` | Per-chart, via existing `charts.js` functions — a filter-triggered re-render of one chart must not replay its panel's entrance stagger. |
 | Card/row hover-lift | shadow token swap + translate-y (cards only) | 150ms | Transactions rows use background-tint + shadow only, no translate-y (dense list, individual lift reads as noisy). |
 | Tab switch | fade+slide on `#view` | 180ms | Via `viewTransition()`. |
-| Skeleton loading | shimmer | continuous until data resolves | Shown while `state.rows`/`state.plans` unresolved, replacing today's blank/zero flash. |
+| ~~Skeleton loading~~ | — | — | **Dropped, see note below.** |
 | Transactions group expand | chevron rotate | 150ms | Purely visual toggle, independent of the subtotal count-up below. |
 | Transactions group header subtotal | count-up | 500–700ms | Once per group key (via `txRevealed`, same gate as row entrance) — fires when the group is first rendered, not on expand/collapse, since the header is visible in both states. |
 | Transactions row entrance | stagger fade+rise | 350ms, 40ms stagger | Only for rows newly revealed (group expand, or initial newest-group load) — not replayed on unrelated re-renders (e.g. typing in the search filter). |
 | Filter pill (`.fpill`) add/remove | scale+fade | 150ms | |
 | Transactions row delete | fade + height-collapse | 250ms | Via `exitCollapse()`, awaited before the row leaves the DOM/state. |
 | Per-row transaction amounts | **none** | — | Explicitly no count-up — animating 20+ individual values at once is the "wall of motion" this spec avoids. Only aggregate totals (page header, group subtotals) count up. |
+
+**Why skeleton loading was dropped:** the original assumption — that Dashboard/Transactions can render with `state.rows` still unresolved, producing a blank/zero flash — doesn't hold once `boot()` (in `assets/app.js`) is actually read. `state.rows` is fetched and awaited *before* the first `go(startTab)` call that produces the first Dashboard/Transactions render; the actual network wait is already covered by the pre-existing full-screen `#boot-loading` overlay shown by inline HTML before `app.js` even starts running. The only later data refetch (Dashboard's month/year selectors, and the background `ensureAllYearsLoaded()` call) replaces already-rendered real numbers with newer real numbers — never a blank state — so there is no blank/zero flash for this pilot's two tabs to replace. A skeleton system remains a reasonable future addition for Billing's genuine "Loading plans…" text state, but that tab is out of scope here (see Non-Goals).
 
 ### Reduced motion
 
@@ -360,6 +363,7 @@ to reach the disconnected-but-real app shell) plus browser automation to:
 
 - Extending the motion system (stagger, count-up, card elevation) to the
   remaining six tabs: Add, Budget, Net worth, Data, Billing, Profile.
-- Skeleton-loading treatment for tabs beyond Dashboard/Transactions.
+- A skeleton-loading treatment for Billing's genuine "Loading plans…" wait
+  (the only tab with a real blank-state window today).
 - Re-evaluating whether `--card-bg`/shadow tokens need dark-mode
   equivalents (this app currently has no dark mode).
