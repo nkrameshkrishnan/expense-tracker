@@ -502,7 +502,7 @@ At the very end of `buildDashboardShell` (after the stagger code added in Task 2
   state._dashLastAgg = a;
 ```
 
-(`a` is the aggregate parameter `buildDashboardShell` already receives — confirm the parameter name matches; it is the first parameter per the current signature `function buildDashboardShell(a, label, people, pSeries, showCompare, shape)`.)
+(`a` is the aggregate parameter `buildDashboardShell` already receives — it is the first parameter per the current signature `function buildDashboardShell(a, label, people, pSeries, showCompare)`. Note the call site passes a 6th argument, `shape` — `buildDashboardShell(a, label, people, pSeries, showCompare, shape)` in `renderDashboard` — that the function signature doesn't declare; it's silently dropped, a pre-existing quirk unrelated to this task. Do not add a `shape` parameter to `buildDashboardShell` as part of this task.)
 
 - [ ] **Step 3: Rewrite `updateDashboardValues` to count up instead of instant text-set**
 
