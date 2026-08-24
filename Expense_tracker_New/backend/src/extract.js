@@ -210,6 +210,10 @@ export const handler = async (event) => {
           return { extracted };
         } catch (err) {
           if (!(err instanceof GuardrailInterventionError)) throw err;
+          console.warn(
+            `[${user.tenantId}] guardrail intervened on ${fileType} import`,
+            JSON.stringify(err.guardrailTrace),
+          );
           await recordAttempt(execute);
           return { guardrailBlocked: true };
         }

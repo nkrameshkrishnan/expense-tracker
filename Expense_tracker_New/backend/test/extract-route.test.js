@@ -213,7 +213,7 @@ test("buildExtractionRequest omits guardrailConfig when no guardrail id is given
     categoryNames: CATEGORY_NAMES,
     modelId: "test-model",
   });
-  assert.equal(request.guardrailConfig, undefined);
+  assert.ok(!("guardrailConfig" in request));
 });
 
 test("parseExtractionResponse throws GuardrailInterventionError when a guardrail blocked the response", () => {

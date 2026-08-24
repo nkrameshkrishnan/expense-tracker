@@ -129,7 +129,7 @@ Resources:
   AiImportGuardrail:
     Type: AWS::Bedrock::Guardrail
     Properties:
-      Name: ai-import-guardrail
+      Name: !Sub ledger-${Stage}-ai-import-guardrail
       Description: Content safety and prompt-attack defense for the AI transaction import feature - see docs/superpowers/specs/2026-08-23-ai-import-security-hardening-design.md, Section A.
       BlockedInputMessaging: "This file could not be processed."
       BlockedOutputsMessaging: "This file could not be processed."
@@ -152,7 +152,7 @@ Resources:
             OutputStrength: MEDIUM
           - Type: PROMPT_ATTACK
             InputStrength: MEDIUM
-            OutputStrength: NONE
+            OutputStrength: NONE # PROMPT_ATTACK only applies to input
       SensitiveInformationPolicyConfig:
         PiiEntitiesConfig:
           - Type: CREDIT_DEBIT_CARD_NUMBER

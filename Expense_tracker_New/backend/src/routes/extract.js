@@ -82,7 +82,7 @@ export function buildExtractionRequest({
     modelId,
     system: [{ text: buildSystemPrompt(categoryNames) }],
     messages: [{ role: "user", content: userContent }],
-    ...(guardrailId
+    ...(guardrailId && guardrailVersion
       ? {
           guardrailConfig: {
             guardrailIdentifier: guardrailId,
@@ -142,10 +142,13 @@ export function buildExtractionRequest({
     two apart (the latter still counts against the monthly cap; treating
     a malformed response the same way would be a fair charge). */
 export function parseExtractionResponse(response) {
-  if (response.stopReason === "guardrail_intervened")
-    throw new GuardrailInterventionError(
+  if (response.stopReason === "guardrail_intervened") {
+    const err = new GuardrailInterventionError(
       "The content safety guardrail blocked this request.",
     );
+    err.guardrailTrace = response.trace?.guardrail;
+    throw err;
+  }
   const content = response.output?.message?.content || [];
   const toolUse = content.find((c) => c.toolUse)?.toolUse;
   if (!toolUse || !Array.isArray(toolUse.input?.transactions))
