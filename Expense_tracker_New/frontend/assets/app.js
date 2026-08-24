@@ -1692,6 +1692,14 @@ function renderAdd() {
 // Persists across re-renders (filtering, editing, deleting) so collapsing a
 // month doesn't spring back open every time the list redraws.
 const txCollapsed = new Set();
+/* Tracks which month groups have already played their entrance
+   animation (row stagger + header subtotal count-up), by group key.
+   renderTransactions() fully replaces view.innerHTML on every call (no
+   patch path here, unlike Dashboard's canPatch), so DOM node identity
+   can't tell "already animated" from "newly revealed" — this Set is the
+   substitute. Same lifetime as txCollapsed: never explicitly cleared,
+   lives for as long as the page does. */
+const txRevealed = new Set();
 
 function renderTransactions() {
   const f = state.filter;
@@ -1867,9 +1875,9 @@ function renderTransactions() {
               <span class="tx-group-label">${esc(g.label)}</span>
               <span class="tx-group-count muted">${g.rows.length}</span>
               <span class="tx-group-stats num">
-                ${g.income > 0 ? `<span class="tx-income">+${money(g.income)}</span>` : ""}
+                ${g.income > 0 ? `<span class="tx-income" id="tx-g-inc-${g.key}">+${money(g.income)}</span>` : ""}
                 ${g.income > 0 && g.expense > 0 ? '<span class="tx-sep">·</span>' : ""}
-                ${g.expense > 0 ? `<span>${money(g.expense)}</span>` : ""}
+                ${g.expense > 0 ? `<span id="tx-g-exp-${g.key}">${money(g.expense)}</span>` : ""}
               </span>
             </button>
             <div class="tx-group-body">${g.rows.map(txRow).join("")}</div>
@@ -1878,6 +1886,25 @@ function renderTransactions() {
             .join("")
     }
   </div>`;
+
+  groups.forEach((g) => {
+    if (txRevealed.has(g.key)) return;
+    txRevealed.add(g.key);
+
+    if (g.income > 0) {
+      const el = document.getElementById(`tx-g-inc-${g.key}`);
+      if (el) countUp(el, 0, g.income, (v) => `+${money(v)}`);
+    }
+    if (g.expense > 0) {
+      const el = document.getElementById(`tx-g-exp-${g.key}`);
+      if (el) countUp(el, 0, g.expense, money);
+    }
+
+    if (!txCollapsed.has(g.key)) {
+      const groupEl = view.querySelector(`.tx-group[data-month="${g.key}"]`);
+      if (groupEl) revealStagger(groupEl.querySelectorAll(".tx-row"));
+    }
+  });
 
   // — month group collapse/expand
   view.querySelectorAll("[data-toggle]").forEach(
