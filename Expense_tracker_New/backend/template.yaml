@@ -83,6 +83,108 @@ Globals:
 
 Resources:
   # --------------------------------------------------------------- Compute
+  AiUploadsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      CorsConfiguration:
+        CorsRules:
+          - AllowedMethods: [PUT]
+            AllowedOrigins: [!Ref AllowedOrigin]
+            AllowedHeaders: ["*"]
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireUploadsAfterOneDay
+            Status: Enabled
+            ExpirationInDays: 1
+
+  AiUploadsMalwareProtectionPlan:
+    Type: AWS::GuardDuty::MalwareProtectionPlan
+    Properties:
+      Role: !GetAtt AiUploadsMalwareProtectionRole.Arn
+      ProtectedResource:
+        S3Bucket:
+          BucketName: !Ref AiUploadsBucket
+      Actions:
+        Tagging:
+          Status: ENABLED
+
+  AiUploadsMalwareProtectionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: malware-protection-plan.guardduty.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: AiUploadsMalwareScanAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                  - s3:GetBucketNotification
+                  - s3:PutBucketNotification
+                Resource:
+                  - !GetAtt AiUploadsBucket.Arn
+              # The actual scan read - GuardDuty fetches each uploaded
+              # object's bytes to scan them, so this is the one grant the
+              # whole feature is pointless without. Object-level action,
+              # must be scoped to /* (a bucket-ARN-only grant, as an
+              # earlier revision of this policy briefly had, matches
+              # nothing and leaves every object stuck at ACCESS_DENIED).
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetObjectTagging
+                  - s3:PutObjectTagging
+                  - s3:GetObjectVersionTagging
+                  - s3:PutObjectVersionTagging
+                Resource:
+                  - !Sub ${AiUploadsBucket.Arn}/*
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource:
+                  - !Sub ${AiUploadsBucket.Arn}/malware-protection-resource-validation-object
+              - Effect: Allow
+                Action:
+                  - events:PutRule
+                  - events:DeleteRule
+                  - events:PutTargets
+                  - events:RemoveTargets
+                Resource:
+                  - !Sub arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/DO-NOT-DELETE-AmazonGuardDutyMalwareProtectionS3*
+                Condition:
+                  StringLike:
+                    events:ManagedBy: malware-protection-plan.guardduty.amazonaws.com
+              # Separate, unconditioned statement: AWS's documented policy
+              # keeps the two read-only rule calls outside the
+              # events:ManagedBy condition - that context key isn't
+              # present on a plain describe/list call, so bundling these
+              # in with the conditioned write actions above would silently
+              # deny both.
+              - Effect: Allow
+                Action:
+                  - events:DescribeRule
+                  - events:ListTargetsByRule
+                Resource:
+                  - !Sub arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/DO-NOT-DELETE-AmazonGuardDutyMalwareProtectionS3*
+
   DataFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -91,6 +193,7 @@ Resources:
       Environment:
         Variables:
           RATE_LIMIT_TABLE: !Ref RateLimitTable
+          AI_UPLOADS_BUCKET: !Ref AiUploadsBucket
       Policies:
         - Statement:
             - Effect: Allow
@@ -106,6 +209,11 @@ Resources:
             - Effect: Allow
               Action: dynamodb:UpdateItem
               Resource: !GetAtt RateLimitTable.Arn
+            - Effect: Allow
+              Action:
+                - s3:PutObject
+                - s3:GetObjectTagging
+              Resource: !Sub ${AiUploadsBucket.Arn}/*
       Events:
         Get:
           Type: HttpApi
@@ -126,6 +234,46 @@ Resources:
             Path: /data
             Method: OPTIONS
 
+  AiImportGuardrail:
+    Type: AWS::Bedrock::Guardrail
+    Properties:
+      Name: !Sub ledger-${Stage}-ai-import-guardrail
+      Description: Content safety and prompt-attack defense for the AI transaction import feature - see docs/superpowers/specs/2026-08-23-ai-import-security-hardening-design.md, Section A.
+      BlockedInputMessaging: "This file could not be processed."
+      BlockedOutputsMessaging: "This file could not be processed."
+      ContentPolicyConfig:
+        FiltersConfig:
+          - Type: HATE
+            InputStrength: MEDIUM
+            OutputStrength: MEDIUM
+          - Type: INSULTS
+            InputStrength: MEDIUM
+            OutputStrength: MEDIUM
+          - Type: SEXUAL
+            InputStrength: MEDIUM
+            OutputStrength: MEDIUM
+          - Type: VIOLENCE
+            InputStrength: MEDIUM
+            OutputStrength: MEDIUM
+          - Type: MISCONDUCT
+            InputStrength: MEDIUM
+            OutputStrength: MEDIUM
+          - Type: PROMPT_ATTACK
+            InputStrength: MEDIUM
+            OutputStrength: NONE # PROMPT_ATTACK only applies to input
+      SensitiveInformationPolicyConfig:
+        PiiEntitiesConfig:
+          - Type: CREDIT_DEBIT_CARD_NUMBER
+            Action: ANONYMIZE
+          - Type: US_SOCIAL_SECURITY_NUMBER
+            Action: ANONYMIZE
+
+  AiImportGuardrailVersion:
+    Type: AWS::Bedrock::GuardrailVersion
+    Properties:
+      GuardrailIdentifier: !GetAtt AiImportGuardrail.GuardrailId
+      Description: v1 - initial content filters + prompt-attack detection
+
   ExtractFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -136,6 +284,9 @@ Resources:
         Variables:
           RATE_LIMIT_TABLE: !Ref RateLimitTable
           BEDROCK_MODEL_ID: !Ref BedrockModelId
+          BEDROCK_GUARDRAIL_ID: !GetAtt AiImportGuardrail.GuardrailId
+          BEDROCK_GUARDRAIL_VERSION: !GetAtt AiImportGuardrailVersion.Version
+          AI_UPLOADS_BUCKET: !Ref AiUploadsBucket
       Policies:
         - Statement:
             - Effect: Allow
@@ -164,6 +315,15 @@ Resources:
               Resource:
                 - !Sub arn:aws:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}
                 - !Sub arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/*
+            - Effect: Allow
+              Action: bedrock:ApplyGuardrail
+              Resource: !GetAtt AiImportGuardrail.GuardrailArn
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:GetObjectTagging
+                - s3:DeleteObject
+              Resource: !Sub ${AiUploadsBucket.Arn}/*
       Events:
         Post:
           Type: HttpApi

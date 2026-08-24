@@ -3728,25 +3728,21 @@ function renderData() {
     const reviewEl = $("#ai-review");
     const fileType = file.name.toLowerCase().endsWith(".pdf") ? "pdf" : "csv";
     // Matches backend/src/extract.js's MAX_FILE_BYTES - reject an oversized
-    // file instantly instead of paying for a full upload round trip only
-    // to have the server (or, above ~4-4.5MB, the Lambda platform itself)
-    // reject it.
+    // file instantly instead of paying for a full upload round trip (the
+    // file goes straight to S3, not through a Lambda request body) only to
+    // have the server reject it once it's already there.
     const MAX_FILE_BYTES = 4 * 1024 * 1024;
     if (file.size > MAX_FILE_BYTES) {
       reviewEl.innerHTML = `<b class="over">File is too large (max ${MAX_FILE_BYTES / 1024 / 1024}MB).</b>`;
       return;
     }
-    reviewEl.innerHTML = `<p class="note">Reading your statement — this can take up to 20 seconds…</p>`;
+    reviewEl.innerHTML = `<p class="note">Uploading your statement…</p>`;
 
     try {
-      const buf = await file.arrayBuffer();
-      const fileBase64 = btoa(
-        new Uint8Array(buf).reduce((s, b) => s + String.fromCharCode(b), ""),
-      );
       const { transactions, skipped } = await state.store.extractTransactions(
         file.name,
         fileType,
-        fileBase64,
+        file,
         CAT_NAMES,
       );
       renderAiReviewTable(reviewEl, transactions, skipped);

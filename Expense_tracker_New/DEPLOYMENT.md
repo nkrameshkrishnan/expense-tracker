@@ -164,6 +164,19 @@ target region (AWS Console → Bedrock → the model's page, or a manual
 work via a cross-region inference profile, in which case you'll need to
 set `BedrockModelId` to that profile's id instead.
 
+The Guardrail itself (`AiImportGuardrail`) is fully defined in `template.yaml` and needs no separate manual enablement, unlike model access above.
+
+**GuardDuty Malware Protection**: the IAM principal deploying this stack needs
+`guardduty:CreateMalwareProtectionPlan` permission, plus `iam:PassRole`
+permission scoped to allow passing a role to
+`malware-protection-plan.guardduty.amazonaws.com` (a condition on
+`iam:PassedToService`) - this feature's `AiUploadsMalwareProtectionRole` is
+passed to GuardDuty at deploy time. A default `sam deploy` role often does
+not include this by default; add it to whatever role/user performs the
+deploy if the `AiUploadsMalwareProtectionPlan` resource fails to create.
+Malware Protection for S3 does NOT require a separately-enabled GuardDuty
+detector - the plan resource is self-contained.
+
 3. Deploy takes **10-15 minutes** the first time (Aurora Serverless v2
    cluster creation is the slow part). Watch for `Successfully created/
 updated stack` at the end.

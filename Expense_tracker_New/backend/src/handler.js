@@ -15,6 +15,8 @@ import * as budget from "./routes/budget.js";
 import * as balances from "./routes/balances.js";
 import * as debts from "./routes/debts.js";
 import * as tenants from "./routes/tenants.js";
+import * as uploads from "./routes/uploads.js";
+import { s3 } from "./s3.js";
 import {
   createCheckoutSession,
   createPortalSession,
@@ -206,6 +208,38 @@ async function handlePost(user, event) {
       tenants.listMyTenants(execute, user.sub),
     );
     return { ok: true, tenants: myTenants };
+  }
+
+  // getUploadUrl/getScanStatus talk to S3 only, never to Postgres - like
+  // getPlans above, they need no transaction of any kind, so opening
+  // runInTenantTransaction for them was a wasted Data API BeginTransaction/
+  // set_config/CommitTransaction round trip on every single scan-status
+  // poll. user.tenantId is already available here, same as it is for the
+  // special cases above.
+  if (action === "getUploadUrl") {
+    if (payload.fileType !== "csv" && payload.fileType !== "pdf")
+      return { ok: false, error: 'fileType must be "csv" or "pdf".' };
+    const { url, key } = await uploads.presignUploadUrl(
+      s3,
+      process.env.AI_UPLOADS_BUCKET,
+      user.tenantId,
+      payload.fileType,
+    );
+    return { ok: true, url, key };
+  }
+  if (action === "getScanStatus") {
+    // A foreign-tenant key is never valid to poll - presignUploadUrl only
+    // ever hands out keys under this tenant's own prefix (see uploads.js),
+    // so a key with any other prefix could only come from a caller trying
+    // to read another tenant's scan result.
+    if (!payload.key?.startsWith(`${user.tenantId}/`))
+      return { ok: false, error: "Invalid key." };
+    const { status } = await uploads.getScanStatus(
+      s3,
+      process.env.AI_UPLOADS_BUCKET,
+      payload.key,
+    );
+    return { ok: true, status };
   }
 
   return runInTenantTransaction(user.tenantId, user.sub, async (execute) => {
