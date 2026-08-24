@@ -20,6 +20,7 @@ import {
   CURRENCIES,
   setCurrency as setCurrentCurrency,
 } from "./store.js";
+import { cardHoverable, revealStagger } from "./motion.js";
 import {
   aggregate,
   money,
@@ -1046,6 +1047,25 @@ function buildDashboardShell(a, label, people, pSeries, showCompare) {
     ${catDetailRows(a)}
   </tbody></table></div>`;
   view.dataset.shell = "dashboard";
+
+  view.querySelectorAll(".kpi, .panel").forEach(cardHoverable);
+  const kpiEls = view.querySelectorAll(".kpi");
+  const panelEls = view.querySelectorAll(".panel");
+  revealStagger(kpiEls);
+  const kpiFinish = 0.35 + Math.max(0, kpiEls.length - 1) * 0.04; // duration + stagger tail, matches revealStagger's defaults
+  if (window.gsap && panelEls.length) {
+    gsap.set(panelEls, { opacity: 0, y: 8 });
+    gsap.to(panelEls, {
+      opacity: 1,
+      y: 0,
+      duration: 0.35,
+      stagger: 0.04,
+      delay: kpiFinish,
+      ease: "power2.out",
+    });
+  } else {
+    panelEls.forEach((el) => (el.style.opacity = 1));
+  }
 }
 
 /** Fast path: same shape as last render, so every section that exists now

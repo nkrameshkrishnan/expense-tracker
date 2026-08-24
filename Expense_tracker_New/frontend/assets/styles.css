@@ -263,15 +263,13 @@ label.f > textarea {
 .kpis {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
-  border: 1px solid var(--rule-2);
-  background: #fff;
+  gap: 12px;
 }
 .kpi {
   padding: 13px 14px;
-  border-right: 1px solid var(--rule);
-}
-.kpi:last-child {
-  border-right: 0;
+  background: var(--card-bg);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
 }
 .kpi .k {
   font-size: 10.5px;
@@ -302,9 +300,6 @@ label.f > textarea {
   .kpis {
     grid-template-columns: repeat(3, 1fr);
   }
-  .kpi {
-    border-bottom: 1px solid var(--rule);
-  }
 }
 @media (max-width: 620px) {
   .kpis {
@@ -324,8 +319,9 @@ label.f > textarea {
   }
 }
 .panel {
-  border: 1px solid var(--rule-2);
-  background: #fff;
+  background: var(--card-bg);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
   padding: 14px;
 }
 .panel h3 {
