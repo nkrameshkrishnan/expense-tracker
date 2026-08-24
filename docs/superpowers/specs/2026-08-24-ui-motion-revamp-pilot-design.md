@@ -213,7 +213,8 @@ export function viewTransition(renderFn) {
 | Card/row hover-lift | shadow token swap + translate-y (cards only) | 150ms | Transactions rows use background-tint + shadow only, no translate-y (dense list, individual lift reads as noisy). |
 | Tab switch | fade+slide on `#view` | 180ms | Via `viewTransition()`. |
 | Skeleton loading | shimmer | continuous until data resolves | Shown while `state.rows`/`state.plans` unresolved, replacing today's blank/zero flash. |
-| Transactions group expand | chevron rotate | 150ms | Plus one-time count-up of that group's income/expense subtotal. |
+| Transactions group expand | chevron rotate | 150ms | Purely visual toggle, independent of the subtotal count-up below. |
+| Transactions group header subtotal | count-up | 500–700ms | Once per group key (via `txRevealed`, same gate as row entrance) — fires when the group is first rendered, not on expand/collapse, since the header is visible in both states. |
 | Transactions row entrance | stagger fade+rise | 350ms, 40ms stagger | Only for rows newly revealed (group expand, or initial newest-group load) — not replayed on unrelated re-renders (e.g. typing in the search filter). |
 | Filter pill (`.fpill`) add/remove | scale+fade | 150ms | |
 | Transactions row delete | fade + height-collapse | 250ms | Via `exitCollapse()`, awaited before the row leaves the DOM/state. |
@@ -299,9 +300,15 @@ respects the same media query directly in `styles.css`:
 - Row hover: `.tx-row` gets `--shadow-card` + background-tint on hover,
   no translate-y (see catalog).
 - Month group header: chevron icon rotates 90° over 150ms on
-  expand/collapse (CSS transition on a `transform` class toggle); the
-  group's income/expense subtotal plays `countUp()` once, the first time
-  that group transitions from collapsed to expanded.
+  expand/collapse (CSS transition on a `transform` class toggle). **Correction
+  from an earlier draft of this spec:** the header's income/expense subtotal
+  (`.tx-group-stats`) is markup-adjacent to the chevron and label, not inside
+  `.tx-group-body` — it is already visible whether the group is expanded or
+  collapsed (only the row list toggles). So its count-up cannot be gated on
+  "expand"; instead it uses the same `txRevealed` gate as row entrance (see
+  above): the first time a group is rendered with a key not yet in
+  `txRevealed`, its header subtotal counts up. Whether the group also
+  stagger-reveals rows at that moment depends on whether it starts expanded.
 - Filter pills (`.fpill`): scale+fade in when added (a filter is set),
   scale+fade out before removal when cleared.
 - Row delete (the `data-del` button handler): call `await
