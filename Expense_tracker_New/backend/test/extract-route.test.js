@@ -6,6 +6,7 @@ import {
   parseExtractionResponse,
   validateExtractedRow,
   extractTransactions,
+  GuardrailInterventionError,
 } from "../src/routes/extract.js";
 
 afterEach(() => mock.restoreAll());
@@ -187,6 +188,62 @@ test("validateExtractedRow defaults confidence to high when absent", () => {
     CATEGORY_NAMES,
   );
   assert.equal(row.confidence, "high");
+});
+
+test("buildExtractionRequest attaches guardrailConfig when a guardrail id is given", () => {
+  const request = buildExtractionRequest({
+    fileType: "csv",
+    fileContent: "date,amount\n2026-08-01,10",
+    categoryNames: CATEGORY_NAMES,
+    modelId: "test-model",
+    guardrailId: "gr-abc123",
+    guardrailVersion: "1",
+  });
+  assert.deepEqual(request.guardrailConfig, {
+    guardrailIdentifier: "gr-abc123",
+    guardrailVersion: "1",
+    trace: "enabled",
+  });
+});
+
+test("buildExtractionRequest omits guardrailConfig when no guardrail id is given", () => {
+  const request = buildExtractionRequest({
+    fileType: "csv",
+    fileContent: "date,amount\n2026-08-01,10",
+    categoryNames: CATEGORY_NAMES,
+    modelId: "test-model",
+  });
+  assert.equal(request.guardrailConfig, undefined);
+});
+
+test("parseExtractionResponse throws GuardrailInterventionError when a guardrail blocked the response", () => {
+  assert.throws(
+    () =>
+      parseExtractionResponse({
+        stopReason: "guardrail_intervened",
+        output: { message: { content: [] } },
+      }),
+    GuardrailInterventionError,
+  );
+});
+
+test("extractTransactions propagates a guardrail intervention as GuardrailInterventionError", async () => {
+  const bedrockClient = {
+    send: async () => ({
+      stopReason: "guardrail_intervened",
+      output: { message: { content: [] } },
+    }),
+  };
+  await assert.rejects(
+    () =>
+      extractTransactions(bedrockClient, {
+        fileType: "csv",
+        fileContent: "date,amount\n2026-08-01,10",
+        categoryNames: CATEGORY_NAMES,
+        modelId: "test-model",
+      }),
+    GuardrailInterventionError,
+  );
 });
 
 test("extractTransactions calls Bedrock once and returns validated rows plus a skipped count", async () => {

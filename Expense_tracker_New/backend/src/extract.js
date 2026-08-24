@@ -21,7 +21,10 @@ import { checkRateLimit, RateLimitError } from "./rateLimit.js";
 import { runInTenantTransaction } from "./db.js";
 import { FEATURES, AI_IMPORT_MONTHLY_CAP } from "./plans.js";
 import { bedrock } from "./bedrock.js";
-import { extractTransactions } from "./routes/extract.js";
+import {
+  extractTransactions,
+  GuardrailInterventionError,
+} from "./routes/extract.js";
 import { countThisMonth, recordAttempt } from "./routes/aiImportCap.js";
 
 const CORS_HEADERS = {
@@ -183,12 +186,21 @@ export const handler = async (event) => {
 
         const fileContent =
           fileType === "csv" ? fileBuffer.toString("utf8") : fileBuffer;
-        const extracted = await extractTransactions(bedrock, {
-          fileType,
-          fileContent,
-          categoryNames,
-          modelId: process.env.BEDROCK_MODEL_ID,
-        });
+        let extracted;
+        try {
+          extracted = await extractTransactions(bedrock, {
+            fileType,
+            fileContent,
+            categoryNames,
+            modelId: process.env.BEDROCK_MODEL_ID,
+            guardrailId: process.env.BEDROCK_GUARDRAIL_ID,
+            guardrailVersion: process.env.BEDROCK_GUARDRAIL_VERSION,
+          });
+        } catch (err) {
+          if (err instanceof GuardrailInterventionError)
+            await recordAttempt(execute);
+          throw err;
+        }
         await recordAttempt(execute);
         return extracted;
       },
@@ -197,6 +209,11 @@ export const handler = async (event) => {
   } catch (err) {
     if (err instanceof AiImportGateError)
       return json(403, { ok: false, error: err.message });
+    if (err instanceof GuardrailInterventionError)
+      return json(400, {
+        ok: false,
+        error: "This file could not be processed.",
+      });
     console.error(
       `[${user.tenantId}] extract failed: ${err.message}`,
       err.stack,

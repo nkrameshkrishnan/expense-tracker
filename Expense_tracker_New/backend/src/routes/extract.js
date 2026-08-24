@@ -10,6 +10,13 @@ import { money, isoDate, text, TYPES } from "../validate.js";
 
 const TOOL_NAME = "record_transactions";
 
+/** Thrown when Bedrock's response has stopReason "guardrail_intervened" -
+    the guardrail (see this feature's spec, Section A) blocked the input
+    or output. A distinct type from the generic "no usable tool-use
+    content" error below, so extract.js (the Lambda handler) can map this
+    to its own clear message rather than the generic one. */
+export class GuardrailInterventionError extends Error {}
+
 function buildSystemPrompt(categoryNames) {
   return [
     "You are extracting transactions from a bank or credit-card statement",
@@ -50,6 +57,8 @@ export function buildExtractionRequest({
   fileContent,
   categoryNames,
   modelId,
+  guardrailId,
+  guardrailVersion,
 }) {
   const userContent =
     fileType === "pdf"
@@ -73,6 +82,15 @@ export function buildExtractionRequest({
     modelId,
     system: [{ text: buildSystemPrompt(categoryNames) }],
     messages: [{ role: "user", content: userContent }],
+    ...(guardrailId
+      ? {
+          guardrailConfig: {
+            guardrailIdentifier: guardrailId,
+            guardrailVersion,
+            trace: "enabled",
+          },
+        }
+      : {}),
     toolConfig: {
       toolChoice: { tool: { name: TOOL_NAME } },
       tools: [
@@ -124,6 +142,10 @@ export function buildExtractionRequest({
     two apart (the latter still counts against the monthly cap; treating
     a malformed response the same way would be a fair charge). */
 export function parseExtractionResponse(response) {
+  if (response.stopReason === "guardrail_intervened")
+    throw new GuardrailInterventionError(
+      "The content safety guardrail blocked this request.",
+    );
   const content = response.output?.message?.content || [];
   const toolUse = content.find((c) => c.toolUse)?.toolUse;
   if (!toolUse || !Array.isArray(toolUse.input?.transactions))
@@ -169,13 +191,22 @@ export function validateExtractedRow(row, categoryNames) {
     validated, so one malformed row never fails the whole extraction. */
 export async function extractTransactions(
   bedrockClient,
-  { fileType, fileContent, categoryNames, modelId },
+  {
+    fileType,
+    fileContent,
+    categoryNames,
+    modelId,
+    guardrailId,
+    guardrailVersion,
+  },
 ) {
   const request = buildExtractionRequest({
     fileType,
     fileContent,
     categoryNames,
     modelId,
+    guardrailId,
+    guardrailVersion,
   });
   const response = await bedrockClient.send(new ConverseCommand(request));
   const rawRows = parseExtractionResponse(response);
