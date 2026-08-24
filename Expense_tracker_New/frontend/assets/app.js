@@ -20,7 +20,7 @@ import {
   CURRENCIES,
   setCurrency as setCurrentCurrency,
 } from "./store.js";
-import { cardHoverable, revealStagger } from "./motion.js";
+import { cardHoverable, revealStagger, countUp } from "./motion.js";
 import {
   aggregate,
   money,
@@ -1066,6 +1066,7 @@ function buildDashboardShell(a, label, people, pSeries, showCompare) {
   } else {
     panelEls.forEach((el) => (el.style.opacity = 1));
   }
+  state._dashLastAgg = a;
 }
 
 /** Fast path: same shape as last render, so every section that exists now
@@ -1076,40 +1077,69 @@ function updateDashboardValues(a, label, people, pSeries, showCompare) {
   if (sub)
     sub.textContent = `${personLabel()} \u00b7 ${label} \u00b7 ${a.count} transactions`;
 
-  const setKpi = (key, v, m) => {
-    const vEl = $(`#kpi-${key}-v`),
-      mEl = $(`#kpi-${key}-m`);
-    if (vEl) vEl.textContent = v;
+  const prev = state._dashLastAgg;
+
+  const setKpiMeta = (key, m) => {
+    const mEl = $(`#kpi-${key}-m`);
     if (mEl) mEl.textContent = m;
   };
-  setKpi("income", money(a.income), a.income === 0 ? "no income recorded" : "");
-  setKpi("expense", money(a.expense), `${a.count} entries`);
+  const setKpiNumber = (key, from, to, fmt) => {
+    const vEl = $(`#kpi-${key}-v`);
+    if (!vEl) return;
+    if (from === undefined || from === null) {
+      vEl.textContent = fmt(to);
+      return;
+    }
+    countUp(vEl, from, to, fmt);
+  };
+  const setKpiText = (key, text) => {
+    const vEl = $(`#kpi-${key}-v`);
+    if (vEl) vEl.textContent = text;
+  };
+
+  setKpiNumber("income", prev?.income, a.income, money);
+  setKpiMeta("income", a.income === 0 ? "no income recorded" : "");
+
+  setKpiNumber("expense", prev?.expense, a.expense, money);
+  setKpiMeta("expense", `${a.count} entries`);
+
   const netEl = $("#kpi-net");
-  if (netEl) netEl.className = `kpi ${a.net < 0 ? "neg" : "pos"}`;
-  setKpi("net", money(a.net), a.net < 0 ? "spending exceeds income" : "");
-  setKpi(
-    "savings",
-    a.income > 0 ? pct(a.savingsRate) : "\u2014",
-    a.income > 0 ? "" : "needs income data",
-  );
+  if (netEl) netEl.className = `kpi card-hoverable ${a.net < 0 ? "neg" : "pos"}`;
+  setKpiNumber("net", prev?.net, a.net, money);
+  setKpiMeta("net", a.net < 0 ? "spending exceeds income" : "");
+
+  if (a.income > 0 && prev?.income > 0) {
+    setKpiNumber("savings", prev.savingsRate, a.savingsRate, pct);
+  } else {
+    setKpiText("savings", a.income > 0 ? pct(a.savingsRate) : "\u2014");
+  }
+  setKpiMeta("savings", a.income > 0 ? "" : "needs income data");
+
   const budEl = $("#kpi-budgetused");
-  if (budEl) budEl.className = `kpi ${a.budgetUsed > 1 ? "neg" : ""}`;
-  setKpi(
+  if (budEl) budEl.className = `kpi card-hoverable ${a.budgetUsed > 1 ? "neg" : ""}`;
+  if (a.expenseBudget > 0 && prev?.expenseBudget > 0) {
+    setKpiNumber("budgetused", prev.budgetUsed, a.budgetUsed, pct);
+  } else {
+    setKpiText("budgetused", a.expenseBudget > 0 ? pct(a.budgetUsed) : "\u2014");
+  }
+  setKpiMeta(
     "budgetused",
-    a.expenseBudget > 0 ? pct(a.budgetUsed) : "\u2014",
     a.expenseBudget > 0
       ? state.person
         ? `of ${money(a.expenseBudget)} household`
         : `of ${money(a.expenseBudget)}`
       : "no budget set",
   );
-  setKpi(
+
+  setKpiNumber("avgday", prev?.avgDaily, a.avgDaily, money);
+  setKpiMeta(
     "avgday",
-    money(a.avgDaily),
     state.month === 0
       ? `over ${state.year % 4 === 0 && (state.year % 100 !== 0 || state.year % 400 === 0) ? 366 : 365} days`
       : `over ${new Date(state.year, state.month, 0).getDate()} days`,
   );
+
+  state._dashLastAgg = a;
 
   if (a.dividends > 0) {
     const t = $("#dash-div-total");
