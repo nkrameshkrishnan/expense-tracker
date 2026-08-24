@@ -16,16 +16,19 @@
    handler.js's action switch already is. */
 
 import { PDFDocument } from "pdf-lib";
+import { GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { requireUser, AuthError } from "./auth.js";
 import { checkRateLimit, RateLimitError } from "./rateLimit.js";
 import { runInTenantTransaction } from "./db.js";
 import { FEATURES, AI_IMPORT_MONTHLY_CAP } from "./plans.js";
 import { bedrock } from "./bedrock.js";
+import { s3 } from "./s3.js";
 import {
   extractTransactions,
   GuardrailInterventionError,
 } from "./routes/extract.js";
 import { countThisMonth, recordAttempt } from "./routes/aiImportCap.js";
+import { getScanStatus, headObjectSize } from "./routes/uploads.js";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": process.env.ALLOWED_ORIGIN || "*",
@@ -73,17 +76,16 @@ export async function countPdfPages(bytes) {
 }
 
 /** Parses and validates the raw Lambda event body for POST /extract.
-    Never throws - a malformed body (unparseable JSON, or valid JSON that
-    isn't an object, e.g. a literal `null`) and a PDF pdf-lib can't parse
-    (mislabeled fileType, a corrupted upload) are both client-input
-    problems, exactly like a missing fileBase64, and get the same
-    { ok: false, status, error } shape as those existing checks rather
-    than escaping as a thrown exception. Kept as its own pure(-ish, one
-    pdf-lib call) function, not inlined in handler(), so this parsing path
-    has direct test coverage the same way countPdfPages/
-    assertAiImportAllowed do, instead of only handler()'s own untested
-    body. */
-export async function parseExtractRequest(body) {
+    Never throws - same contract as before this feature's S3 rework (see
+    the comment this replaces): every failure mode returns the
+    { ok: false, status, error } shape.
+
+    Re-checks the object's GuardDuty scan tag itself via getScanStatus -
+    this is the non-bypassable check (see this feature's spec, Section
+    B): a client cannot skip scanning by calling /extract with a key it
+    never actually waited on, because this function independently reads
+    the authoritative S3 tag, not anything the client claims. */
+export async function parseExtractRequest(body, s3Client, bucket) {
   let payload;
   try {
     payload = JSON.parse(body || "{}");
@@ -94,7 +96,7 @@ export async function parseExtractRequest(body) {
       error: "Request body is not valid JSON.",
     };
   }
-  const { fileType, fileBase64, categoryNames } = payload || {};
+  const { fileType, s3Key, categoryNames } = payload || {};
 
   if (fileType !== "csv" && fileType !== "pdf")
     return {
@@ -102,18 +104,37 @@ export async function parseExtractRequest(body) {
       status: 400,
       error: 'fileType must be "csv" or "pdf".',
     };
-  if (typeof fileBase64 !== "string" || !fileBase64)
-    return { ok: false, status: 400, error: "fileBase64 is required." };
+  if (typeof s3Key !== "string" || !s3Key)
+    return { ok: false, status: 400, error: "s3Key is required." };
   if (!Array.isArray(categoryNames) || categoryNames.length === 0)
     return { ok: false, status: 400, error: "categoryNames is required." };
 
-  const fileBuffer = Buffer.from(fileBase64, "base64");
-  if (fileBuffer.length > MAX_FILE_BYTES)
+  const { status } = await getScanStatus(s3Client, bucket, s3Key);
+  if (status === "pending")
+    return {
+      ok: false,
+      status: 400,
+      error: "This file is still being scanned. Try again shortly.",
+    };
+  if (status !== "clean")
+    return {
+      ok: false,
+      status: 400,
+      error: "This file could not be processed.",
+    };
+
+  const size = await headObjectSize(s3Client, bucket, s3Key);
+  if (size > MAX_FILE_BYTES)
     return {
       ok: false,
       status: 400,
       error: `File is too large (max ${MAX_FILE_BYTES / 1024 / 1024}MB).`,
     };
+
+  const object = await s3Client.send(
+    new GetObjectCommand({ Bucket: bucket, Key: s3Key }),
+  );
+  const fileBuffer = Buffer.from(await object.Body.transformToByteArray());
 
   if (fileType === "pdf") {
     let pageCount;
@@ -134,7 +155,7 @@ export async function parseExtractRequest(body) {
       };
   }
 
-  return { ok: true, fileType, fileBase64, categoryNames, fileBuffer };
+  return { ok: true, fileType, s3Key, categoryNames, fileBuffer };
 }
 
 export const handler = async (event) => {
@@ -163,10 +184,14 @@ export const handler = async (event) => {
   // uncaught rejection here can no longer escape handler() with no
   // CORS_HEADERS attached, the failure mode handler.js's own comment above
   // requireUser() warns about.
-  const parsed = await parseExtractRequest(event.body);
+  const parsed = await parseExtractRequest(
+    event.body,
+    s3,
+    process.env.AI_UPLOADS_BUCKET,
+  );
   if (!parsed.ok)
     return json(parsed.status, { ok: false, error: parsed.error });
-  const { fileType, categoryNames, fileBuffer } = parsed;
+  const { fileType, categoryNames, fileBuffer, s3Key } = parsed;
 
   try {
     const result = await runInTenantTransaction(
@@ -233,5 +258,20 @@ export const handler = async (event) => {
       err.stack,
     );
     return json(500, { ok: false, error: "Request failed." });
+  } finally {
+    try {
+      await s3.send(
+        new DeleteObjectCommand({
+          Bucket: process.env.AI_UPLOADS_BUCKET,
+          Key: s3Key,
+        }),
+      );
+    } catch (err) {
+      // Cleanup failure is not fatal to the request - the object's own
+      // 1-day lifecycle rule (see template.yaml's AiUploadsBucket) is the
+      // backstop. Still worth logging so a persistent cleanup problem is
+      // visible.
+      console.error(`[${user.tenantId}] failed to delete ${s3Key}: ${err.message}`);
+    }
   }
 };

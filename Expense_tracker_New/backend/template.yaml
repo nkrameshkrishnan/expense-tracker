@@ -242,6 +242,7 @@ Resources:
           BEDROCK_MODEL_ID: !Ref BedrockModelId
           BEDROCK_GUARDRAIL_ID: !GetAtt AiImportGuardrail.GuardrailId
           BEDROCK_GUARDRAIL_VERSION: !GetAtt AiImportGuardrailVersion.Version
+          AI_UPLOADS_BUCKET: !Ref AiUploadsBucket
       Policies:
         - Statement:
             - Effect: Allow
@@ -273,6 +274,12 @@ Resources:
             - Effect: Allow
               Action: bedrock:ApplyGuardrail
               Resource: !GetAtt AiImportGuardrail.GuardrailArn
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:GetObjectTagging
+                - s3:DeleteObject
+              Resource: !Sub ${AiUploadsBucket.Arn}/*
       Events:
         Post:
           Type: HttpApi
