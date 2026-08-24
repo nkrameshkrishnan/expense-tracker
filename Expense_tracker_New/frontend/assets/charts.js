@@ -1,6 +1,6 @@
 /* Chart.js wrappers. Each call destroys the previous instance on that canvas,
    which is what stops the classic "ghost tooltip from the old chart" bug. */
-import { personColorIndex } from "./store.js";
+import { personColorIndex, currentCurrency } from "./store.js";
 
 const INK = "#12161c",
   INK3 = "#6b7684",
@@ -15,7 +15,12 @@ const PIE = [TEAL, AMBER, BLUE, RED, PURPLE, "#0891b2", SAND];
 
 const registry = new Map();
 const money0 = (v) =>
-  "$" + Number(v).toLocaleString("en-CA", { maximumFractionDigits: 0 });
+  new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: currentCurrency(),
+    currencyDisplay: "narrowSymbol",
+    maximumFractionDigits: 0,
+  }).format(v);
 
 function mount(id, config) {
   const el = document.getElementById(id);

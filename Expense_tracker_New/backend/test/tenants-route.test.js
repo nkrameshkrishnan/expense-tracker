@@ -338,3 +338,73 @@ test("redeemInvite rejects when the tenant is at its seat cap", async () => {
     await client.end();
   }
 });
+
+test("assertKnownCurrency accepts every supported code", () => {
+  for (const code of tenants.CURRENCIES) {
+    assert.doesNotThrow(() => tenants.assertKnownCurrency(code));
+  }
+});
+
+test("assertKnownCurrency rejects an unknown code", () => {
+  assert.throws(() => tenants.assertKnownCurrency("XYZ"), Error);
+  assert.throws(() => tenants.assertKnownCurrency(""), Error);
+  assert.throws(() => tenants.assertKnownCurrency(undefined), Error);
+});
+
+test("setCurrency updates the tenant's currency column", async () => {
+  const client = await freshDb();
+  try {
+    const tenantId = await withProvisioning(client, "seed-user", async (c) => {
+      const { rows } = await c.query(
+        `insert into tenants (name) values ('Household') returning id`,
+      );
+      return rows[0].id;
+    });
+
+    await withTenant(client, tenantId, "owner-sub", (c) =>
+      tenants.setCurrency(makeExecute(c), "INR"),
+    );
+
+    await withTenant(client, tenantId, "owner-sub", async (c) => {
+      const { rows } = await c.query(
+        `select currency from tenants where id = $1`,
+        [tenantId],
+      );
+      assert.equal(rows[0].currency, "INR");
+    });
+  } finally {
+    await client.end();
+  }
+});
+
+test("setCurrency is isolated per tenant (RLS)", async () => {
+  const client = await freshDb();
+  try {
+    const tenantA = await withProvisioning(client, "seed-a", async (c) => {
+      const { rows } = await c.query(
+        `insert into tenants (name) values ('Household A') returning id`,
+      );
+      return rows[0].id;
+    });
+    const tenantB = await withProvisioning(client, "seed-b", async (c) => {
+      const { rows } = await c.query(
+        `insert into tenants (name) values ('Household B') returning id`,
+      );
+      return rows[0].id;
+    });
+
+    await withTenant(client, tenantA, "owner-a", (c) =>
+      tenants.setCurrency(makeExecute(c), "EUR"),
+    );
+
+    await withTenant(client, tenantB, "owner-b", async (c) => {
+      const { rows } = await c.query(
+        `select currency from tenants where id = $1`,
+        [tenantB],
+      );
+      assert.equal(rows[0].currency, "CAD");
+    });
+  } finally {
+    await client.end();
+  }
+});

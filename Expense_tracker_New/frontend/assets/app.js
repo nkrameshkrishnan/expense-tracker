@@ -17,6 +17,8 @@ import {
   setIdToken,
   NET_WORTH_ACCOUNTS,
   personColorIndex,
+  CURRENCIES,
+  setCurrency as setCurrentCurrency,
 } from "./store.js";
 import {
   aggregate,
@@ -718,6 +720,10 @@ async function refresh(reentered = false) {
     plan: "free",
     status: "active",
   };
+  setCurrentCurrency(state.tenant.currency || "CAD");
+  const headerCurrency = $("#header-currency");
+  if (headerCurrency)
+    headerCurrency.textContent = `· ${state.tenant.currency || "CAD"}`;
   state.userEmail = (await state.store.getUserEmail?.()) || null;
   state.tenants = (await state.store.getMyTenants?.()) || [];
   // Resolve which tenant this session is actively scoped to. "Never set"
@@ -1251,11 +1257,11 @@ function renderAdd() {
         <input type="hidden" name="person" id="person-hidden" value="${esc(selPerson)}">
 
         <div class="add-amount-wrap">
-          <span class="add-currency">$</span>
+          <span class="add-currency">${esc(state.tenant?.currency || "CAD")}</span>
           <input class="add-amount num" type="number" name="amount" step="0.01" min="0.01"
             value="${e?.amount ?? ""}" placeholder="0.00" inputmode="decimal"
             autocomplete="off" id="amount-input">
-          <span class="add-currency-code">CAD</span>
+          <span class="add-currency-code">${esc(state.tenant?.currency || "CAD")}</span>
         </div>
         <div class="err" id="err"></div>
 
@@ -3123,7 +3129,7 @@ function renderBalanceForm(copyFrom) {
       <td><span class="tag ${a.kind === "Liability" ? "tag-liab" : ""}">${a.kind}</span></td>
       <td class="n">
         <div class="nw-input-wrap">
-          <span class="nw-currency">$</span>
+          <span class="nw-currency">${esc(state.tenant?.currency || "CAD")}</span>
           <input class="num nw-input" type="number" step="0.01" inputmode="decimal"
             data-account="${esc(a.account)}" data-owner="${esc(a.owner)}" data-kind="${a.kind}"
             value="${prefill(a)}" placeholder="0.00">
@@ -3160,7 +3166,7 @@ function renderBalanceForm(copyFrom) {
     .map(
       (owner) => `
     <div class="eyebrow">${owner} <span class="muted" style="text-transform:none;letter-spacing:0" id="nw-sub-${owner}"></span></div>
-    <div class="tablewrap"><table><thead><tr><th>Account</th><th>Kind</th><th class="n" style="width:190px">Balance (CAD)</th></tr></thead>
+    <div class="tablewrap"><table><thead><tr><th>Account</th><th>Kind</th><th class="n" style="width:190px">Balance (${esc(state.tenant?.currency || "CAD")})</th></tr></thead>
       <tbody>${groupRows(owner)}</tbody></table></div>`,
     )
     .join("")}
@@ -4022,6 +4028,24 @@ function renderProfile() {
   ${
     signedIn
       ? `
+  <div class="eyebrow">Currency</div>
+  <div class="panel stack">
+    <label>Display currency
+      <select id="profile-currency">
+        ${CURRENCIES.map(
+          (c) =>
+            `<option value="${esc(c)}"${c === (state.tenant?.currency || "CAD") ? " selected" : ""}>${esc(c)}</option>`,
+        ).join("")}
+      </select>
+    </label>
+    <p class="note" style="margin:0">Changes how amounts are formatted everywhere in this household's ledger. Every amount already entered keeps its original number — only the currency label changes, nothing is converted.</p>
+  </div>`
+      : ""
+  }
+
+  ${
+    signedIn
+      ? `
   <div class="eyebrow">Household</div>
   <div class="panel stack">
     <p class="note" style="margin:0">${members.length} member${members.length === 1 ? "" : "s"} in this household.${tenants.length > 1 ? ` You belong to ${tenants.length} households.` : ""}</p>
@@ -4035,6 +4059,14 @@ function renderProfile() {
       : ""
   }`;
 
+  $("#profile-currency")?.addEventListener("change", async (e) => {
+    const currency = e.target.value;
+    await withBusy(`Switching to ${currency}`, async () => {
+      await state.store.setCurrency(currency);
+      await refresh();
+    });
+    renderProfile();
+  });
   $("#profile-signout")?.addEventListener("click", signOut);
 }
 

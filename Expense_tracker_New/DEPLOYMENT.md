@@ -265,6 +265,15 @@ console's query editor.
    `db/schema.sql` (the section under the `-- ai_imports` comment) and run
    only that.
 
+   **Already-deployed stack picking up multi-currency:** the same problem
+   applies here - re-running the whole file fails on tables that already
+   exist. Instead, run just this one statement against your existing
+   database:
+
+   ```sql
+   alter table tenants add column currency text not null default 'CAD';
+   ```
+
 ---
 
 ## Phase 5 — SES sender verification
