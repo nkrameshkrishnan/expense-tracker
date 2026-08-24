@@ -20,7 +20,7 @@ import {
   CURRENCIES,
   setCurrency as setCurrentCurrency,
 } from "./store.js";
-import { cardHoverable, revealStagger, countUp } from "./motion.js";
+import { cardHoverable, revealStagger, countUp, viewTransition } from "./motion.js";
 import {
   aggregate,
   money,
@@ -4143,8 +4143,10 @@ function go(tab) {
     .querySelectorAll("#tabs button")
     .forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
   location.hash = tab;
-  (VIEWS[tab] || renderDashboard)();
-  window.scrollTo(0, 0);
+  viewTransition(() => {
+    (VIEWS[tab] || renderDashboard)();
+    window.scrollTo(0, 0);
+  });
 }
 
 document.querySelectorAll("#tabs button").forEach(
