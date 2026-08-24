@@ -149,6 +149,7 @@ Resources:
       Environment:
         Variables:
           RATE_LIMIT_TABLE: !Ref RateLimitTable
+          AI_UPLOADS_BUCKET: !Ref AiUploadsBucket
       Policies:
         - Statement:
             - Effect: Allow
@@ -164,6 +165,11 @@ Resources:
             - Effect: Allow
               Action: dynamodb:UpdateItem
               Resource: !GetAtt RateLimitTable.Arn
+            - Effect: Allow
+              Action:
+                - s3:PutObject
+                - s3:GetObjectTagging
+              Resource: !Sub ${AiUploadsBucket.Arn}/*
       Events:
         Get:
           Type: HttpApi

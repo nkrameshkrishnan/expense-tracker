@@ -15,6 +15,8 @@ import * as budget from "./routes/budget.js";
 import * as balances from "./routes/balances.js";
 import * as debts from "./routes/debts.js";
 import * as tenants from "./routes/tenants.js";
+import * as uploads from "./routes/uploads.js";
+import { s3 } from "./s3.js";
 import {
   createCheckoutSession,
   createPortalSession,
@@ -244,6 +246,23 @@ async function handlePost(user, event) {
         tenants.assertKnownCurrency(payload.currency);
         await tenants.setCurrency(execute, payload.currency);
         return { ok: true };
+      case "getUploadUrl": {
+        const { url, key } = await uploads.presignUploadUrl(
+          s3,
+          process.env.AI_UPLOADS_BUCKET,
+          user.tenantId,
+          payload.fileType,
+        );
+        return { ok: true, url, key };
+      }
+      case "getScanStatus": {
+        const { status } = await uploads.getScanStatus(
+          s3,
+          process.env.AI_UPLOADS_BUCKET,
+          payload.key,
+        );
+        return { ok: true, status };
+      }
       case "setBalances":
         await balances.setBalances(execute, payload.date, payload.entries);
         return { ok: true };
