@@ -926,14 +926,26 @@ function cashFlowData(rows, month, year) {
   const rest = expenseEntries.slice(8);
   for (const [cat, amt] of top) flows.push({ from: "Income", to: cat, flow: amt });
   const otherTotal = rest.reduce((a, [, amt]) => a + amt, 0);
-  if (otherTotal > 0) flows.push({ from: "Income", to: "Other", flow: otherTotal });
-  if (net > 0) flows.push({ from: "Income", to: "Savings", flow: net });
+  // Namespaced so a real user category named "Savings" or "Other" can't
+  // collide with these synthetic node labels (see cashFlowData's guard
+  // below for the remaining "Income" self-loop case).
+  if (otherTotal > 0) flows.push({ from: "Income", to: "Other expenses", flow: otherTotal });
+  if (net > 0) flows.push({ from: "Income", to: "→ Savings", flow: net });
 
-  return { income, expense, net, flows, hasData: flows.length > 0 };
+  // A user-entered category can legitimately be used for both an Income-type
+  // and an Expense-type row in the same period (the Add form doesn't filter
+  // the category select by type), producing both {from:X,to:"Income"} and
+  // {from:"Income",to:X} - a cycle the Sankey library can't render. A
+  // category literally named "Income" produces a direct self-loop. Drop any
+  // flow whose from/to are identical rather than let either crash the chart.
+  const dedupedFlows = flows.filter((f) => f.from !== f.to);
+
+  return { income, expense, net, flows: dedupedFlows, hasData: dedupedFlows.length > 0 };
 }
 
 function renderCashFlow() {
-  const cf = cashFlowData(state.rows, state.month, state.year);
+  const rows = scoped();
+  const cf = cashFlowData(rows, state.month, state.year);
   const label =
     state.month === 0
       ? `Full year ${state.year}`
@@ -983,13 +995,24 @@ function renderCashFlow() {
     notice("Charts couldn't load. Everything else on this page still works.", "bad");
     return;
   }
-  if (cf.hasData) charts.cashFlow(cf.flows);
-  const a = aggregate(state.rows, state.budget, 0, state.year);
+  if (cf.hasData) {
+    try {
+      charts.cashFlow(cf.flows);
+    } catch (err) {
+      console.error("Cash Flow Sankey failed to render:", err);
+      const flowPanel = $("#c-cashflow")?.closest(".panel");
+      if (flowPanel) {
+        flowPanel.innerHTML = `<div class="empty">No income or expenses recorded for this period yet.</div>`;
+      }
+    }
+  }
+  const a = aggregate(rows, state.budget, 0, state.year);
   charts.netTrendLine(a.series);
 }
 
 function renderSpending() {
-  const a = aggregate(state.rows, state.budget, state.month, state.year);
+  const rows = scoped();
+  const a = aggregate(rows, state.budget, state.month, state.year);
   const label =
     state.month === 0
       ? `Full year ${state.year}`
@@ -1002,7 +1025,33 @@ function renderSpending() {
   const otherTotal = spendRows.slice(6).reduce((sum, r) => sum + r.actual, 0);
   const donutRows =
     otherTotal > 0 ? [...top6, { category: "Other", actual: otherTotal }] : top6;
-  const totalSpend = spendRows.reduce((sum, r) => sum + r.actual, 0);
+
+  // aggregate()'s catRows only tracks the built-in EXPENSE_CATS, so a
+  // custom (user-created) expense category is invisible to spendRows above
+  // even though Cash Flow's "Expenses" KPI counts it (it sums r.category
+  // with no allowlist). Compute the true period expense total the same way
+  // cashFlowData does, and fold anything catRows didn't capture into the
+  // "Other" bucket so Spending's total agrees with Cash Flow's instead of
+  // silently undercounting.
+  const periodRows = rows.filter(
+    (r) =>
+      Number(String(r.date).slice(0, 4)) === state.year &&
+      (state.month === 0 || monthOf(r) === state.month),
+  );
+  const trueExpenseTotal = periodRows
+    .filter((r) => r.type === "Expense")
+    .reduce((sum, r) => sum + r.amount, 0);
+  const catTotal = spendRows.reduce((sum, r) => sum + r.actual, 0);
+  const untracked = trueExpenseTotal - catTotal;
+  if (untracked > 0) {
+    const existingOther = donutRows.find((r) => r.category === "Other");
+    if (existingOther) {
+      existingOther.actual += untracked;
+    } else {
+      donutRows.push({ category: "Other", actual: untracked });
+    }
+  }
+  const totalSpend = trueExpenseTotal;
   const topCategory = spendRows[0]?.category || "—";
 
   view.innerHTML = `
@@ -1025,10 +1074,14 @@ function renderSpending() {
     <div class="panel"><div class="chartbox tall"><canvas id="c-spend-donut"></canvas></div></div>
     <div class="panel"><div class="spend-list">
       ${donutRows
-        .map((r) => {
+        .map((r, i) => {
           const pctOfTotal = totalSpend > 0 ? (r.actual / totalSpend) * 100 : 0;
+          // Rank-based (position in donutRows), matching spendingDonut()'s
+          // slice coloring in charts.js - keeps the list's dots/bars visually
+          // matched to the donut now that the donut no longer colors by the
+          // global categoryColorIndex hash.
           const colorVar =
-            r.category === "Other" ? "var(--rule-2)" : `var(--cat-color-${categoryColorIndex(r.category)})`;
+            r.category === "Other" ? "var(--rule-2)" : `var(--cat-color-${i % 12})`;
           return `
         <div class="spend-row" data-cat="${esc(r.category)}">
           <span class="spend-dot" style="background:${colorVar}"></span>
@@ -1076,7 +1129,7 @@ function renderSpending() {
   if (donutRows.length > 0) {
     charts.spendingDonut(donutRows, (category) => setActiveSpendRow(category));
   }
-  const fullYear = aggregate(state.rows, state.budget, 0, state.year);
+  const fullYear = aggregate(rows, state.budget, 0, state.year);
   charts.spendTrend(fullYear.series);
 }
 

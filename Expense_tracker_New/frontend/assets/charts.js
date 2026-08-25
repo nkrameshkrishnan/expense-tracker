@@ -441,7 +441,7 @@ export function dividendsTrend(series) {
 
 export function cashFlow(flows) {
   const flowColorFor = (label) =>
-    label === "Income" || label === "Savings"
+    label === "Income" || label === "→ Savings"
       ? TEAL
       : CATEGORY_SPECTRUM[categoryColorIndex(label)];
   mount("c-cashflow", {
@@ -469,7 +469,8 @@ export function netTrendLine(series) {
       datasets: [
         {
           label: "Net",
-          data: series.map((s) => s.net),
+          data: series.map((s) => (s.hasData ? s.net : null)),
+          spanGaps: true,
           borderColor: TEAL,
           backgroundColor: (ctx) => {
             const { chart } = ctx;
@@ -506,11 +507,17 @@ export function spendingDonut(rows, onSliceClick) {
       datasets: [
         {
           data: rows.map((r) => r.actual),
-          backgroundColor: rows.map((r) =>
-            r.category === "Other" ? RULE : CATEGORY_SPECTRUM[categoryColorIndex(r.category)],
+          // Rank-based (position in the up-to-7-row array actually shown),
+          // not hash-based (categoryColorIndex): the legend-less donut
+          // depends on every visible slice being distinct from the OTHERS
+          // visible right now, which a global hash across all possible
+          // categories can't guarantee for whichever 6-7 happen to be shown.
+          backgroundColor: rows.map((r, i) =>
+            r.category === "Other" ? RULE : CATEGORY_SPECTRUM[i % CATEGORY_SPECTRUM.length],
           ),
           borderWidth: 2,
           borderColor: "#ffffff",
+          hoverOffset: 10,
         },
       ],
     },
@@ -550,5 +557,5 @@ export function highlightSlice(index) {
   chart.setActiveElements(
     index === null ? [] : [{ datasetIndex: 0, index }],
   );
-  chart.update();
+  chart.update("none");
 }
