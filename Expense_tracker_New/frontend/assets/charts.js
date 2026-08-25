@@ -1,17 +1,21 @@
 /* Chart.js wrappers. Each call destroys the previous instance on that canvas,
    which is what stops the classic "ghost tooltip from the old chart" bug. */
-import { personColorIndex, currentCurrency } from "./store.js";
+import { personColorIndex, categoryColorIndex, currentCurrency } from "./store.js";
 
-const INK = "#12161c",
-  INK3 = "#6b7684",
-  RULE = "#ddd5c8";
-const TEAL = "#0f766e",
-  AMBER = "#b45309",
-  RED = "#b3261e",
-  BLUE = "#1d4ed8",
-  PURPLE = "#7c3aed",
-  SAND = "#c6bcab";
-const PIE = [TEAL, AMBER, BLUE, RED, PURPLE, "#0891b2", SAND];
+const INK = "#14151a",
+  INK3 = "#8a8d99",
+  RULE = "#e7e8ed";
+const TEAL = "#00a389",
+  AMBER = "#ff6b4a",
+  RED = "#e5484d",
+  BLUE = "#3b82f6",
+  PURPLE = "#a855f7",
+  SAND = "#c7cad1";
+const CATEGORY_SPECTRUM = [
+  "#3b82f6", "#a855f7", "#ec4899", "#f59e0b",
+  "#10b981", "#06b6d4", "#f97316", "#8b5cf6",
+  "#ef4444", "#14b8a6", "#eab308", "#84cc16",
+];
 
 const registry = new Map();
 const money0 = (v) =>
@@ -43,7 +47,7 @@ function mount(id, config) {
     return;
   }
   existing?.destroy();
-  Chart.defaults.font.family = "'JetBrains Mono', ui-monospace, monospace";
+  Chart.defaults.font.family = "'Inter', ui-monospace, sans-serif";
   Chart.defaults.font.size = 11;
   Chart.defaults.color = INK3;
   registry.set(id, new Chart(el, config));
@@ -218,7 +222,7 @@ export function paymentSplit(byPayment) {
       datasets: [
         {
           data: byPayment.map((p) => p.amount),
-          backgroundColor: PIE,
+          backgroundColor: CATEGORY_SPECTRUM,
           borderColor: "#fff",
           borderWidth: 2,
         },
@@ -387,7 +391,7 @@ export function assetSplit(assets) {
       datasets: [
         {
           data: rows.map((a) => Number(a.balance)),
-          backgroundColor: PIE,
+          backgroundColor: CATEGORY_SPECTRUM,
           borderColor: "#fff",
           borderWidth: 2,
         },
