@@ -17,9 +17,11 @@ import {
   setIdToken,
   NET_WORTH_ACCOUNTS,
   personColorIndex,
+  categoryColorIndex,
   CURRENCIES,
   setCurrency as setCurrentCurrency,
 } from "./store.js";
+import { cardHoverable, revealStagger, countUp, viewTransition, exitCollapse } from "./motion.js";
 import {
   aggregate,
   money,
@@ -502,6 +504,12 @@ const personColorClass = (p) =>
   p && p !== UNASSIGNED
     ? `person-color-${personColorIndex(p)}`
     : "person-color-none";
+
+/** Colour class for a category chip, derived the same way as
+    personColorClass — a stable hash of the category name, not a lookup
+    table, so a new category just works without a matching edit here. */
+const categoryColorClass = (cat) =>
+  `category-color-${categoryColorIndex(cat)}`;
 
 /** Merged, de-duplicated, sorted option list for a dropdown. */
 function listFor(kind, forCategory) {
@@ -1046,6 +1054,14 @@ function buildDashboardShell(a, label, people, pSeries, showCompare) {
     ${catDetailRows(a)}
   </tbody></table></div>`;
   view.dataset.shell = "dashboard";
+
+  view.querySelectorAll(".kpi, .panel").forEach(cardHoverable);
+  const kpiEls = view.querySelectorAll(".kpi");
+  const panelEls = view.querySelectorAll(".panel");
+  revealStagger(kpiEls);
+  const kpiFinish = 0.35 + Math.max(0, kpiEls.length - 1) * 0.04; // duration + stagger tail, matches revealStagger's defaults
+  revealStagger(panelEls, { delay: kpiFinish });
+  state._dashLastAgg = a;
 }
 
 /** Fast path: same shape as last render, so every section that exists now
@@ -1056,40 +1072,69 @@ function updateDashboardValues(a, label, people, pSeries, showCompare) {
   if (sub)
     sub.textContent = `${personLabel()} \u00b7 ${label} \u00b7 ${a.count} transactions`;
 
-  const setKpi = (key, v, m) => {
-    const vEl = $(`#kpi-${key}-v`),
-      mEl = $(`#kpi-${key}-m`);
-    if (vEl) vEl.textContent = v;
+  const prev = state._dashLastAgg;
+
+  const setKpiMeta = (key, m) => {
+    const mEl = $(`#kpi-${key}-m`);
     if (mEl) mEl.textContent = m;
   };
-  setKpi("income", money(a.income), a.income === 0 ? "no income recorded" : "");
-  setKpi("expense", money(a.expense), `${a.count} entries`);
+  const setKpiNumber = (key, from, to, fmt) => {
+    const vEl = $(`#kpi-${key}-v`);
+    if (!vEl) return;
+    if (from === undefined || from === null) {
+      vEl.textContent = fmt(to);
+      return;
+    }
+    countUp(vEl, from, to, fmt);
+  };
+  const setKpiText = (key, text) => {
+    const vEl = $(`#kpi-${key}-v`);
+    if (vEl) vEl.textContent = text;
+  };
+
+  setKpiNumber("income", prev?.income, a.income, money);
+  setKpiMeta("income", a.income === 0 ? "no income recorded" : "");
+
+  setKpiNumber("expense", prev?.expense, a.expense, money);
+  setKpiMeta("expense", `${a.count} entries`);
+
   const netEl = $("#kpi-net");
-  if (netEl) netEl.className = `kpi ${a.net < 0 ? "neg" : "pos"}`;
-  setKpi("net", money(a.net), a.net < 0 ? "spending exceeds income" : "");
-  setKpi(
-    "savings",
-    a.income > 0 ? pct(a.savingsRate) : "\u2014",
-    a.income > 0 ? "" : "needs income data",
-  );
+  if (netEl) netEl.className = `kpi card-hoverable ${a.net < 0 ? "neg" : "pos"}`;
+  setKpiNumber("net", prev?.net, a.net, money);
+  setKpiMeta("net", a.net < 0 ? "spending exceeds income" : "");
+
+  if (a.income > 0 && prev?.income > 0) {
+    setKpiNumber("savings", prev.savingsRate, a.savingsRate, pct);
+  } else {
+    setKpiText("savings", a.income > 0 ? pct(a.savingsRate) : "\u2014");
+  }
+  setKpiMeta("savings", a.income > 0 ? "" : "needs income data");
+
   const budEl = $("#kpi-budgetused");
-  if (budEl) budEl.className = `kpi ${a.budgetUsed > 1 ? "neg" : ""}`;
-  setKpi(
+  if (budEl) budEl.className = `kpi card-hoverable ${a.budgetUsed > 1 ? "neg" : ""}`;
+  if (a.expenseBudget > 0 && prev?.expenseBudget > 0) {
+    setKpiNumber("budgetused", prev.budgetUsed, a.budgetUsed, pct);
+  } else {
+    setKpiText("budgetused", a.expenseBudget > 0 ? pct(a.budgetUsed) : "\u2014");
+  }
+  setKpiMeta(
     "budgetused",
-    a.expenseBudget > 0 ? pct(a.budgetUsed) : "\u2014",
     a.expenseBudget > 0
       ? state.person
         ? `of ${money(a.expenseBudget)} household`
         : `of ${money(a.expenseBudget)}`
       : "no budget set",
   );
-  setKpi(
+
+  setKpiNumber("avgday", prev?.avgDaily, a.avgDaily, money);
+  setKpiMeta(
     "avgday",
-    money(a.avgDaily),
     state.month === 0
       ? `over ${state.year % 4 === 0 && (state.year % 100 !== 0 || state.year % 400 === 0) ? 366 : 365} days`
       : `over ${new Date(state.year, state.month, 0).getDate()} days`,
   );
+
+  state._dashLastAgg = a;
 
   if (a.dividends > 0) {
     const t = $("#dash-div-total");
@@ -1635,9 +1680,24 @@ function renderAdd() {
 // Persists across re-renders (filtering, editing, deleting) so collapsing a
 // month doesn't spring back open every time the list redraws.
 const txCollapsed = new Set();
+/* Tracks which month groups have already played their entrance
+   animation (row stagger + header subtotal count-up), by group key.
+   renderTransactions() fully replaces view.innerHTML on every call (no
+   patch path here, unlike Dashboard's canPatch), so DOM node identity
+   can't tell "already animated" from "newly revealed" — this Set is the
+   substitute. Same lifetime as txCollapsed: never explicitly cleared,
+   lives for as long as the page does. */
+const txRevealed = new Set();
+/* Snapshot of the filter state as of the last renderTransactions() call,
+   used to tell "a filter pill that's newly active" (animate in) from "a
+   pill that was already showing" (leave alone) across a full-rebuild
+   re-render triggered by typing in the search box. */
+let txPrevFilter = { q: "", cat: "", type: "", month: "" };
 
 function renderTransactions() {
   const f = state.filter;
+  const prevFilter = txPrevFilter;
+  txPrevFilter = { q: f.q, cat: f.cat, type: f.type, month: f.month };
   let rows = scoped();
   if (f.q) {
     const q = f.q.toLowerCase();
@@ -1708,7 +1768,7 @@ function renderTransactions() {
         </div>
         <div class="tx-meta">
           ${!state.person ? `<span class="person-chip ${personColorClass(r.person || UNASSIGNED)}" data-p="${esc(r.person || UNASSIGNED)}">${esc(r.person || UNASSIGNED)}</span>` : ""}
-          <span class="tx-cat">${esc(r.category)}${r.subcategory ? " · " + esc(r.subcategory) : ""}</span>
+          <span class="tx-cat"><span class="category-chip ${categoryColorClass(r.category)}">${esc(r.category)}</span>${r.subcategory ? " · " + esc(r.subcategory) : ""}</span>
           ${r.payment ? `<span class="tx-sep">·</span><span class="tx-pay">${esc(r.payment)}</span>` : ""}
         </div>
       </div>
@@ -1810,9 +1870,9 @@ function renderTransactions() {
               <span class="tx-group-label">${esc(g.label)}</span>
               <span class="tx-group-count muted">${g.rows.length}</span>
               <span class="tx-group-stats num">
-                ${g.income > 0 ? `<span class="tx-income">+${money(g.income)}</span>` : ""}
+                ${g.income > 0 ? `<span class="tx-income" id="tx-g-inc-${g.key}">+${money(g.income)}</span>` : ""}
                 ${g.income > 0 && g.expense > 0 ? '<span class="tx-sep">·</span>' : ""}
-                ${g.expense > 0 ? `<span>${money(g.expense)}</span>` : ""}
+                ${g.expense > 0 ? `<span id="tx-g-exp-${g.key}">${money(g.expense)}</span>` : ""}
               </span>
             </button>
             <div class="tx-group-body">${g.rows.map(txRow).join("")}</div>
@@ -1821,6 +1881,32 @@ function renderTransactions() {
             .join("")
     }
   </div>`;
+
+  groups.forEach((g) => {
+    if (txRevealed.has(g.key)) return;
+    txRevealed.add(g.key);
+
+    if (g.income > 0) {
+      const el = document.getElementById(`tx-g-inc-${g.key}`);
+      if (el) countUp(el, 0, g.income, (v) => `+${money(v)}`);
+    }
+    if (g.expense > 0) {
+      const el = document.getElementById(`tx-g-exp-${g.key}`);
+      if (el) countUp(el, 0, g.expense, money);
+    }
+
+    if (!txCollapsed.has(g.key)) {
+      const groupEl = view.querySelector(`.tx-group[data-month="${g.key}"]`);
+      if (groupEl) revealStagger(groupEl.querySelectorAll(".tx-row"));
+    }
+  });
+
+  ["q", "cat", "type", "month"].forEach((k) => {
+    if (!prevFilter[k] && f[k]) {
+      const el = view.querySelector(`.fpill[data-clear="${k}"]`);
+      if (el) revealStagger([el], { stagger: 0 });
+    }
+  });
 
   // — month group collapse/expand
   view.querySelectorAll("[data-toggle]").forEach(
@@ -1902,7 +1988,8 @@ function renderTransactions() {
   // — active filter pills
   view.querySelectorAll("[data-clear]").forEach(
     (el) =>
-      (el.onclick = () => {
+      (el.onclick = async () => {
+        await exitCollapse(el);
         state.filter[el.dataset.clear] = "";
         refilter();
       }),
@@ -1951,6 +2038,8 @@ function renderTransactions() {
             await refresh();
           });
           if (done) {
+            row.style.opacity = "";
+            await exitCollapse(row);
             renderTransactions();
             notice("Entry deleted.", "ok");
           } else row.style.opacity = "";
@@ -4093,8 +4182,10 @@ function go(tab) {
     .querySelectorAll("#tabs button")
     .forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
   location.hash = tab;
-  (VIEWS[tab] || renderDashboard)();
-  window.scrollTo(0, 0);
+  viewTransition(() => {
+    (VIEWS[tab] || renderDashboard)();
+    window.scrollTo(0, 0);
+  });
 }
 
 document.querySelectorAll("#tabs button").forEach(
