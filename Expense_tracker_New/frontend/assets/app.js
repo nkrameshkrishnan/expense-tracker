@@ -889,6 +889,105 @@ function sameShape(x, y) {
   );
 }
 
+/** Cash Flow tab's own data shaping — deliberately NOT built on the shared
+    aggregate() (xlsxio.js), since that function's contract (catRows keyed
+    to the fixed EXPENSE_CATS list, a single income total with no
+    per-category breakdown) is exactly what every other tab already
+    depends on unchanged. Income-by-category has no other consumer today,
+    so it's computed locally here instead of growing aggregate()'s return
+    shape for one caller. */
+function cashFlowData(rows, month, year) {
+  const inScope = rows.filter(
+    (r) =>
+      Number(String(r.date).slice(0, 4)) === year &&
+      (month === 0 || monthOf(r) === month),
+  );
+  const sumBy = (type) => {
+    const byCategory = {};
+    for (const r of inScope.filter((r) => r.type === type)) {
+      byCategory[r.category] = (byCategory[r.category] || 0) + r.amount;
+    }
+    return byCategory;
+  };
+  const incomeByCat = sumBy("Income");
+  const expenseByCat = sumBy("Expense");
+  const income = Object.values(incomeByCat).reduce((a, v) => a + v, 0);
+  const expense = Object.values(expenseByCat).reduce((a, v) => a + v, 0);
+  const net = income - expense;
+
+  const flows = [];
+  for (const [cat, amt] of Object.entries(incomeByCat)) {
+    if (amt > 0) flows.push({ from: cat, to: "Income", flow: amt });
+  }
+  const expenseEntries = Object.entries(expenseByCat)
+    .filter(([, amt]) => amt > 0)
+    .sort((a, b) => b[1] - a[1]);
+  const top = expenseEntries.slice(0, 8);
+  const rest = expenseEntries.slice(8);
+  for (const [cat, amt] of top) flows.push({ from: "Income", to: cat, flow: amt });
+  const otherTotal = rest.reduce((a, [, amt]) => a + amt, 0);
+  if (otherTotal > 0) flows.push({ from: "Income", to: "Other", flow: otherTotal });
+  if (net > 0) flows.push({ from: "Income", to: "Savings", flow: net });
+
+  return { income, expense, net, flows, hasData: flows.length > 0 };
+}
+
+function renderCashFlow() {
+  const cf = cashFlowData(state.rows, state.month, state.year);
+  const label =
+    state.month === 0
+      ? `Full year ${state.year}`
+      : `${MONTHS[state.month - 1]} ${state.year}`;
+
+  view.innerHTML = `
+  <div class="head">
+    <div><h1>Cash Flow</h1><p class="sub">${esc(personLabel())} &middot; ${esc(label)}</p></div>
+    <div class="spacer"></div>${periodSelect(state.month, state.year)}
+  </div>
+
+  <div class="kpis">
+    ${kpi("Income", money(cf.income), "", "", "cf-income")}
+    ${kpi("Expenses", money(cf.expense), "", "", "cf-expense")}
+    ${kpi("Net", money(cf.net), cf.net < 0 ? "spending exceeds income" : "", cf.net < 0 ? "neg" : "pos", "cf-net")}
+  </div>
+
+  <div class="eyebrow">Flow</div>
+  <div class="panel">
+    ${cf.hasData ? `<div class="chartbox tall"><canvas id="c-cashflow"></canvas></div>` : `<div class="empty">No income or expenses recorded for this period yet.</div>`}
+  </div>
+
+  <div class="eyebrow">Trend</div>
+  <div class="panel">
+    <h3>Net by month</h3>
+    <div class="chartbox"><canvas id="c-net-trend"></canvas></div>
+  </div>`;
+
+  $("#m-sel").onchange = (e) => {
+    state.month = Number(e.target.value);
+    renderCashFlow();
+  };
+  $("#y-sel").onchange = async (e) => {
+    state.year = Number(e.target.value);
+    localStorage.setItem(YEAR_KEY, state.year);
+    state.month = 0;
+    await state.store.ensureYearLoaded?.(state.year);
+    state.rows = await state.store.list();
+    renderCashFlow();
+  };
+
+  view.querySelectorAll(".kpi, .panel").forEach(cardHoverable);
+  revealStagger(view.querySelectorAll(".kpi"));
+  revealStagger(view.querySelectorAll(".panel"), { delay: 0.35 });
+
+  if (typeof Chart === "undefined") {
+    notice("Charts couldn't load. Everything else on this page still works.", "bad");
+    return;
+  }
+  if (cf.hasData) charts.cashFlow(cf.flows);
+  const a = aggregate(state.rows, state.budget, 0, state.year);
+  charts.netTrendLine(a.series);
+}
+
 function renderDashboard() {
   const a = aggregate(scoped(), state.budget, state.month, state.year);
   const label =
@@ -4158,6 +4257,7 @@ function renderProfile() {
 /* ==================================================================== router */
 const VIEWS = {
   dashboard: renderDashboard,
+  cashflow: renderCashFlow,
   add: renderAdd,
   transactions: renderTransactions,
   budget: renderBudget,

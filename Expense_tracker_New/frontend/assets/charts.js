@@ -438,3 +438,62 @@ export function dividendsTrend(series) {
     },
   });
 }
+
+export function cashFlow(flows) {
+  const flowColorFor = (label) =>
+    label === "Income" || label === "Savings"
+      ? TEAL
+      : CATEGORY_SPECTRUM[categoryColorIndex(label)];
+  mount("c-cashflow", {
+    type: "sankey",
+    data: {
+      datasets: [
+        {
+          data: flows,
+          colorFrom: (c) => flowColorFor(c.dataset.data[c.dataIndex].from),
+          colorTo: (c) => flowColorFor(c.dataset.data[c.dataIndex].to),
+          colorMode: "gradient",
+          alpha: 0.85,
+        },
+      ],
+    },
+    options: { responsive: true, maintainAspectRatio: false, animation: drawIn },
+  });
+}
+
+export function netTrendLine(series) {
+  mount("c-net-trend", {
+    type: "line",
+    data: {
+      labels: series.map((s) => s.month),
+      datasets: [
+        {
+          label: "Net",
+          data: series.map((s) => s.net),
+          borderColor: TEAL,
+          backgroundColor: (ctx) => {
+            const { chart } = ctx;
+            const { ctx: c, chartArea } = chart;
+            if (!chartArea) return TEAL;
+            const gradient = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+            gradient.addColorStop(0, "rgba(0, 163, 137, 0.25)");
+            gradient.addColorStop(1, "rgba(229, 72, 77, 0.15)");
+            return gradient;
+          },
+          fill: true,
+          tension: 0.3,
+          pointRadius: 3,
+          pointBackgroundColor: (ctx) =>
+            ctx.parsed && ctx.parsed.y < 0 ? RED : TEAL,
+        },
+      ],
+    },
+    options: {
+      maintainAspectRatio: false,
+      responsive: true,
+      animation: drawIn,
+      plugins: { legend: { display: false } },
+      scales: { x: gridX, y: gridY },
+    },
+  });
+}

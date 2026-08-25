@@ -52,6 +52,10 @@
       src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"
       defer
     ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/chartjs-chart-sankey@0.15.0/dist/chartjs-chart-sankey.min.js"
+      defer
+    ></script>
     <!-- SheetJS (930KB, ~5x this app's own code) is no longer loaded here. It is
      only ever used by Export/Import on the Data tab, so xlsxio.js injects it
      on first actual use instead of blocking every page load for a feature
@@ -67,6 +71,7 @@
         </div>
         <nav class="tabs" id="tabs">
           <button data-tab="dashboard" class="on">Dashboard</button>
+          <button data-tab="cashflow">Cash Flow</button>
           <button data-tab="add">Add</button>
           <button data-tab="transactions">Transactions</button>
           <button data-tab="budget">Budget</button>
