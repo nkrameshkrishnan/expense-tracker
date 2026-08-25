@@ -497,3 +497,58 @@ export function netTrendLine(series) {
     },
   });
 }
+
+export function spendingDonut(rows, onSliceClick) {
+  mount("c-spend-donut", {
+    type: "doughnut",
+    data: {
+      labels: rows.map((r) => r.category),
+      datasets: [
+        {
+          data: rows.map((r) => r.actual),
+          backgroundColor: rows.map((r) =>
+            r.category === "Other" ? RULE : CATEGORY_SPECTRUM[categoryColorIndex(r.category)],
+          ),
+          borderWidth: 2,
+          borderColor: "#ffffff",
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: drawIn,
+      cutout: "62%",
+      plugins: { legend: { display: false } },
+      onClick: (evt, elements) => {
+        if (elements.length) onSliceClick(rows[elements[0].index].category);
+      },
+    },
+  });
+}
+
+export function spendTrend(series) {
+  mount("c-spend-trend", {
+    type: "bar",
+    data: {
+      labels: series.map((s) => s.month),
+      datasets: [{ label: "Spend", data: series.map((s) => s.expense), backgroundColor: AMBER }],
+    },
+    options: {
+      maintainAspectRatio: false,
+      responsive: true,
+      animation: drawIn,
+      plugins: { legend: { display: false } },
+      scales: { x: gridX, y: gridY },
+    },
+  });
+}
+
+export function highlightSlice(index) {
+  const chart = registry.get("c-spend-donut");
+  if (!chart) return;
+  chart.setActiveElements(
+    index === null ? [] : [{ datasetIndex: 0, index }],
+  );
+  chart.update();
+}

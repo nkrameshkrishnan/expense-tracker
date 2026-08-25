@@ -988,6 +988,129 @@ function renderCashFlow() {
   charts.netTrendLine(a.series);
 }
 
+function renderSpending() {
+  const a = aggregate(state.rows, state.budget, state.month, state.year);
+  const label =
+    state.month === 0
+      ? `Full year ${state.year}`
+      : `${MONTHS[state.month - 1]} ${state.year}`;
+
+  const spendRows = [...a.catRows]
+    .filter((r) => r.actual > 0)
+    .sort((x, y) => y.actual - x.actual);
+  const top6 = spendRows.slice(0, 6);
+  const otherTotal = spendRows.slice(6).reduce((sum, r) => sum + r.actual, 0);
+  const donutRows =
+    otherTotal > 0 ? [...top6, { category: "Other", actual: otherTotal }] : top6;
+  const totalSpend = spendRows.reduce((sum, r) => sum + r.actual, 0);
+  const topCategory = spendRows[0]?.category || "—";
+
+  view.innerHTML = `
+  <div class="head">
+    <div><h1>Spending</h1><p class="sub">${esc(personLabel())} &middot; ${esc(label)}</p></div>
+    <div class="spacer"></div>${periodSelect(state.month, state.year)}
+  </div>
+
+  <div class="kpis">
+    ${kpi("Total spend", money(totalSpend), "", "", "sp-total")}
+    ${kpi("Top category", esc(topCategory), "", "", "sp-top")}
+    ${kpi("Transactions", String(a.count), "", "", "sp-count")}
+  </div>
+
+  <div class="eyebrow">By category</div>
+  ${
+    donutRows.length === 0
+      ? `<div class="panel"><div class="empty">No spending recorded for this period yet.</div></div>`
+      : `<div class="grid2">
+    <div class="panel"><div class="chartbox tall"><canvas id="c-spend-donut"></canvas></div></div>
+    <div class="panel"><div class="spend-list">
+      ${donutRows
+        .map((r) => {
+          const pctOfTotal = totalSpend > 0 ? (r.actual / totalSpend) * 100 : 0;
+          const colorVar =
+            r.category === "Other" ? "var(--rule-2)" : `var(--cat-color-${categoryColorIndex(r.category)})`;
+          return `
+        <div class="spend-row" data-cat="${esc(r.category)}">
+          <span class="spend-dot" style="background:${colorVar}"></span>
+          <div class="spend-row-main">
+            <div class="spend-row-label"><span>${esc(r.category)}</span><span class="num">${money(r.actual)}</span></div>
+            <div class="spend-bar"><div class="spend-bar-fill" style="width:${pctOfTotal.toFixed(1)}%;background:${colorVar}"></div></div>
+          </div>
+          <span class="muted num">${pctOfTotal.toFixed(0)}%</span>
+        </div>`;
+        })
+        .join("")}
+    </div></div>
+  </div>`
+  }
+
+  <div class="eyebrow">Trend</div>
+  <div class="panel">
+    <h3>Spend by month</h3>
+    <div class="chartbox"><canvas id="c-spend-trend"></canvas></div>
+  </div>`;
+
+  $("#m-sel").onchange = (e) => {
+    state.month = Number(e.target.value);
+    renderSpending();
+  };
+  $("#y-sel").onchange = async (e) => {
+    state.year = Number(e.target.value);
+    localStorage.setItem(YEAR_KEY, state.year);
+    state.month = 0;
+    await state.store.ensureYearLoaded?.(state.year);
+    state.rows = await state.store.list();
+    renderSpending();
+  };
+
+  wireSpendingList(donutRows);
+
+  view.querySelectorAll(".kpi, .panel").forEach(cardHoverable);
+  revealStagger(view.querySelectorAll(".kpi"));
+  revealStagger(view.querySelectorAll(".panel"), { delay: 0.35 });
+
+  if (typeof Chart === "undefined") {
+    notice("Charts couldn't load. Everything else on this page still works.", "bad");
+    return;
+  }
+  if (donutRows.length > 0) {
+    charts.spendingDonut(donutRows, (category) => setActiveSpendRow(category));
+  }
+  const fullYear = aggregate(state.rows, state.budget, 0, state.year);
+  charts.spendTrend(fullYear.series);
+}
+
+/** Two-way donut<->list highlight, both directions funnel through this one
+    function so there's a single source of truth for "which category is
+    active" instead of two independent code paths that could drift apart. */
+function setActiveSpendRow(category) {
+  view.querySelectorAll(".spend-row").forEach((el) => {
+    el.classList.toggle("active", el.dataset.cat === category);
+  });
+  const rows = Array.from(view.querySelectorAll(".spend-row"));
+  const idx = rows.findIndex((el) => el.dataset.cat === category);
+  charts.highlightSlice(idx === -1 ? null : idx);
+}
+
+function wireSpendingList(donutRows) {
+  view.querySelectorAll(".spend-row").forEach((el) => {
+    el.onclick = () => setActiveSpendRow(el.dataset.cat);
+    el.onmouseenter = () => {
+      if (!el.classList.contains("active")) {
+        const idx = donutRows.findIndex((r) => r.category === el.dataset.cat);
+        charts.highlightSlice(idx === -1 ? null : idx);
+      }
+    };
+    el.onmouseleave = () => {
+      const activeEl = view.querySelector(".spend-row.active");
+      const idx = activeEl
+        ? donutRows.findIndex((r) => r.category === activeEl.dataset.cat)
+        : -1;
+      charts.highlightSlice(idx === -1 ? null : idx);
+    };
+  });
+}
+
 function renderDashboard() {
   const a = aggregate(scoped(), state.budget, state.month, state.year);
   const label =
@@ -4258,6 +4381,7 @@ function renderProfile() {
 const VIEWS = {
   dashboard: renderDashboard,
   cashflow: renderCashFlow,
+  spending: renderSpending,
   add: renderAdd,
   transactions: renderTransactions,
   budget: renderBudget,
