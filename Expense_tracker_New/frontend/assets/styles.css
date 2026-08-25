@@ -1,38 +1,42 @@
 /* Ledger — an accounting-ledger aesthetic: hairline rules, no rounded corners,
    tabular numerals, a hard left gutter. Deliberately not a card-and-shadow dashboard. */
 :root {
-  --ink: #12161c;
-  --ink-2: #3c4653;
-  --ink-3: #6b7684;
-  --paper: #faf7f2;
-  --paper-2: #f2eee6;
-  --rule: #ddd5c8;
-  --rule-2: #c6bcab;
-  --teal: #0f766e;
-  --amber: #b45309;
-  --red: #b3261e;
-  --blue: #1d4ed8;
-  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  --disp: "Space Grotesk", system-ui, -apple-system, Segoe UI, sans-serif;
+  --ink: #14151a;
+  --ink-2: #4b4d57;
+  --ink-3: #8a8d99;
+  --paper: #f6f7f9;
+  --paper-2: #eef0f3;
+  --rule: #e7e8ed;
+  --rule-2: #d7d9e0;
+  --teal: #00a389;
+  --amber: #ff6b4a;
+  --red: #e5484d;
+  --blue: #3b82f6;
+  --mono: "Inter", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --disp: "Sora", system-ui, -apple-system, Segoe UI, sans-serif;
   /* ---- elevation & motion (added for the card/motion revamp) ---- */
-  --radius-sm: 8px;
-  --radius-md: 12px;
+  --radius-sm: 10px;
+  --radius-md: 18px;
   --card-bg: #ffffff;
-  --shadow-card: 0 1px 2px rgba(18, 22, 28, 0.04), 0 8px 24px -8px rgba(18, 22, 28, 0.1);
-  --shadow-card-hover: 0 2px 4px rgba(18, 22, 28, 0.06), 0 16px 32px -12px rgba(18, 22, 28, 0.16);
-  --shadow-focus: 0 0 0 3px rgba(180, 83, 9, 0.25);
+  --shadow-card: 0 2px 8px rgba(20, 21, 26, 0.06), 0 12px 32px -8px rgba(20, 21, 26, 0.14);
+  --shadow-card-hover: 0 4px 12px rgba(20, 21, 26, 0.08), 0 20px 48px -12px rgba(20, 21, 26, 0.2);
+  --shadow-focus: 0 0 0 3px rgba(0, 163, 137, 0.35);
   --motion-fast: 150ms;
   --motion-base: 250ms;
   --motion-slow: 600ms;
   --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --cat-color-0: #7c9885;
-  --cat-color-1: #7a92a8;
-  --cat-color-2: #b98a6b;
-  --cat-color-3: #9b7ba8;
-  --cat-color-4: #c2a04a;
-  --cat-color-5: #6b7684;
-  --cat-color-6: #7f9270;
-  --cat-color-7: #ab6f5c;
+  --cat-color-0: #3b82f6;
+  --cat-color-1: #a855f7;
+  --cat-color-2: #ec4899;
+  --cat-color-3: #f59e0b;
+  --cat-color-4: #10b981;
+  --cat-color-5: #06b6d4;
+  --cat-color-6: #f97316;
+  --cat-color-7: #8b5cf6;
+  --cat-color-8: #ef4444;
+  --cat-color-9: #14b8a6;
+  --cat-color-10: #eab308;
+  --cat-color-11: #84cc16;
 }
 * {
   box-sizing: border-box;
@@ -1671,6 +1675,10 @@ details[open] .add-details-toggle::before {
 .category-chip.category-color-5 { background: var(--cat-color-5); }
 .category-chip.category-color-6 { background: var(--cat-color-6); }
 .category-chip.category-color-7 { background: var(--cat-color-7); }
+.category-chip.category-color-8 { background: var(--cat-color-8); }
+.category-chip.category-color-9 { background: var(--cat-color-9); }
+.category-chip.category-color-10 { background: var(--cat-color-10); }
+.category-chip.category-color-11 { background: var(--cat-color-11); }
 
 /* add-page person picker */
 .add-person-row {
