@@ -148,7 +148,7 @@ export function personColorIndex(name) {
   return h % PERSON_PALETTE_SIZE;
 }
 
-export const CATEGORY_PALETTE_SIZE = 8;
+export const CATEGORY_PALETTE_SIZE = 12;
 export function categoryColorIndex(name) {
   const s = String(name || "");
   let h = 0;
