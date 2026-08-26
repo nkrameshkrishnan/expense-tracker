@@ -23,6 +23,7 @@
     "build": "sam build",
     "deploy": "sam deploy --guided",
     "local": "sam local start-api",
+    "start": "node src/server.js",
     "test": "COGNITO_USER_POOL_ID=us-east-1_00000000000 COGNITO_CLIENT_ID=test-client-id node --test test/*.test.js"
   }
 }
