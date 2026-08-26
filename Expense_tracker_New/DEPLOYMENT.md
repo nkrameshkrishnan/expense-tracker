@@ -487,3 +487,99 @@ Don't skip these before pointing this at real money or real user data.
 - [ ] Review this repo's `README.md`'s "Not done" section for anything
       still outstanding at the time you read this — it's a living document
       and may have grown new items since this guide was written.
+
+---
+
+## Optional — faster dev iteration with Vercel + Openship
+
+Everything above (Phases 0-9) remains the path to a real,
+production-shaped deploy. This phase adds two **dev-only** alternatives
+that are faster to iterate on — neither replaces anything above, and
+skipping this phase entirely is fine.
+
+### Frontend on Vercel
+
+1. In the Vercel dashboard, import this repository as a new project.
+2. Set **Root Directory** to `Expense_tracker_New/frontend`.
+3. Leave **Build Command** and **Output Directory** empty — this is a
+   static site with no build step; `Expense_tracker_New/frontend/`
+   already contains `index.html` and `assets/` ready to serve as-is.
+4. Deploy. Note the resulting URL (e.g.
+   `https://<project>.vercel.app`).
+5. **Update CORS/Cognito to match.** `backend/template.yaml` has two
+   parameters that must equal wherever the frontend is actually served:
+   `AllowedOrigin` (feeds `ALLOWED_ORIGIN`, API Gateway CORS, and the S3
+   bucket's CORS policy) and `FrontendUrl` (feeds Cognito's
+   `CallbackURLs`/`LogoutURLs`). Re-run `sam deploy --guided` against
+   your dev stack (see Phase 2) with both parameters set to the new
+   Vercel URL from step 4.
+6. Visit the Vercel URL and confirm sign-in works, the same way Phase 9
+   step 4 verifies the GitHub Pages URL.
+
+GitHub Pages keeps serving the repository exactly as it does today
+(`.github/workflows/deploy.yml` is unchanged) — this step only changes
+which URL you actually use for `Expense_tracker_New/frontend/`.
+
+### Backend on Openship
+
+This runs the exact same request-handling code the Lambda deployment
+runs (`backend/src/handler.js`, unmodified) inside a Docker container on
+a VPS, via [Openship](https://github.com/oblien/openship) — useful for
+iterating on backend code without a `sam deploy --guided` round trip per
+change.
+
+1. **Provision a scoped IAM user.** A VPS container has no Lambda
+   execution role, so it needs a real (but tightly scoped) IAM access
+   key. Create one IAM user with an inline policy granting exactly:
+   - `rds-data:ExecuteStatement`, `rds-data:BatchExecuteStatement` on
+     your dev Aurora cluster's ARN
+   - `cognito-idp:AdminGetUser` and whatever other `cognito-idp:Admin*`
+     actions `backend/src/auth.js` and its callers use, scoped to your
+     dev user pool's ARN
+   - `s3:GetObject`, `s3:PutObject` on your dev AI-uploads bucket's ARN
+   - `ses:SendEmail` scoped to your verified SES identity
+   - `dynamodb:UpdateItem` on your dev `RateLimitTable`'s ARN (only
+     needed if you also set `RATE_LIMIT_TABLE` for this deployment —
+     otherwise rate limiting no-ops, which is fine for a dev-only
+     instance)
+   - `bedrock:InvokeModel` for your configured model, if the AI-import
+     feature is exercised in this environment
+
+   Save the resulting access key ID and secret access key somewhere
+   outside git — you'll enter them as Openship secrets in step 4, never
+   as committed files.
+
+2. **Install Openship** on your VPS, following the current instructions
+   at [openship.io/docs](https://openship.io/docs) (`openship up` for a
+   self-hosted instance, per the project's README).
+
+3. From `Expense_tracker_New/backend/`, run Openship's own deploy flow
+   for this directory (`openship init` to link the project, then
+   `openship deploy`, per the project's own CLI reference — check
+   `openship deploy --help` for the exact current flags, since the
+   project's own docs note their reference section is still being
+   filled in). Openship auto-detects the `Dockerfile` added in this
+   plan's Task 2; no additional Openship config file is required.
+
+4. Set these environment variables as Openship secrets for the deployed
+   service (same values as the dev-stage AWS resources from Phases 2-7
+   of this guide, plus the IAM credentials from step 1):
+   - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`
+   - `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`
+   - `AI_UPLOADS_BUCKET`
+   - `ALLOWED_ORIGIN` (set to your Vercel URL from the frontend section
+     above, or `*` for local-only testing)
+   - Any other env var `backend/template.yaml` passes to the Lambda
+     function today, for parity — cross-check against that file's
+     `Environment.Variables` block for the current full list.
+
+5. **Smoke test**, matching Task 2's local container test but against
+   the deployed Openship URL:
+   ```bash
+   curl -s -o /dev/null -w "%{http_code}\n" -X OPTIONS https://<your-openship-url>/
+   curl -s https://<your-openship-url>/
+   ```
+   Expected: `204` for the first command, and
+   `{"ok":false,"error":"Missing Authorization header."}` for the
+   second — the same responses Phase 9's local smoke test would give,
+   confirming this deployment behaves identically to Lambda.
