@@ -79,36 +79,52 @@ data access, or auth.
 - Vercel's free tier includes automatic preview deployments per branch/PR
   — a genuine improvement over the current single-URL GitHub Pages setup,
   at no extra cost.
+- **CORS/Cognito URL update required.** `backend/template.yaml` has two
+  parameters that must match wherever the frontend is actually served:
+  `AllowedOrigin` (wired into `ALLOWED_ORIGIN`, API Gateway CORS, and the
+  S3 bucket CORS policy) and `FrontendUrl` (wired into Cognito's
+  `CallbackURLs`/`LogoutURLs`). Moving the frontend to Vercel means these
+  two parameters need to be updated to the new Vercel URL on the next
+  `sam deploy --guided` run against the dev stack — this is a manual,
+  documented step (see Testing/Documentation below), not something this
+  plan automates, since it touches deployed AWS infrastructure.
+- The existing `.github/workflows/deploy.yml` (GitHub Pages) and the
+  legacy root-level `assets/` app it deploys are untouched — that
+  workflow deploys the *entire repo* to Pages, including
+  `Expense_tracker_New/frontend/` as a nested path today, but the legacy
+  app at the repo root is out of scope for this change and keeps working
+  exactly as it does now.
 
-### 2. Backend refactor: extract `handleRequest()`
+### 2. No changes needed to `handler.js`
 
-`backend/src/handler.js` currently exports a single Lambda entrypoint
-that inline-handles CORS, calls `requireUser()`, and dispatches to route
-modules (`routes/transactions.js`, `routes/budget.js`, etc.) based on the
-request. This gets split into:
+`backend/src/handler.js` already exports `handler = async (event) => ...`
+as a value decoupled from actual Lambda invocation — it's a plain
+function that reads exactly these fields off `event`, and nothing else:
 
-- An exported pure function, e.g.
-  `handleRequest({ method, path, headers, queryParams, body })` →
-  `{ statusCode, headers, body }`, containing exactly the logic that
-  exists in `handler.js` today (CORS headers, `requireUser`, action
-  routing, error handling). No behavior changes — this is a decoupling
-  refactor only.
-- `handler.js`'s existing Lambda entrypoint becomes a thin adapter:
-  unpack the API Gateway event into `handleRequest()`'s parameter shape,
-  call it, return the result. Every existing test in
-  `backend/test/*.test.js` continues to exercise the same behavior
-  through this adapter.
+- `event.requestContext.http.method`
+- `event.requestContext.http.sourceIp` (used by `rateLimit.js`)
+- `event.headers.authorization` / `event.headers.Authorization`
+- `event.headers["x-active-tenant"]` / `event.headers["X-Active-Tenant"]`
+- `event.queryStringParameters` (a plain object)
+- `event.body` (raw JSON string)
+
+Since this is already just a function taking a plain object, it needs no
+refactor at all. `server.js` (below) calls `handler()` directly.
 
 ### 3. New: `backend/src/server.js`
 
-A plain Node `http` (or minimal Express) server that:
+A plain Node `http` server that:
 
 - Listens on `process.env.PORT`.
-- Translates incoming HTTP requests (method, URL path, query string,
-  headers, body) into `handleRequest()`'s parameter shape.
-- Writes `handleRequest()`'s `{statusCode, headers, body}` result back as
-  the HTTP response.
-- Is the only new "runtime" code — it contains no business logic.
+- On each request, builds a fake API-Gateway-v2-shaped `event` object
+  from the real request (method, source IP, headers, parsed query
+  string, raw body), matching exactly the field list above — nothing
+  more.
+- Calls the existing, unmodified `handler(event)` from `handler.js`.
+- Writes the returned `{statusCode, headers, body}` back as the HTTP
+  response.
+- Is the only new "runtime" code — it contains no business logic, and
+  `handler.js` is imported, not duplicated.
 
 ### 4. New: `backend/Dockerfile`
 
@@ -163,13 +179,18 @@ handler exception.
 ## Testing
 
 - Existing `npm test` (`node --test test/*.test.js`) continues to pass
-  unmodified — it tests `handleRequest()`'s behavior (via whatever the
-  refactor calls it), not the transport it's invoked through.
+  completely unmodified — `handler.js` isn't touched, so every existing
+  test (including `handler-gating.test.js`'s direct import of
+  `assertManagesInvites`/`assertKnownPriceId`) keeps working exactly as
+  today.
 - Add one smoke-test step to the deployment documentation: after
   deploying to Openship, `curl` the `/data` endpoint without a token and
   confirm the same 401 shape the AWS dev stage already returns for the
   same request — proves the wrapper and CORS headers behave identically
   to the Lambda path.
+- Add a documentation step (in `DEPLOYMENT.md`) covering the
+  `AllowedOrigin`/`FrontendUrl` SAM parameter update described above,
+  including the `sam deploy --guided` re-run needed to apply it.
 
 ## Explicitly out of scope
 
