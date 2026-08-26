@@ -2,8 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createApp } from "../src/server.js";
 
-async function withServer(fn) {
-  const app = createApp();
+async function withServer(fn, handlerFn) {
+  const app = handlerFn === undefined ? createApp() : createApp(handlerFn);
   await new Promise((resolve) => app.listen(0, resolve));
   const { port } = app.address();
   try {
@@ -50,4 +50,25 @@ test("POST without an Authorization header returns 401, ignoring the body", asyn
       error: "Missing Authorization header.",
     });
   });
+});
+
+test("buildEvent correctly maps body, queryStringParameters, and sourceIp onto the constructed event", async () => {
+  let capturedEvent;
+  const fakeHandler = async (event) => {
+    capturedEvent = event;
+    return { statusCode: 200, headers: {}, body: "{}" };
+  };
+
+  await withServer(async (base) => {
+    const res = await fetch(`${base}/?year=2026`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "getPlans" }),
+    });
+    assert.equal(res.status, 200);
+    assert.equal(capturedEvent.requestContext.http.method, "POST");
+    assert.equal(capturedEvent.queryStringParameters.year, "2026");
+    assert.equal(capturedEvent.body, '{"action":"getPlans"}');
+    assert.equal(typeof capturedEvent.requestContext.http.sourceIp, "string");
+  }, fakeHandler);
 });

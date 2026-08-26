@@ -492,7 +492,7 @@ Don't skip these before pointing this at real money or real user data.
 
 ## Optional — faster dev iteration with Vercel + Openship
 
-Everything above (Phases 0-9) remains the path to a real,
+Everything above (Phases 0-11) remains the path to a real,
 production-shaped deploy. This phase adds two **dev-only** alternatives
 that are faster to iterate on — neither replaces anything above, and
 skipping this phase entirely is fine.
@@ -530,23 +530,38 @@ change.
 
 1. **Provision a scoped IAM user.** A VPS container has no Lambda
    execution role, so it needs a real (but tightly scoped) IAM access
-   key. Create one IAM user with an inline policy granting exactly:
-   - `rds-data:ExecuteStatement`, `rds-data:BatchExecuteStatement` on
-     your dev Aurora cluster's ARN
+   key. This should mirror exactly the policy `template.yaml`'s
+   `DataFunction` resource already runs under in production — create one
+   IAM user with an inline policy granting exactly, scoped to your
+   dev-stage resources only:
+   - `rds-data:ExecuteStatement`, `rds-data:BeginTransaction`,
+     `rds-data:CommitTransaction`, `rds-data:RollbackTransaction` on your
+     dev Aurora cluster's ARN
+   - `secretsmanager:GetSecretValue` on your dev Aurora cluster's secret
+     ARN — the RDS Data API resolves the secret using the caller's own
+     credentials, so without this grant every database call fails with
+     `AccessDenied`.
+   - `dynamodb:UpdateItem` on your dev `RateLimitTable`'s ARN — **only if
+     you set `RATE_LIMIT_TABLE`** for this deployment (see the env var
+     list below, which recommends leaving it unset).
+   - `s3:PutObject`, `s3:GetObjectTagging` on your dev AI-uploads
+     bucket's ARN (not `s3:GetObject` — the app only presigns uploads and
+     reads scan-status tags, it never downloads object bytes)
    - No `cognito-idp` IAM permission is needed — `auth.js` verifies
      tokens via public JWKS, not an AWS API call.
-   - `s3:GetObject`, `s3:PutObject` on your dev AI-uploads bucket's ARN
-   - `ses:SendEmail` scoped to your verified SES identity
-   - `dynamodb:UpdateItem` on your dev `RateLimitTable`'s ARN (only
-     needed if you also set `RATE_LIMIT_TABLE` for this deployment —
-     otherwise rate limiting no-ops, which is fine for a dev-only
-     instance)
-   - `bedrock:InvokeModel` for your configured model, if the AI-import
-     feature is exercised in this environment
+
+   Neither `ses:SendEmail` nor `bedrock:InvokeModel` is needed: this
+   container only serves `handler.js`'s `/data` route, and
+   `backend/src/notify.js` (the only caller of SES) is imported by
+   `stripeWebhook.js`, while Bedrock is only called by the separate
+   AI-extraction Lambda — neither runs in this Docker container.
 
    Save the resulting access key ID and secret access key somewhere
    outside git — you'll enter them as Openship secrets in step 4, never
-   as committed files.
+   as committed files. If this dev deployment is ever decommissioned,
+   rotate or delete this access key, and never grant it access to
+   production-stage Aurora/Cognito/S3/DynamoDB ARNs — dev-stage ARNs
+   only.
 
 2. **Install Openship** on your VPS, following the current instructions
    at [openship.io/docs](https://openship.io/docs) (`openship up` for a
@@ -557,28 +572,55 @@ change.
    `openship deploy`, per the project's own CLI reference — check
    `openship deploy --help` for the exact current flags, since the
    project's own docs note their reference section is still being
-   filled in). Openship auto-detects the `Dockerfile` added in this
-   plan's Task 2; no additional Openship config file is required.
+   filled in). Openship auto-detects `backend/Dockerfile`; no additional
+   Openship config file is required.
 
 4. Set these environment variables as Openship secrets for the deployed
-   service (same values as the dev-stage AWS resources from Phases 2-7
-   of this guide, plus the IAM credentials from step 1):
-   - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`
+   service. This is the complete, explicit list — every variable
+   `handler.js` and the modules it imports actually read, pulled from
+   `template.yaml`'s `Globals.Function.Environment.Variables` block
+   (which every function, including `DataFunction`, receives) plus
+   `DataFunction`'s own block:
+   - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` — the new
+     IAM user's credentials from step 1.
+   - `DB_CLUSTER_ARN`, `DB_SECRET_ARN`, `DB_NAME` — same values as your
+     dev Aurora stack; `DB_NAME` is literally `ledger`.
    - `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`
    - `AI_UPLOADS_BUCKET`
    - `ALLOWED_ORIGIN` (set to your Vercel URL from the frontend section
      above, or `*` for local-only testing)
-   - Any other env var `backend/template.yaml` passes to the Lambda
-     function today, for parity — cross-check against that file's
-     `Environment.Variables` block for the current full list.
+   - `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID_PRO`, `STRIPE_PRICE_ID_FAMILY`
+     — same values as your dev stack. Needed because `handler.js` imports
+     `stripe.js`/`billing.js` even though this dev deployment likely
+     won't exercise billing routes.
+   - `SES_FROM_ADDRESS` — same value as your dev stack.
+   - Leave `RATE_LIMIT_TABLE` **unset**. `rateLimit.js` keys its
+     per-source-IP limit on the caller's IP as seen by `server.js`
+     (`req.socket.remoteAddress`), which behind Openship's reverse proxy
+     is the proxy's own IP for every request, not the real client's — so
+     if this is set, every user of this dev deployment shares one
+     60-req/min budget and the whole thing throttles under trivial load.
+     Leaving it unset makes rate limiting no-op cleanly, which is fine
+     for a dev-only instance.
 
-5. **Smoke test**, matching Task 2's local container test but against
-   the deployed Openship URL:
+5. **Wire the Vercel frontend to this URL.** Update `API_ENDPOINT` in
+   `Expense_tracker_New/frontend/assets/config.js` to this Openship
+   container's URL, then commit and redeploy to Vercel — the same
+   "commit `config.js`, then push/redeploy" pattern Phase 8/9 use for
+   the AWS/GitHub-Pages path. Until you do this, the Vercel frontend
+   keeps pointing at the API Gateway URL from Phase 8 and this container
+   never receives a request. Note that this container serves only the
+   `/data` route — Stripe webhooks, S3-triggered AI extraction, and the
+   Cognito post-confirmation trigger still run only on AWS, so nothing
+   else should be pointed at this URL.
+
+6. **Smoke test**, against the deployed Openship URL:
    ```bash
    curl -s -o /dev/null -w "%{http_code}\n" -X OPTIONS https://<your-openship-url>/
    curl -s https://<your-openship-url>/
    ```
    Expected: `204` for the first command, and
    `{"ok":false,"error":"Missing Authorization header."}` for the
-   second — the same responses the local Docker container smoke test gave
-   earlier, confirming this deployment behaves identically to Lambda.
+   second — the same responses you'd get running this same
+   `backend/Dockerfile` container locally, confirming this deployment
+   behaves identically to Lambda.

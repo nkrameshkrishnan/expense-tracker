@@ -11,4 +11,5 @@ COPY package.json ./
 COPY src ./src
 ENV PORT=8080
 EXPOSE 8080
+USER node
 CMD ["node", "src/server.js"]
