@@ -533,9 +533,8 @@ change.
    key. Create one IAM user with an inline policy granting exactly:
    - `rds-data:ExecuteStatement`, `rds-data:BatchExecuteStatement` on
      your dev Aurora cluster's ARN
-   - `cognito-idp:AdminGetUser` and whatever other `cognito-idp:Admin*`
-     actions `backend/src/auth.js` and its callers use, scoped to your
-     dev user pool's ARN
+   - No `cognito-idp` IAM permission is needed — `auth.js` verifies
+     tokens via public JWKS, not an AWS API call.
    - `s3:GetObject`, `s3:PutObject` on your dev AI-uploads bucket's ARN
    - `ses:SendEmail` scoped to your verified SES identity
    - `dynamodb:UpdateItem` on your dev `RateLimitTable`'s ARN (only
@@ -581,5 +580,5 @@ change.
    ```
    Expected: `204` for the first command, and
    `{"ok":false,"error":"Missing Authorization header."}` for the
-   second — the same responses Phase 9's local smoke test would give,
-   confirming this deployment behaves identically to Lambda.
+   second — the same responses the local Docker container smoke test gave
+   earlier, confirming this deployment behaves identically to Lambda.
