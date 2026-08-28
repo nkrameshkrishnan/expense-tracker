@@ -40,11 +40,13 @@ container to a VPS; Vercel deploys the static frontend directly from
 ### Task 1: `backend/src/server.js` — HTTP adapter for the existing Lambda handler
 
 **Files:**
+
 - Create: `Expense_tracker_New/backend/src/server.js`
 - Test: `Expense_tracker_New/backend/test/server.test.js`
 - Modify: `Expense_tracker_New/backend/package.json` (add a `start` script)
 
 **Interfaces:**
+
 - Consumes: `handler` exported from `../src/handler.js` — signature
   `async (event) => ({ statusCode, headers, body })`, where `event` reads
   as: `event.requestContext.http.method`,
@@ -120,9 +122,11 @@ test("POST without an Authorization header returns 401, ignoring the body", asyn
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run from `Expense_tracker_New/backend/`:
+
 ```bash
 COGNITO_USER_POOL_ID=us-east-1_00000000000 COGNITO_CLIENT_ID=test-client-id node --test test/server.test.js
 ```
+
 Expected: FAIL — `Cannot find module '../src/server.js'` (or similar),
 since `server.js` doesn't exist yet.
 
@@ -197,14 +201,17 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 ```bash
 COGNITO_USER_POOL_ID=us-east-1_00000000000 COGNITO_CLIENT_ID=test-client-id node --test test/server.test.js
 ```
+
 Expected: PASS — all 3 tests green.
 
 - [ ] **Step 5: Add a `start` script**
 
 In `Expense_tracker_New/backend/package.json`, add to `"scripts"`:
+
 ```json
 "start": "node src/server.js",
 ```
+
 (Keep every existing script — `build`, `deploy`, `local`, `test` —
 unchanged; this only adds one new entry.)
 
@@ -213,6 +220,7 @@ unchanged; this only adds one new entry.)
 ```bash
 COGNITO_USER_POOL_ID=us-east-1_00000000000 COGNITO_CLIENT_ID=test-client-id node --test test/*.test.js
 ```
+
 Expected: PASS — every existing test file plus the new `server.test.js`,
 all green. (Tests that need a real Postgres, e.g. `pg-harness.test.js`
 and the route-write tests, behave exactly as they did before this task —
@@ -230,10 +238,12 @@ git commit -m "feat: add HTTP adapter for the dev/Openship deployment path"
 ### Task 2: `backend/Dockerfile` — package the backend as a container
 
 **Files:**
+
 - Create: `Expense_tracker_New/backend/Dockerfile`
 - Create: `Expense_tracker_New/backend/.dockerignore`
 
 **Interfaces:**
+
 - Consumes: `server.js`'s `start` script from Task 1
   (`CMD ["node", "src/server.js"]` — equivalent to `npm start`, called
   directly so the container's PID 1 is the Node process itself, not an
@@ -277,9 +287,11 @@ CMD ["node", "src/server.js"]
 - [ ] **Step 3: Build the image locally**
 
 Run from `Expense_tracker_New/backend/`:
+
 ```bash
 docker build -t ledger-backend-dev .
 ```
+
 Expected: build succeeds (exit code 0). If `docker` is not available in
 this environment, report BLOCKED with that detail rather than skipping
 verification.
@@ -297,6 +309,7 @@ curl -s -o /dev/null -w "%{http_code}\n" -X OPTIONS http://localhost:8080/
 curl -s http://localhost:8080/
 docker stop ledger-backend-dev-smoketest && docker rm ledger-backend-dev-smoketest
 ```
+
 Expected: the `OPTIONS` request prints `204`; the plain `GET` prints
 `{"ok":false,"error":"Missing Authorization header."}` — proving the
 containerized server behaves identically to the test-runner version from
@@ -317,9 +330,11 @@ git commit -m "feat: add Dockerfile for the dev/Openship backend deployment"
 ### Task 3: Document the Vercel + Openship dev deployment in `DEPLOYMENT.md`
 
 **Files:**
+
 - Modify: `Expense_tracker_New/DEPLOYMENT.md`
 
 **Interfaces:**
+
 - Consumes: Task 1's `server.js`/`start` script and Task 2's `Dockerfile`
   by name/path only — this task is documentation, no code.
 
@@ -332,7 +347,7 @@ those specific flags is more honest than guessing at syntax that could
 be wrong.
 
 - [ ] **Step 1: Add a new section at the end of
-  `Expense_tracker_New/DEPLOYMENT.md`**
+      `Expense_tracker_New/DEPLOYMENT.md`**
 
 The file's existing headings run `## Phase 0` through
 `## Phase 11 — Before real customers (production hardening)` (the last
@@ -439,9 +454,11 @@ change.
 - [ ] **Step 2: Sanity-check the inserted section**
 
 Run:
+
 ```bash
 node -e "require('fs').readFileSync('Expense_tracker_New/DEPLOYMENT.md','utf8')" && echo OK
 ```
+
 And visually confirm (read the file) that the new Phase 10 section
 appears once, in the right place, with no broken Markdown code fences —
 this repo's git history includes a prior fix specifically for broken

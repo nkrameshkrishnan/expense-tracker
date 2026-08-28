@@ -1006,11 +1006,21 @@ class SupabaseStore {
     };
   }
 
+  // Inverse of _normDebt for outbound rows: app.js/LocalStore/MemoryStore
+  // build records with camelCase parentId, but the Postgres column is
+  // parent_id - PostgREST rejects an unrecognised parentId key outright
+  // (PGRST204) rather than ignoring it, so every write path needs this.
+  _toDbDebt(record) {
+    const { parentId, ...rest } = record;
+    if (!("parentId" in record)) return rest;
+    return { ...rest, parent_id: parentId };
+  }
+
   async addDebt(record) {
     const sb = await this._client();
     const { data, error } = await sb
       .from("debts")
-      .insert(record)
+      .insert(this._toDbDebt(record))
       .select()
       .single();
     if (error) throw new Error(error.message);
@@ -1019,7 +1029,7 @@ class SupabaseStore {
     return result.id;
   }
   async updateDebt(id, record) {
-    const r = { ...record };
+    const r = this._toDbDebt(record);
     delete r.id; // same identity-column constraint as transactions.update()
     const sb = await this._client();
     const { data, error } = await sb
@@ -1049,7 +1059,10 @@ class SupabaseStore {
   }
   async importDebts(records) {
     const sb = await this._client();
-    const { data, error } = await sb.from("debts").insert(records).select();
+    const { data, error } = await sb
+      .from("debts")
+      .insert(records.map((r) => this._toDbDebt(r)))
+      .select();
     if (error) throw new Error(error.message);
     const results = data.map((d) => this._normDebt(d));
     if (this.cache) this.cache.debts.push(...results);

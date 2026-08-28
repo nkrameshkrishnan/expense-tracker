@@ -64,17 +64,24 @@ Added to `:root` in `assets/styles.css`, alongside the existing tokens
 (nothing existing is removed or renamed):
 
 ```css
---radius-sm: 8px;   /* inputs, chips, buttons */
---radius-md: 12px;  /* cards, panels, modals */
+--radius-sm: 8px; /* inputs, chips, buttons */
+--radius-md: 12px; /* cards, panels, modals */
 --card-bg: #ffffff; /* one shade lighter than --paper-2, so cards visibly
                         sit ON the paper rather than blending into it */
---shadow-card: 0 1px 2px rgba(18,22,28,.04), 0 8px 24px -8px rgba(18,22,28,.10);
---shadow-card-hover: 0 2px 4px rgba(18,22,28,.06), 0 16px 32px -12px rgba(18,22,28,.16);
---shadow-focus: 0 0 0 3px rgba(180,83,9,.25); /* amber ring, keyboard focus */
+--shadow-card:
+  0 1px 2px rgba(18, 22, 28, 0.04), 0 8px 24px -8px rgba(18, 22, 28, 0.1);
+--shadow-card-hover:
+  0 2px 4px rgba(18, 22, 28, 0.06), 0 16px 32px -12px rgba(18, 22, 28, 0.16);
+--shadow-focus: 0 0 0 3px rgba(180, 83, 9, 0.25); /* amber ring, keyboard focus */
 --motion-fast: 150ms;
 --motion-base: 250ms;
 --motion-slow: 600ms;
---motion-ease: cubic-bezier(0.22, 1, 0.36, 1); /* power2.out-equivalent, used in CSS transitions */
+--motion-ease: cubic-bezier(
+  0.22,
+  1,
+  0.36,
+  1
+); /* power2.out-equivalent, used in CSS transitions */
 ```
 
 **Category color palette** — 8 desaturated hues, compatible with the
@@ -105,7 +112,10 @@ underneath the new elevation.
 `index.html` gets one new line, alongside the existing Chart.js tag:
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js" defer></script>
+<script
+  src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"
+  defer
+></script>
 ```
 
 No CSP change needed — `script-src` already includes `https://cdn.jsdelivr.net`.
@@ -205,23 +215,23 @@ export function viewTransition(renderFn) {
 
 ### Catalog (durations final, tuned against the reference apps)
 
-| Element | Motion | Duration | Notes |
-|---|---|---|---|
-| KPI tile value | count-up | 500–700ms, `power2.out` | Fires only on `updateDashboardValues` (the month/year patch path), not on `buildDashboardShell`'s first render — first paint shows real values immediately with no animation (animating away from $0.00 on first load would make the page look emptier for longer). `buildDashboardShell` still stores `state._dashLastAgg` on every render, so every *subsequent* patch-path switch has a valid "from" value to animate away from, not just the first one. |
-| KPI tiles entrance | stagger fade+rise | 350ms, 40ms stagger | Grid order (left-to-right, top-to-bottom). |
-| Chart panels entrance | stagger fade+rise | 350ms, 40ms stagger | Starts after KPI stagger completes, not simultaneously. |
-| Chart draw-in | Chart.js `animation.duration` | 600ms, `easeOutQuart` | Per-chart, via existing `charts.js` functions — a filter-triggered re-render of one chart must not replay its panel's entrance stagger. |
-| Card/row hover-lift | shadow token swap + translate-y (cards only) | 150ms | Transactions rows use background-tint + shadow only, no translate-y (dense list, individual lift reads as noisy). |
-| Tab switch | fade+slide on `#view` | 180ms | Via `viewTransition()`. |
-| ~~Skeleton loading~~ | — | — | **Dropped, see note below.** |
-| Transactions group expand | chevron rotate | 150ms | Purely visual toggle, independent of the subtotal count-up below. |
-| Transactions group header subtotal | count-up | 500–700ms | Once per group key (via `txRevealed`, same gate as row entrance) — fires when the group is first rendered, not on expand/collapse, since the header is visible in both states. |
-| Transactions row entrance | stagger fade+rise | 350ms, 40ms stagger | Only the first time a group is ever rendered (tracked via the `txRevealed` Set, keyed by group) — whether that first render is expanded (the newest group on initial load) or the user's first click to expand it. Re-expanding a group already in `txRevealed` does not replay the stagger, nor do unrelated re-renders (e.g. typing in the search filter). |
-| Filter pill (`.fpill`) add/remove | scale+fade | 150ms | |
-| Transactions row delete | fade + height-collapse | 250ms | Via `exitCollapse()`, awaited before the row leaves the DOM/state. |
-| Per-row transaction amounts | **none** | — | Explicitly no count-up — animating 20+ individual values at once is the "wall of motion" this spec avoids. Only aggregate totals (page header, group subtotals) count up. |
+| Element                            | Motion                                       | Duration                | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ---------------------------------- | -------------------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| KPI tile value                     | count-up                                     | 500–700ms, `power2.out` | Fires only on `updateDashboardValues` (the month/year patch path), not on `buildDashboardShell`'s first render — first paint shows real values immediately with no animation (animating away from $0.00 on first load would make the page look emptier for longer). `buildDashboardShell` still stores `state._dashLastAgg` on every render, so every _subsequent_ patch-path switch has a valid "from" value to animate away from, not just the first one. |
+| KPI tiles entrance                 | stagger fade+rise                            | 350ms, 40ms stagger     | Grid order (left-to-right, top-to-bottom).                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Chart panels entrance              | stagger fade+rise                            | 350ms, 40ms stagger     | Starts after KPI stagger completes, not simultaneously.                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Chart draw-in                      | Chart.js `animation.duration`                | 600ms, `easeOutQuart`   | Per-chart, via existing `charts.js` functions — a filter-triggered re-render of one chart must not replay its panel's entrance stagger.                                                                                                                                                                                                                                                                                                                     |
+| Card/row hover-lift                | shadow token swap + translate-y (cards only) | 150ms                   | Transactions rows use background-tint + shadow only, no translate-y (dense list, individual lift reads as noisy).                                                                                                                                                                                                                                                                                                                                           |
+| Tab switch                         | fade+slide on `#view`                        | 180ms                   | Via `viewTransition()`.                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ~~Skeleton loading~~               | —                                            | —                       | **Dropped, see note below.**                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Transactions group expand          | chevron rotate                               | 150ms                   | Purely visual toggle, independent of the subtotal count-up below.                                                                                                                                                                                                                                                                                                                                                                                           |
+| Transactions group header subtotal | count-up                                     | 500–700ms               | Once per group key (via `txRevealed`, same gate as row entrance) — fires when the group is first rendered, not on expand/collapse, since the header is visible in both states.                                                                                                                                                                                                                                                                              |
+| Transactions row entrance          | stagger fade+rise                            | 350ms, 40ms stagger     | Only the first time a group is ever rendered (tracked via the `txRevealed` Set, keyed by group) — whether that first render is expanded (the newest group on initial load) or the user's first click to expand it. Re-expanding a group already in `txRevealed` does not replay the stagger, nor do unrelated re-renders (e.g. typing in the search filter).                                                                                                |
+| Filter pill (`.fpill`) add/remove  | scale+fade                                   | 150ms                   |                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Transactions row delete            | fade + height-collapse                       | 250ms                   | Via `exitCollapse()`, awaited before the row leaves the DOM/state.                                                                                                                                                                                                                                                                                                                                                                                          |
+| Per-row transaction amounts        | **none**                                     | —                       | Explicitly no count-up — animating 20+ individual values at once is the "wall of motion" this spec avoids. Only aggregate totals (page header, group subtotals) count up.                                                                                                                                                                                                                                                                                   |
 
-**Why skeleton loading was dropped:** the original assumption — that Dashboard/Transactions can render with `state.rows` still unresolved, producing a blank/zero flash — doesn't hold once `boot()` (in `assets/app.js`) is actually read. `state.rows` is fetched and awaited *before* the first `go(startTab)` call that produces the first Dashboard/Transactions render; the actual network wait is already covered by the pre-existing full-screen `#boot-loading` overlay shown by inline HTML before `app.js` even starts running. The only later data refetch (Dashboard's month/year selectors, and the background `ensureAllYearsLoaded()` call) replaces already-rendered real numbers with newer real numbers — never a blank state — so there is no blank/zero flash for this pilot's two tabs to replace. A skeleton system remains a reasonable future addition for Billing's genuine "Loading plans…" text state, but that tab is out of scope here (see Non-Goals).
+**Why skeleton loading was dropped:** the original assumption — that Dashboard/Transactions can render with `state.rows` still unresolved, producing a blank/zero flash — doesn't hold once `boot()` (in `assets/app.js`) is actually read. `state.rows` is fetched and awaited _before_ the first `go(startTab)` call that produces the first Dashboard/Transactions render; the actual network wait is already covered by the pre-existing full-screen `#boot-loading` overlay shown by inline HTML before `app.js` even starts running. The only later data refetch (Dashboard's month/year selectors, and the background `ensureAllYearsLoaded()` call) replaces already-rendered real numbers with newer real numbers — never a blank state — so there is no blank/zero flash for this pilot's two tabs to replace. A skeleton system remains a reasonable future addition for Billing's genuine "Loading plans…" text state, but that tab is out of scope here (see Non-Goals).
 
 ### Reduced motion
 
@@ -233,7 +243,9 @@ respects the same media query directly in `styles.css`:
 
 ```css
 @media (prefers-reduced-motion: reduce) {
-  .card-hoverable { transition: none; }
+  .card-hoverable {
+    transition: none;
+  }
 }
 ```
 
@@ -251,7 +263,7 @@ respects the same media query directly in `styles.css`:
   (`money(a.income)`, `pct(a.savingsRate)`, or the literal `"—"` when the
   underlying metric has no meaningful value yet). `countUp()` needs a raw
   number and a formatter, not a pre-formatted string, and there is
-  currently nowhere the *previous* aggregate is kept — `state._dashShape`
+  currently nowhere the _previous_ aggregate is kept — `state._dashShape`
   stores only the KPI grid's shape (for the `canPatch` comparison), not
   its values. Concretely:
   - Add `state._dashLastAgg = a;` at the end of both
@@ -315,20 +327,20 @@ respects the same media query directly in `styles.css`:
 - Filter pills (`.fpill`): scale+fade in when added (a filter is set),
   scale+fade out before removal when cleared.
 - Row delete (the `data-del` button handler): call `await
-  exitCollapse(rowEl)` before removing the row from `state.rows`/DOM and
+exitCollapse(rowEl)` before removing the row from `state.rows`/DOM and
   re-rendering, so the row visibly collapses rather than vanishing
   instantly.
 - Per-row amounts: no count-up (see catalog's explicit non-goal).
 
 ## File / Component Map
 
-| File | Change |
-|---|---|
-| `Expense_tracker_New/frontend/index.html` | Add GSAP `<script defer>` tag next to the Chart.js tag. |
-| `Expense_tracker_New/frontend/assets/motion.js` | New file — `countUp`, `revealStagger`, `cardHoverable`, `exitCollapse`, `viewTransition`, `reduced()`. |
-| `Expense_tracker_New/frontend/assets/styles.css` | New tokens (radius/shadow/motion/category-color), `.card-hoverable`, `.category-chip`+`.category-color-{0..7}`, elevation applied to `.kpi`/`.panel`, reduced-motion media query. |
-| `Expense_tracker_New/frontend/assets/app.js` | `buildDashboardShell`, `updateDashboardValues`, `wireDashboard`, `renderTransactions`, `txRow()`, new `categoryColorClass()`, tab-switch call site (`go()` or equivalent) wired through `viewTransition()`. |
-| `Expense_tracker_New/frontend/assets/charts.js` | Add `animation` config to each chart-builder function used by Dashboard. |
+| File                                             | Change                                                                                                                                                                                                      |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Expense_tracker_New/frontend/index.html`        | Add GSAP `<script defer>` tag next to the Chart.js tag.                                                                                                                                                     |
+| `Expense_tracker_New/frontend/assets/motion.js`  | New file — `countUp`, `revealStagger`, `cardHoverable`, `exitCollapse`, `viewTransition`, `reduced()`.                                                                                                      |
+| `Expense_tracker_New/frontend/assets/styles.css` | New tokens (radius/shadow/motion/category-color), `.card-hoverable`, `.category-chip`+`.category-color-{0..7}`, elevation applied to `.kpi`/`.panel`, reduced-motion media query.                           |
+| `Expense_tracker_New/frontend/assets/app.js`     | `buildDashboardShell`, `updateDashboardValues`, `wireDashboard`, `renderTransactions`, `txRow()`, new `categoryColorClass()`, tab-switch call site (`go()` or equivalent) wired through `viewTransition()`. |
+| `Expense_tracker_New/frontend/assets/charts.js`  | Add `animation` config to each chart-builder function used by Dashboard.                                                                                                                                    |
 
 ## Testing & Verification
 

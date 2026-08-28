@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- **Keep every existing CSS token *name*, change only values.** `--ink`, `--ink-2`, `--ink-3`, `--paper`, `--paper-2`, `--rule`, `--rule-2`, `--teal`, `--amber`, `--red`, `--blue`, `--mono`, `--disp` all stay as names — this was a real defect caught during this plan's own spec review (50+ existing CSS rules reference these names for their semantic roles; removing any of them silently breaks those rules). Same discipline applies to `charts.js`'s JS constants (`TEAL`, `AMBER`, `RED`, `BLUE`, `PURPLE`, `SAND`, `INK`, `INK3`, `RULE`) — keep the names, change the values.
+- **Keep every existing CSS token _name_, change only values.** `--ink`, `--ink-2`, `--ink-3`, `--paper`, `--paper-2`, `--rule`, `--rule-2`, `--teal`, `--amber`, `--red`, `--blue`, `--mono`, `--disp` all stay as names — this was a real defect caught during this plan's own spec review (50+ existing CSS rules reference these names for their semantic roles; removing any of them silently breaks those rules). Same discipline applies to `charts.js`'s JS constants (`TEAL`, `AMBER`, `RED`, `BLUE`, `PURPLE`, `SAND`, `INK`, `INK3`, `RULE`) — keep the names, change the values.
 - `SAND` is kept, not dropped — it's the deliberate neutral fill for the Budget-ceiling bar and the "Unassigned" person slot in `charts.js`, not dead code.
 - `PERSON_PALETTE_SIZE` (5) is unchanged — it indexes a structurally separate, fixed 5-entry list (`[TEAL, AMBER, BLUE, RED, PURPLE]` in `charts.js`, matching named-token CSS rules), not the 12-slot category array. Only `CATEGORY_PALETTE_SIZE` extends, `8 → 12`.
 - No new build tooling. `chartjs-chart-sankey` loads via one new pinned `<script>` tag (`@0.15.0` exactly, not `@latest` — an earlier release, 0.14.1, shipped a registration-breaking regression later fixed in 0.14.2/0.14.3).
@@ -26,11 +26,13 @@
 ### Task 1: Global color and typography token repaint
 
 **Files:**
+
 - Modify: `Expense_tracker_New/frontend/assets/styles.css` (`:root` block, `.category-chip.category-color-N` rules)
 - Modify: `Expense_tracker_New/frontend/index.html` (Google Fonts `<link>`)
 - Modify: `Expense_tracker_New/frontend/assets/store.js` (`CATEGORY_PALETTE_SIZE`)
 
 **Interfaces:**
+
 - Produces: 12 usable `--cat-color-0` through `--cat-color-11` CSS tokens and matching `.category-chip.category-color-0..11` rules, consumed by Task 2 (`charts.js`'s `CATEGORY_SPECTRUM` array must have exactly the same 12 hex values in the same order) and by the existing, unmodified `categoryColorClass()`/`categoryColorIndex()` functions in `app.js`/`store.js` (their hash output now ranges 0-11 instead of 0-7, and every CSS slot it can produce now exists).
 
 - [ ] **Step 1: Replace the `:root` token values in `assets/styles.css`**
@@ -56,8 +58,10 @@ Find the current block (lines 3-36):
   --radius-sm: 8px;
   --radius-md: 12px;
   --card-bg: #ffffff;
-  --shadow-card: 0 1px 2px rgba(18, 22, 28, 0.04), 0 8px 24px -8px rgba(18, 22, 28, 0.1);
-  --shadow-card-hover: 0 2px 4px rgba(18, 22, 28, 0.06), 0 16px 32px -12px rgba(18, 22, 28, 0.16);
+  --shadow-card:
+    0 1px 2px rgba(18, 22, 28, 0.04), 0 8px 24px -8px rgba(18, 22, 28, 0.1);
+  --shadow-card-hover:
+    0 2px 4px rgba(18, 22, 28, 0.06), 0 16px 32px -12px rgba(18, 22, 28, 0.16);
   --shadow-focus: 0 0 0 3px rgba(180, 83, 9, 0.25);
   --motion-fast: 150ms;
   --motion-base: 250ms;
@@ -95,8 +99,10 @@ Replace it entirely with:
   --radius-sm: 10px;
   --radius-md: 18px;
   --card-bg: #ffffff;
-  --shadow-card: 0 2px 8px rgba(20, 21, 26, 0.06), 0 12px 32px -8px rgba(20, 21, 26, 0.14);
-  --shadow-card-hover: 0 4px 12px rgba(20, 21, 26, 0.08), 0 20px 48px -12px rgba(20, 21, 26, 0.2);
+  --shadow-card:
+    0 2px 8px rgba(20, 21, 26, 0.06), 0 12px 32px -8px rgba(20, 21, 26, 0.14);
+  --shadow-card-hover:
+    0 4px 12px rgba(20, 21, 26, 0.08), 0 20px 48px -12px rgba(20, 21, 26, 0.2);
   --shadow-focus: 0 0 0 3px rgba(0, 163, 137, 0.35);
   --motion-fast: 150ms;
   --motion-base: 250ms;
@@ -124,23 +130,47 @@ Every property name is unchanged except the 12 `--cat-color-*` entries, which gr
 Find the existing block in `assets/styles.css` (around line 1666-1673):
 
 ```css
-.category-chip.category-color-0 { background: var(--cat-color-0); }
-.category-chip.category-color-1 { background: var(--cat-color-1); }
-.category-chip.category-color-2 { background: var(--cat-color-2); }
-.category-chip.category-color-3 { background: var(--cat-color-3); }
-.category-chip.category-color-4 { background: var(--cat-color-4); }
-.category-chip.category-color-5 { background: var(--cat-color-5); }
-.category-chip.category-color-6 { background: var(--cat-color-6); }
-.category-chip.category-color-7 { background: var(--cat-color-7); }
+.category-chip.category-color-0 {
+  background: var(--cat-color-0);
+}
+.category-chip.category-color-1 {
+  background: var(--cat-color-1);
+}
+.category-chip.category-color-2 {
+  background: var(--cat-color-2);
+}
+.category-chip.category-color-3 {
+  background: var(--cat-color-3);
+}
+.category-chip.category-color-4 {
+  background: var(--cat-color-4);
+}
+.category-chip.category-color-5 {
+  background: var(--cat-color-5);
+}
+.category-chip.category-color-6 {
+  background: var(--cat-color-6);
+}
+.category-chip.category-color-7 {
+  background: var(--cat-color-7);
+}
 ```
 
 Add 4 more lines immediately after, matching the exact same pattern:
 
 ```css
-.category-chip.category-color-8 { background: var(--cat-color-8); }
-.category-chip.category-color-9 { background: var(--cat-color-9); }
-.category-chip.category-color-10 { background: var(--cat-color-10); }
-.category-chip.category-color-11 { background: var(--cat-color-11); }
+.category-chip.category-color-8 {
+  background: var(--cat-color-8);
+}
+.category-chip.category-color-9 {
+  background: var(--cat-color-9);
+}
+.category-chip.category-color-10 {
+  background: var(--cat-color-10);
+}
+.category-chip.category-color-11 {
+  background: var(--cat-color-11);
+}
 ```
 
 - [ ] **Step 3: Swap the Google Fonts `<link>` in `index.html`**
@@ -148,19 +178,19 @@ Add 4 more lines immediately after, matching the exact same pattern:
 Find:
 
 ```html
-    <link
-      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;600&display=swap"
-      rel="stylesheet"
-    />
+<link
+  href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;600&display=swap"
+  rel="stylesheet"
+/>
 ```
 
 Replace with:
 
 ```html
-    <link
-      href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
+<link
+  href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap"
+  rel="stylesheet"
+/>
 ```
 
 The two `<link rel="preconnect">` tags immediately above it (`fonts.googleapis.com`, `fonts.gstatic.com`) are unchanged — still needed for the same Google Fonts host.
@@ -191,6 +221,7 @@ Expected: exits 0, no output.
 - [ ] **Step 6: Verify in browser**
 
 Serve `Expense_tracker_New/frontend` (`python3 -m http.server 8099`), open `http://localhost:8099/index.html`, bypass the gate (`sessionStorage.setItem('ledger.cognitoIdToken','fake-preview-token')`, reload). Click through **every** tab (Dashboard, Add, Transactions, Budget, Net worth, Data, Billing, Profile):
+
 - Background is the new clean near-white (`#f6f7f9`), not the old cream paper.
 - Headings/large text render in Sora (a geometric sans, visibly different from the old Space Grotesk), body text in Inter.
 - Any existing amber/teal/red-colored UI (warning callouts, positive/negative KPI values, badges, focus rings) now shows the new vibrant coral/teal/red values instead of the old muted ones — nothing renders as invisible text or a missing border (the exact failure mode the Global Constraints' token-name-preservation rule exists to prevent).
@@ -210,9 +241,11 @@ git commit -m "feat(frontend): repaint global color and typography tokens to the
 ### Task 2: Chart color constants repaint (`charts.js`)
 
 **Files:**
+
 - Modify: `Expense_tracker_New/frontend/assets/charts.js`
 
 **Interfaces:**
+
 - Consumes: the 12 `--cat-color-*` values from Task 1 (mirrored here as literal hex, since Chart.js configs need real color values, not CSS var references — Chart.js does not resolve `var()` inside canvas-rendered colors).
 - Produces: `CATEGORY_SPECTRUM` (12-entry array of hex strings), consumed by Task 3 (`cashFlow()`) and Task 4 (`spendingDonut()`) for category coloring. `categoryColorIndex` import added to this file's `./store.js` import, consumed by the same two tasks.
 
@@ -246,9 +279,18 @@ const TEAL = "#00a389",
   PURPLE = "#a855f7",
   SAND = "#c7cad1";
 const CATEGORY_SPECTRUM = [
-  "#3b82f6", "#a855f7", "#ec4899", "#f59e0b",
-  "#10b981", "#06b6d4", "#f97316", "#8b5cf6",
-  "#ef4444", "#14b8a6", "#eab308", "#84cc16",
+  "#3b82f6",
+  "#a855f7",
+  "#ec4899",
+  "#f59e0b",
+  "#10b981",
+  "#06b6d4",
+  "#f97316",
+  "#8b5cf6",
+  "#ef4444",
+  "#14b8a6",
+  "#eab308",
+  "#84cc16",
 ];
 ```
 
@@ -265,7 +307,11 @@ import { personColorIndex, currentCurrency } from "./store.js";
 Replace with:
 
 ```js
-import { personColorIndex, categoryColorIndex, currentCurrency } from "./store.js";
+import {
+  personColorIndex,
+  categoryColorIndex,
+  currentCurrency,
+} from "./store.js";
 ```
 
 - [ ] **Step 3: Find and replace every `PIE` reference**
@@ -279,13 +325,13 @@ Every match (expected: the `personSplit` function, and possibly one other catego
 Find (`charts.js:46`):
 
 ```js
-  Chart.defaults.font.family = "'JetBrains Mono', ui-monospace, monospace";
+Chart.defaults.font.family = "'JetBrains Mono', ui-monospace, monospace";
 ```
 
 Replace with:
 
 ```js
-  Chart.defaults.font.family = "'Inter', ui-monospace, sans-serif";
+Chart.defaults.font.family = "'Inter', ui-monospace, sans-serif";
 ```
 
 - [ ] **Step 5: Verify syntax**
@@ -311,11 +357,13 @@ git commit -m "feat(frontend): repaint chart color constants to the Monarch-styl
 ### Task 3: Cash Flow tab
 
 **Files:**
+
 - Modify: `Expense_tracker_New/frontend/index.html` (new `chartjs-chart-sankey` script tag, new nav button)
 - Modify: `Expense_tracker_New/frontend/assets/charts.js` (new `cashFlow()`, `netTrendLine()` functions)
 - Modify: `Expense_tracker_New/frontend/assets/app.js` (new `cashFlowData()`, `renderCashFlow()`, `VIEWS` entry)
 
 **Interfaces:**
+
 - Consumes: `CATEGORY_SPECTRUM`, `TEAL`, `mount()`, `drawIn`, `legendTop`, `gridX`, `gridY` (existing, from Task 2 and earlier) in `charts.js`. `categoryColorIndex` (imported in Task 2). In `app.js`: `periodSelect`, `kpi`, `monthOf`, `money`, `state`, `cardHoverable`, `revealStagger`, `countUp` (all already imported/defined, no new imports needed — confirmed by reading the current import block).
 - Produces: `cashFlowData(rows, month, year)` returning `{income, expense, net, flows, hasData}`, consumed only within `renderCashFlow()` in this task (no other task depends on it). `charts.cashFlow(flows)` and `charts.netTrendLine(series)`, consumed only within `renderCashFlow()`.
 
@@ -324,14 +372,14 @@ git commit -m "feat(frontend): repaint chart color constants to the Monarch-styl
 In `Expense_tracker_New/frontend/index.html`, immediately after the existing GSAP script tag:
 
 ```html
-    <script
-      src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"
-      defer
-    ></script>
-    <script
-      src="https://cdn.jsdelivr.net/npm/chartjs-chart-sankey@0.15.0/dist/chartjs-chart-sankey.min.js"
-      defer
-    ></script>
+<script
+  src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"
+  defer
+></script>
+<script
+  src="https://cdn.jsdelivr.net/npm/chartjs-chart-sankey@0.15.0/dist/chartjs-chart-sankey.min.js"
+  defer
+></script>
 ```
 
 Version is pinned exactly at `0.15.0` — do not use `@latest` (see Global Constraints). No CSP change needed (`script-src` already allows `https://cdn.jsdelivr.net`). No `Chart.register(...)` call is needed anywhere — the UMD/browser build self-registers on load.
@@ -341,18 +389,20 @@ Version is pinned exactly at `0.15.0` — do not use `@latest` (see Global Const
 In `Expense_tracker_New/frontend/index.html`, find:
 
 ```html
-        <nav class="tabs" id="tabs">
-          <button data-tab="dashboard" class="on">Dashboard</button>
-          <button data-tab="add">Add</button>
+<nav class="tabs" id="tabs">
+  <button data-tab="dashboard" class="on">Dashboard</button>
+  <button data-tab="add">Add</button>
+</nav>
 ```
 
 Replace with:
 
 ```html
-        <nav class="tabs" id="tabs">
-          <button data-tab="dashboard" class="on">Dashboard</button>
-          <button data-tab="cashflow">Cash Flow</button>
-          <button data-tab="add">Add</button>
+<nav class="tabs" id="tabs">
+  <button data-tab="dashboard" class="on">Dashboard</button>
+  <button data-tab="cashflow">Cash Flow</button>
+  <button data-tab="add">Add</button>
+</nav>
 ```
 
 - [ ] **Step 3: Add `cashFlow()` and `netTrendLine()` to `charts.js`**
@@ -378,7 +428,11 @@ export function cashFlow(flows) {
         },
       ],
     },
-    options: { responsive: true, maintainAspectRatio: false, animation: drawIn },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: drawIn,
+    },
   });
 }
 
@@ -396,7 +450,12 @@ export function netTrendLine(series) {
             const { chart } = ctx;
             const { ctx: c, chartArea } = chart;
             if (!chartArea) return TEAL;
-            const gradient = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+            const gradient = c.createLinearGradient(
+              0,
+              chartArea.top,
+              0,
+              chartArea.bottom,
+            );
             gradient.addColorStop(0, "rgba(0, 163, 137, 0.25)");
             gradient.addColorStop(1, "rgba(229, 72, 77, 0.15)");
             return gradient;
@@ -462,9 +521,11 @@ function cashFlowData(rows, month, year) {
     .sort((a, b) => b[1] - a[1]);
   const top = expenseEntries.slice(0, 8);
   const rest = expenseEntries.slice(8);
-  for (const [cat, amt] of top) flows.push({ from: "Income", to: cat, flow: amt });
+  for (const [cat, amt] of top)
+    flows.push({ from: "Income", to: cat, flow: amt });
   const otherTotal = rest.reduce((a, [, amt]) => a + amt, 0);
-  if (otherTotal > 0) flows.push({ from: "Income", to: "Other", flow: otherTotal });
+  if (otherTotal > 0)
+    flows.push({ from: "Income", to: "Other", flow: otherTotal });
   if (net > 0) flows.push({ from: "Income", to: "Savings", flow: net });
 
   return { income, expense, net, flows, hasData: flows.length > 0 };
@@ -524,7 +585,10 @@ function renderCashFlow() {
   revealStagger(view.querySelectorAll(".panel"), { delay: 0.35 });
 
   if (typeof Chart === "undefined") {
-    notice("Charts couldn't load. Everything else on this page still works.", "bad");
+    notice(
+      "Charts couldn't load. Everything else on this page still works.",
+      "bad",
+    );
     return;
   }
   if (cf.hasData) charts.cashFlow(cf.flows);
@@ -562,6 +626,7 @@ Expected: both exit 0, no output.
 - [ ] **Step 8: Verify in browser**
 
 Serve and bypass the gate. Click the new "Cash Flow" tab:
+
 - 3 KPI tiles render (Income/Expenses/Net), elevated and hoverable like Dashboard's.
 - With no data (the honest disconnected/empty state), the Sankey panel shows the "No income or expenses recorded for this period yet." empty state, not a blank or broken canvas — confirm no console error about the Sankey chart type being unregistered (`sankey is not a registered controller` would mean Step 1's CDN tag failed to load or register — this is the exact regression Step 1's version pinning guards against).
 - The "Net by month" trend line panel still renders (it doesn't depend on `hasData`) — with all-zero data it should just show a flat line at $0, not error.
@@ -584,12 +649,14 @@ git commit -m "feat(frontend): add Cash Flow tab with a Sankey diagram and net t
 ### Task 4: Spending tab
 
 **Files:**
+
 - Modify: `Expense_tracker_New/frontend/index.html` (new nav button)
 - Modify: `Expense_tracker_New/frontend/assets/charts.js` (new `spendingDonut()`, `spendTrend()`, `highlightSlice()` functions)
 - Modify: `Expense_tracker_New/frontend/assets/app.js` (new `renderSpending()`, `wireSpendingList()`, `VIEWS` entry)
 - Modify: `Expense_tracker_New/frontend/assets/styles.css` (`.spend-row`/`.spend-bar-fill` styles)
 
 **Interfaces:**
+
 - Consumes: `aggregate()`'s existing `catRows` return shape (unchanged — this task reads it, does not modify `xlsxio.js`). `CATEGORY_SPECTRUM`, `RULE`, `mount()`, `drawIn` from Task 2/3. `categoryColorClass`, `kpi`, `periodSelect`, `state`, motion primitives — all already available in `app.js` (no new imports).
 - Produces: nothing consumed by other tasks (this is the last task in the plan).
 
@@ -598,16 +665,16 @@ git commit -m "feat(frontend): add Cash Flow tab with a Sankey diagram and net t
 In `Expense_tracker_New/frontend/index.html`, find (after Task 3's edit):
 
 ```html
-          <button data-tab="cashflow">Cash Flow</button>
-          <button data-tab="add">Add</button>
+<button data-tab="cashflow">Cash Flow</button>
+<button data-tab="add">Add</button>
 ```
 
 Replace with:
 
 ```html
-          <button data-tab="cashflow">Cash Flow</button>
-          <button data-tab="spending">Spending</button>
-          <button data-tab="add">Add</button>
+<button data-tab="cashflow">Cash Flow</button>
+<button data-tab="spending">Spending</button>
+<button data-tab="add">Add</button>
 ```
 
 - [ ] **Step 2: Add `spendingDonut()`, `spendTrend()`, `highlightSlice()` to `charts.js`**
@@ -624,7 +691,9 @@ export function spendingDonut(rows, onSliceClick) {
         {
           data: rows.map((r) => r.actual),
           backgroundColor: rows.map((r) =>
-            r.category === "Other" ? RULE : CATEGORY_SPECTRUM[categoryColorIndex(r.category)],
+            r.category === "Other"
+              ? RULE
+              : CATEGORY_SPECTRUM[categoryColorIndex(r.category)],
           ),
           borderWidth: 2,
           borderColor: "#ffffff",
@@ -649,7 +718,13 @@ export function spendTrend(series) {
     type: "bar",
     data: {
       labels: series.map((s) => s.month),
-      datasets: [{ label: "Spend", data: series.map((s) => s.expense), backgroundColor: AMBER }],
+      datasets: [
+        {
+          label: "Spend",
+          data: series.map((s) => s.expense),
+          backgroundColor: AMBER,
+        },
+      ],
     },
     options: {
       maintainAspectRatio: false,
@@ -664,9 +739,7 @@ export function spendTrend(series) {
 export function highlightSlice(index) {
   const chart = registry.get("c-spend-donut");
   if (!chart) return;
-  chart.setActiveElements(
-    index === null ? [] : [{ datasetIndex: 0, index }],
-  );
+  chart.setActiveElements(index === null ? [] : [{ datasetIndex: 0, index }]);
   chart.update();
 }
 ```
@@ -678,7 +751,6 @@ export function highlightSlice(index) {
 Append to the end of `assets/styles.css`:
 
 ```css
-
 /* ---------- Spending tab category list ---------- */
 .spend-list {
   display: flex;
@@ -746,7 +818,9 @@ function renderSpending() {
   const top6 = spendRows.slice(0, 6);
   const otherTotal = spendRows.slice(6).reduce((sum, r) => sum + r.actual, 0);
   const donutRows =
-    otherTotal > 0 ? [...top6, { category: "Other", actual: otherTotal }] : top6;
+    otherTotal > 0
+      ? [...top6, { category: "Other", actual: otherTotal }]
+      : top6;
   const totalSpend = spendRows.reduce((sum, r) => sum + r.actual, 0);
   const topCategory = spendRows[0]?.category || "—";
 
@@ -773,7 +847,9 @@ function renderSpending() {
         .map((r) => {
           const pctOfTotal = totalSpend > 0 ? (r.actual / totalSpend) * 100 : 0;
           const colorVar =
-            r.category === "Other" ? "var(--rule-2)" : `var(--cat-color-${categoryColorIndex(r.category)})`;
+            r.category === "Other"
+              ? "var(--rule-2)"
+              : `var(--cat-color-${categoryColorIndex(r.category)})`;
           return `
         <div class="spend-row" data-cat="${esc(r.category)}">
           <span class="spend-dot" style="background:${colorVar}"></span>
@@ -815,7 +891,10 @@ function renderSpending() {
   revealStagger(view.querySelectorAll(".panel"), { delay: 0.35 });
 
   if (typeof Chart === "undefined") {
-    notice("Charts couldn't load. Everything else on this page still works.", "bad");
+    notice(
+      "Charts couldn't load. Everything else on this page still works.",
+      "bad",
+    );
     return;
   }
   if (donutRows.length > 0) {
@@ -888,6 +967,7 @@ Expected: both exit 0, no output.
 - [ ] **Step 7: Verify in browser**
 
 Serve and bypass the gate. Click the new "Spending" tab:
+
 - 3 KPI tiles render (Total spend / Top category / Transactions).
 - With no data, the donut panel shows the "No spending recorded for this period yet." empty state.
 - The "Spend by month" trend panel still renders (doesn't depend on donut data).

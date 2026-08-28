@@ -21,7 +21,13 @@ import {
   CURRENCIES,
   setCurrency as setCurrentCurrency,
 } from "./store.js";
-import { cardHoverable, revealStagger, countUp, viewTransition, exitCollapse } from "./motion.js";
+import {
+  cardHoverable,
+  revealStagger,
+  countUp,
+  viewTransition,
+  exitCollapse,
+} from "./motion.js";
 import {
   aggregate,
   money,
@@ -508,8 +514,7 @@ const personColorClass = (p) =>
 /** Colour class for a category chip, derived the same way as
     personColorClass — a stable hash of the category name, not a lookup
     table, so a new category just works without a matching edit here. */
-const categoryColorClass = (cat) =>
-  `category-color-${categoryColorIndex(cat)}`;
+const categoryColorClass = (cat) => `category-color-${categoryColorIndex(cat)}`;
 
 /** Merged, de-duplicated, sorted option list for a dropdown. */
 function listFor(kind, forCategory) {
@@ -924,12 +929,14 @@ function cashFlowData(rows, month, year) {
     .sort((a, b) => b[1] - a[1]);
   const top = expenseEntries.slice(0, 8);
   const rest = expenseEntries.slice(8);
-  for (const [cat, amt] of top) flows.push({ from: "Income", to: cat, flow: amt });
+  for (const [cat, amt] of top)
+    flows.push({ from: "Income", to: cat, flow: amt });
   const otherTotal = rest.reduce((a, [, amt]) => a + amt, 0);
   // Namespaced so a real user category named "Savings" or "Other" can't
   // collide with these synthetic node labels (see cashFlowData's guard
   // below for the remaining "Income" self-loop case).
-  if (otherTotal > 0) flows.push({ from: "Income", to: "Other expenses", flow: otherTotal });
+  if (otherTotal > 0)
+    flows.push({ from: "Income", to: "Other expenses", flow: otherTotal });
   if (net > 0) flows.push({ from: "Income", to: "→ Savings", flow: net });
 
   // A user-entered category can legitimately be used for both an Income-type
@@ -940,7 +947,13 @@ function cashFlowData(rows, month, year) {
   // flow whose from/to are identical rather than let either crash the chart.
   const dedupedFlows = flows.filter((f) => f.from !== f.to);
 
-  return { income, expense, net, flows: dedupedFlows, hasData: dedupedFlows.length > 0 };
+  return {
+    income,
+    expense,
+    net,
+    flows: dedupedFlows,
+    hasData: dedupedFlows.length > 0,
+  };
 }
 
 function renderCashFlow() {
@@ -992,7 +1005,10 @@ function renderCashFlow() {
   revealStagger(view.querySelectorAll(".panel"), { delay: 0.35 });
 
   if (typeof Chart === "undefined") {
-    notice("Charts couldn't load. Everything else on this page still works.", "bad");
+    notice(
+      "Charts couldn't load. Everything else on this page still works.",
+      "bad",
+    );
     return;
   }
   if (cf.hasData) {
@@ -1024,7 +1040,9 @@ function renderSpending() {
   const top6 = spendRows.slice(0, 6);
   const otherTotal = spendRows.slice(6).reduce((sum, r) => sum + r.actual, 0);
   const donutRows =
-    otherTotal > 0 ? [...top6, { category: "Other", actual: otherTotal }] : top6;
+    otherTotal > 0
+      ? [...top6, { category: "Other", actual: otherTotal }]
+      : top6;
 
   // aggregate()'s catRows only tracks the built-in EXPENSE_CATS, so a
   // custom (user-created) expense category is invisible to spendRows above
@@ -1081,7 +1099,9 @@ function renderSpending() {
           // matched to the donut now that the donut no longer colors by the
           // global categoryColorIndex hash.
           const colorVar =
-            r.category === "Other" ? "var(--rule-2)" : `var(--cat-color-${i % 12})`;
+            r.category === "Other"
+              ? "var(--rule-2)"
+              : `var(--cat-color-${i % 12})`;
           return `
         <div class="spend-row" data-cat="${esc(r.category)}">
           <span class="spend-dot" style="background:${colorVar}"></span>
@@ -1123,7 +1143,10 @@ function renderSpending() {
   revealStagger(view.querySelectorAll(".panel"), { delay: 0.35 });
 
   if (typeof Chart === "undefined") {
-    notice("Charts couldn't load. Everything else on this page still works.", "bad");
+    notice(
+      "Charts couldn't load. Everything else on this page still works.",
+      "bad",
+    );
     return;
   }
   if (donutRows.length > 0) {
@@ -1374,7 +1397,8 @@ function updateDashboardValues(a, label, people, pSeries, showCompare) {
   setKpiMeta("expense", `${a.count} entries`);
 
   const netEl = $("#kpi-net");
-  if (netEl) netEl.className = `kpi card-hoverable ${a.net < 0 ? "neg" : "pos"}`;
+  if (netEl)
+    netEl.className = `kpi card-hoverable ${a.net < 0 ? "neg" : "pos"}`;
   setKpiNumber("net", prev?.net, a.net, money);
   setKpiMeta("net", a.net < 0 ? "spending exceeds income" : "");
 
@@ -1386,11 +1410,15 @@ function updateDashboardValues(a, label, people, pSeries, showCompare) {
   setKpiMeta("savings", a.income > 0 ? "" : "needs income data");
 
   const budEl = $("#kpi-budgetused");
-  if (budEl) budEl.className = `kpi card-hoverable ${a.budgetUsed > 1 ? "neg" : ""}`;
+  if (budEl)
+    budEl.className = `kpi card-hoverable ${a.budgetUsed > 1 ? "neg" : ""}`;
   if (a.expenseBudget > 0 && prev?.expenseBudget > 0) {
     setKpiNumber("budgetused", prev.budgetUsed, a.budgetUsed, pct);
   } else {
-    setKpiText("budgetused", a.expenseBudget > 0 ? pct(a.budgetUsed) : "\u2014");
+    setKpiText(
+      "budgetused",
+      a.expenseBudget > 0 ? pct(a.budgetUsed) : "\u2014",
+    );
   }
   setKpiMeta(
     "budgetused",

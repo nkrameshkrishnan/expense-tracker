@@ -33,14 +33,15 @@ Parameters:
   AllowedOrigin:
     Type: String
     Default: "*"
-    Description: Frontend origin for CORS (e.g. https://nkrameshkrishnan.github.io) — tighten from * before going live.
+    Description:
+      Frontend origin for CORS (e.g. https://nkrameshkrishnan.github.io)
+      — tighten from * before going live.
   FrontendUrl:
     Type: String
-    Description: >-
-      Exact frontend URL for Cognito's OAuth redirect (e.g.
-      https://nkrameshkrishnan.github.io/Expense_tracker_New/frontend/).
-      Unlike AllowedOrigin, Cognito's CallbackURLs/LogoutURLs reject "*"
-      outright — this must be a real, reachable URL, required (no default).
+    Description: Exact frontend URL for Cognito's OAuth redirect (e.g.
+      https://nkrameshkrishnan.github.io/Expense_tracker_New/frontend/). Unlike
+      AllowedOrigin, Cognito's CallbackURLs/LogoutURLs reject "*" outright —
+      this must be a real, reachable URL, required (no default).
   StripeSecretKey:
     Type: String
     NoEcho: true
@@ -54,11 +55,11 @@ Parameters:
   BedrockModelId:
     Type: String
     Default: anthropic.claude-3-5-sonnet-20241022-v2:0
-    Description: >-
-      Bedrock model id for AI transaction extraction (extract.js). Model
-      availability varies by region and requires enabling model access in
-      the AWS account first - verify both before deploying to a new
-      region (see this feature's spec, Open Questions #1-2).
+    Description:
+      "Bedrock model id for AI transaction extraction (extract.js). Model
+      availability varies by region and requires enabling model access in the
+      AWS account first - verify both before deploying to a new region (see this
+      feature's spec, Open Questions #1-2)."
   SesFromAddress:
     Type: String
     Description: Verified SES sender address for billing notification emails.
@@ -97,9 +98,12 @@ Resources:
         RestrictPublicBuckets: true
       CorsConfiguration:
         CorsRules:
-          - AllowedMethods: [PUT]
-            AllowedOrigins: [!Ref AllowedOrigin]
-            AllowedHeaders: ["*"]
+          - AllowedMethods:
+              - PUT
+            AllowedOrigins:
+              - !Ref AllowedOrigin
+            AllowedHeaders:
+              - "*"
       LifecycleConfiguration:
         Rules:
           - Id: ExpireUploadsAfterOneDay
@@ -238,9 +242,13 @@ Resources:
     Type: AWS::Bedrock::Guardrail
     Properties:
       Name: !Sub ledger-${Stage}-ai-import-guardrail
-      Description: Content safety and prompt-attack defense for the AI transaction import feature - see docs/superpowers/specs/2026-08-23-ai-import-security-hardening-design.md, Section A.
-      BlockedInputMessaging: "This file could not be processed."
-      BlockedOutputsMessaging: "This file could not be processed."
+      Description:
+        Content safety and prompt-attack defense for the AI transaction
+        import feature - see
+        docs/superpowers/specs/2026-08-23-ai-import-security-hardening-design.md,
+        Section A.
+      BlockedInputMessaging: This file could not be processed.
+      BlockedOutputsMessaging: This file could not be processed.
       ContentPolicyConfig:
         FiltersConfig:
           - Type: HATE
@@ -410,13 +418,20 @@ Resources:
         ThrottlingBurstLimit: 20
         ThrottlingRateLimit: 10
       CorsConfiguration:
-        AllowOrigins: [!Ref AllowedOrigin]
+        AllowOrigins:
+          - !Ref AllowedOrigin
         # x-active-tenant is allowed: auth.js validates it against real
         # tenant_users membership before trusting it, unlike the removed
         # x-tenant-id header. Mirror any change here in handler.js's
         # CORS_HEADERS.
-        AllowHeaders: [authorization, content-type, x-active-tenant]
-        AllowMethods: [GET, POST, OPTIONS]
+        AllowHeaders:
+          - authorization
+          - content-type
+          - x-active-tenant
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
 
   # True per-IP throttling — DefaultRouteSettings above is one shared budget
   # for the whole API, so a single abusive IP can otherwise consume it and
@@ -491,7 +506,8 @@ Resources:
     Type: AWS::Cognito::UserPool
     Properties:
       UserPoolName: !Sub ledger-${Stage}
-      AutoVerifiedAttributes: [email]
+      AutoVerifiedAttributes:
+        - email
       Schema:
         - Name: email
           Required: true
@@ -531,7 +547,7 @@ Resources:
       ProviderDetails:
         client_id: !Ref GoogleClientId
         client_secret: !Ref GoogleClientSecret
-        authorize_scopes: "profile email openid"
+        authorize_scopes: profile email openid
       AttributeMapping:
         email: email
         username: sub
@@ -541,7 +557,8 @@ Resources:
     DependsOn: GoogleIdentityProvider
     Properties:
       UserPoolId: !Ref UserPool
-      SupportedIdentityProviders: [Google]
+      SupportedIdentityProviders:
+        - Google
       # Implicit, not authorization-code: frontend/assets/app.js's
       # cognitoAuthorizeUrl() requests response_type=token, a deliberate
       # earlier design choice so the zero-build frontend needs no
@@ -549,8 +566,12 @@ Resources:
       # a backend to hold it). Declaring [code] here while the frontend asks
       # for a token makes Cognito reject every sign-in. If this ever moves
       # to [code], app.js must change in the same commit.
-      AllowedOAuthFlows: [implicit]
-      AllowedOAuthScopes: [openid, email, profile]
+      AllowedOAuthFlows:
+        - implicit
+      AllowedOAuthScopes:
+        - openid
+        - email
+        - profile
       AllowedOAuthFlowsUserPoolClient: true
       GenerateSecret: false
       CallbackURLs:
@@ -585,7 +606,9 @@ Resources:
     Properties:
       VpcId: !Ref LedgerVpc
       CidrBlock: 10.42.1.0/24
-      AvailabilityZone: !Select [0, !GetAZs ""]
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs ""
       Tags:
         - Key: Name
           Value: !Sub ledger-${Stage}-db-a
@@ -595,7 +618,9 @@ Resources:
     Properties:
       VpcId: !Ref LedgerVpc
       CidrBlock: 10.42.2.0/24
-      AvailabilityZone: !Select [1, !GetAZs ""]
+      AvailabilityZone: !Select
+        - 1
+        - !GetAZs ""
       Tags:
         - Key: Name
           Value: !Sub ledger-${Stage}-db-b
@@ -611,7 +636,9 @@ Resources:
   DbSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: !Sub "Ledger ${Stage} Aurora cluster — no inbound rules needed, Data API doesn't connect over the VPC network path"
+      GroupDescription:
+        !Sub Ledger ${Stage} Aurora cluster — no inbound rules needed,
+        Data API doesn't connect over the VPC network path
       VpcId: !Ref LedgerVpc
       SecurityGroupEgress:
         # Deny-all egress (the implicit default allow-all removed) — nothing
@@ -650,7 +677,8 @@ Resources:
       MasterUserPassword: !Sub "{{resolve:secretsmanager:${DbSecret}::password}}"
       EnableHttpEndpoint: true
       DBSubnetGroupName: !Ref DbSubnetGroup
-      VpcSecurityGroupIds: [!Ref DbSecurityGroup]
+      VpcSecurityGroupIds:
+        - !Ref DbSecurityGroup
       ServerlessV2ScalingConfiguration:
         MinCapacity: 0.5
         MaxCapacity: 2
@@ -665,10 +693,10 @@ Resources:
 
 Outputs:
   ApiUrl:
-    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}"
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
   UserPoolId:
     Value: !Ref UserPool
   UserPoolClientId:
     Value: !Ref UserPoolClient
   UserPoolDomain:
-    Value: !Sub "https://ledger-${Stage}-${AWS::AccountId}.auth.${AWS::Region}.amazoncognito.com"
+    Value: !Sub https://ledger-${Stage}-${AWS::AccountId}.auth.${AWS::Region}.amazoncognito.com

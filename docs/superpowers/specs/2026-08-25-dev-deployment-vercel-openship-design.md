@@ -90,7 +90,7 @@ data access, or auth.
   plan automates, since it touches deployed AWS infrastructure.
 - The existing `.github/workflows/deploy.yml` (GitHub Pages) and the
   legacy root-level `assets/` app it deploys are untouched — that
-  workflow deploys the *entire repo* to Pages, including
+  workflow deploys the _entire repo_ to Pages, including
   `Expense_tracker_New/frontend/` as a nested path today, but the legacy
   app at the repo root is out of scope for this change and keeps working
   exactly as it does now.

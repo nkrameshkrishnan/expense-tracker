@@ -23,10 +23,12 @@
 ### Task 1: Guardrail infrastructure
 
 **Files:**
+
 - Modify: `Expense_tracker_New/backend/template.yaml`
 - Modify: `Expense_tracker_New/DEPLOYMENT.md`
 
 **Interfaces:**
+
 - Consumes: nothing from other tasks.
 - Produces: two new `ExtractFunction` env vars, `BEDROCK_GUARDRAIL_ID` and `BEDROCK_GUARDRAIL_VERSION`, and an IAM grant for `bedrock:ApplyGuardrail`. Task 2 reads both env vars.
 
@@ -35,45 +37,45 @@
 Open `Expense_tracker_New/backend/template.yaml`, find the `Resources:` section (where `DataFunction`/`ExtractFunction` are already defined). Add two new resources anywhere in that section, e.g. right before `ExtractFunction`:
 
 ```yaml
-  AiImportGuardrail:
-    Type: AWS::Bedrock::Guardrail
-    Properties:
-      Name: ai-import-guardrail
-      Description: Content safety and prompt-attack defense for the AI transaction import feature - see docs/superpowers/specs/2026-08-23-ai-import-security-hardening-design.md, Section A.
-      BlockedInputMessaging: "This file could not be processed."
-      BlockedOutputsMessaging: "This file could not be processed."
-      ContentPolicyConfig:
-        FiltersConfig:
-          - Type: HATE
-            InputStrength: MEDIUM
-            OutputStrength: MEDIUM
-          - Type: INSULTS
-            InputStrength: MEDIUM
-            OutputStrength: MEDIUM
-          - Type: SEXUAL
-            InputStrength: MEDIUM
-            OutputStrength: MEDIUM
-          - Type: VIOLENCE
-            InputStrength: MEDIUM
-            OutputStrength: MEDIUM
-          - Type: MISCONDUCT
-            InputStrength: MEDIUM
-            OutputStrength: MEDIUM
-          - Type: PROMPT_ATTACK
-            InputStrength: MEDIUM
-            OutputStrength: NONE # PROMPT_ATTACK only applies to input
-      SensitiveInformationPolicyConfig:
-        PiiEntitiesConfig:
-          - Type: CREDIT_DEBIT_CARD_NUMBER
-            Action: ANONYMIZE
-          - Type: US_SOCIAL_SECURITY_NUMBER
-            Action: ANONYMIZE
+AiImportGuardrail:
+  Type: AWS::Bedrock::Guardrail
+  Properties:
+    Name: ai-import-guardrail
+    Description: Content safety and prompt-attack defense for the AI transaction import feature - see docs/superpowers/specs/2026-08-23-ai-import-security-hardening-design.md, Section A.
+    BlockedInputMessaging: "This file could not be processed."
+    BlockedOutputsMessaging: "This file could not be processed."
+    ContentPolicyConfig:
+      FiltersConfig:
+        - Type: HATE
+          InputStrength: MEDIUM
+          OutputStrength: MEDIUM
+        - Type: INSULTS
+          InputStrength: MEDIUM
+          OutputStrength: MEDIUM
+        - Type: SEXUAL
+          InputStrength: MEDIUM
+          OutputStrength: MEDIUM
+        - Type: VIOLENCE
+          InputStrength: MEDIUM
+          OutputStrength: MEDIUM
+        - Type: MISCONDUCT
+          InputStrength: MEDIUM
+          OutputStrength: MEDIUM
+        - Type: PROMPT_ATTACK
+          InputStrength: MEDIUM
+          OutputStrength: NONE # PROMPT_ATTACK only applies to input
+    SensitiveInformationPolicyConfig:
+      PiiEntitiesConfig:
+        - Type: CREDIT_DEBIT_CARD_NUMBER
+          Action: ANONYMIZE
+        - Type: US_SOCIAL_SECURITY_NUMBER
+          Action: ANONYMIZE
 
-  AiImportGuardrailVersion:
-    Type: AWS::Bedrock::GuardrailVersion
-    Properties:
-      GuardrailIdentifier: !GetAtt AiImportGuardrail.GuardrailId
-      Description: v1 - initial content filters + prompt-attack detection
+AiImportGuardrailVersion:
+  Type: AWS::Bedrock::GuardrailVersion
+  Properties:
+    GuardrailIdentifier: !GetAtt AiImportGuardrail.GuardrailId
+    Description: v1 - initial content filters + prompt-attack detection
 ```
 
 - [ ] **Step 2: Wire the guardrail into `ExtractFunction`**
@@ -81,52 +83,52 @@ Open `Expense_tracker_New/backend/template.yaml`, find the `Resources:` section 
 Find `ExtractFunction`'s `Environment.Variables` block:
 
 ```yaml
-      Environment:
-        Variables:
-          RATE_LIMIT_TABLE: !Ref RateLimitTable
-          BEDROCK_MODEL_ID: !Ref BedrockModelId
+Environment:
+  Variables:
+    RATE_LIMIT_TABLE: !Ref RateLimitTable
+    BEDROCK_MODEL_ID: !Ref BedrockModelId
 ```
 
 Add the two new variables:
 
 ```yaml
-      Environment:
-        Variables:
-          RATE_LIMIT_TABLE: !Ref RateLimitTable
-          BEDROCK_MODEL_ID: !Ref BedrockModelId
-          BEDROCK_GUARDRAIL_ID: !GetAtt AiImportGuardrail.GuardrailId
-          BEDROCK_GUARDRAIL_VERSION: !GetAtt AiImportGuardrailVersion.Version
+Environment:
+  Variables:
+    RATE_LIMIT_TABLE: !Ref RateLimitTable
+    BEDROCK_MODEL_ID: !Ref BedrockModelId
+    BEDROCK_GUARDRAIL_ID: !GetAtt AiImportGuardrail.GuardrailId
+    BEDROCK_GUARDRAIL_VERSION: !GetAtt AiImportGuardrailVersion.Version
 ```
 
 Find `ExtractFunction`'s existing `bedrock:InvokeModel` policy statement:
 
 ```yaml
-            - Effect: Allow
-              Action: bedrock:InvokeModel
-              # Covers both invocation paths a Claude model on Bedrock may
-              # need: the bare foundation-model id (BedrockModelId's
-              # default), and - for models that only work via a
-              # cross-region inference profile - the profile ARN plus the
-              # regional foundation-model ARNs it routes to. Profile ids
-              # are AWS-managed, not account-owned, hence the wildcard
-              # scoped to this account/region rather than a single
-              # resource id.
-              Resource:
-                - !Sub arn:aws:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}
-                - !Sub arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/*
+- Effect: Allow
+  Action: bedrock:InvokeModel
+  # Covers both invocation paths a Claude model on Bedrock may
+  # need: the bare foundation-model id (BedrockModelId's
+  # default), and - for models that only work via a
+  # cross-region inference profile - the profile ARN plus the
+  # regional foundation-model ARNs it routes to. Profile ids
+  # are AWS-managed, not account-owned, hence the wildcard
+  # scoped to this account/region rather than a single
+  # resource id.
+  Resource:
+    - !Sub arn:aws:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}
+    - !Sub arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/*
 ```
 
 Add a second statement right after it, in the same `Statement:` list:
 
 ```yaml
-            - Effect: Allow
-              Action: bedrock:InvokeModel
-              Resource:
-                - !Sub arn:aws:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}
-                - !Sub arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/*
-            - Effect: Allow
-              Action: bedrock:ApplyGuardrail
-              Resource: !GetAtt AiImportGuardrail.GuardrailArn
+- Effect: Allow
+  Action: bedrock:InvokeModel
+  Resource:
+    - !Sub arn:aws:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}
+    - !Sub arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/*
+- Effect: Allow
+  Action: bedrock:ApplyGuardrail
+  Resource: !GetAtt AiImportGuardrail.GuardrailArn
 ```
 
 - [ ] **Step 3: Validate the template**
@@ -154,11 +156,13 @@ git commit -m "feat: add Bedrock Guardrail infrastructure for AI import"
 ### Task 2: Wire the guardrail into the extraction request/response
 
 **Files:**
+
 - Modify: `Expense_tracker_New/backend/src/routes/extract.js`
 - Modify: `Expense_tracker_New/backend/src/extract.js`
 - Test: `Expense_tracker_New/backend/test/extract-route.test.js`
 
 **Interfaces:**
+
 - Consumes: `BEDROCK_GUARDRAIL_ID`/`BEDROCK_GUARDRAIL_VERSION` env vars (Task 1).
 - Produces: `buildExtractionRequest` accepts a new `guardrailId`/`guardrailVersion` parameter pair; `parseExtractionResponse` throws a new, distinctly-typed `GuardrailInterventionError` when the response was blocked. Nothing downstream of this plan consumes these — this is the last task in this plan.
 
@@ -435,31 +439,34 @@ import { extractTransactions } from "./routes/extract.js";
 Add `GuardrailInterventionError`:
 
 ```javascript
-import { extractTransactions, GuardrailInterventionError } from "./routes/extract.js";
+import {
+  extractTransactions,
+  GuardrailInterventionError,
+} from "./routes/extract.js";
 ```
 
 Find the call to `extractTransactions` inside `handler()`:
 
 ```javascript
-        const extracted = await extractTransactions(bedrock, {
-          fileType,
-          fileContent,
-          categoryNames,
-          modelId: process.env.BEDROCK_MODEL_ID,
-        });
+const extracted = await extractTransactions(bedrock, {
+  fileType,
+  fileContent,
+  categoryNames,
+  modelId: process.env.BEDROCK_MODEL_ID,
+});
 ```
 
 Add the two new arguments:
 
 ```javascript
-        const extracted = await extractTransactions(bedrock, {
-          fileType,
-          fileContent,
-          categoryNames,
-          modelId: process.env.BEDROCK_MODEL_ID,
-          guardrailId: process.env.BEDROCK_GUARDRAIL_ID,
-          guardrailVersion: process.env.BEDROCK_GUARDRAIL_VERSION,
-        });
+const extracted = await extractTransactions(bedrock, {
+  fileType,
+  fileContent,
+  categoryNames,
+  modelId: process.env.BEDROCK_MODEL_ID,
+  guardrailId: process.env.BEDROCK_GUARDRAIL_ID,
+  guardrailVersion: process.env.BEDROCK_GUARDRAIL_VERSION,
+});
 ```
 
 Find `handler()`'s outer catch block:
@@ -494,40 +501,40 @@ Add a branch for the guardrail error, mapping it to a clean 400 rather than the 
 };
 ```
 
-Note: this guardrail branch sits inside the same `try` that already calls `recordAttempt(execute)` (see the surrounding code) — a guardrail intervention happens *after* Bedrock responds, so `recordAttempt` was already reached before the throw only if it's placed after `extractTransactions` in the existing code (check the actual current ordering in this file: `extractTransactions` is called, then `recordAttempt(execute)`, then the `return`). Since `extractTransactions` throws before `recordAttempt` runs, a guardrail intervention currently does NOT get recorded against the cap by this code path as written. Per this plan's Global Constraints, a guardrail intervention should count against the cap (a real, billed Bedrock call happened). Find the transaction callback:
+Note: this guardrail branch sits inside the same `try` that already calls `recordAttempt(execute)` (see the surrounding code) — a guardrail intervention happens _after_ Bedrock responds, so `recordAttempt` was already reached before the throw only if it's placed after `extractTransactions` in the existing code (check the actual current ordering in this file: `extractTransactions` is called, then `recordAttempt(execute)`, then the `return`). Since `extractTransactions` throws before `recordAttempt` runs, a guardrail intervention currently does NOT get recorded against the cap by this code path as written. Per this plan's Global Constraints, a guardrail intervention should count against the cap (a real, billed Bedrock call happened). Find the transaction callback:
 
 ```javascript
-        const extracted = await extractTransactions(bedrock, {
-          fileType,
-          fileContent,
-          categoryNames,
-          modelId: process.env.BEDROCK_MODEL_ID,
-          guardrailId: process.env.BEDROCK_GUARDRAIL_ID,
-          guardrailVersion: process.env.BEDROCK_GUARDRAIL_VERSION,
-        });
-        await recordAttempt(execute);
-        return extracted;
+const extracted = await extractTransactions(bedrock, {
+  fileType,
+  fileContent,
+  categoryNames,
+  modelId: process.env.BEDROCK_MODEL_ID,
+  guardrailId: process.env.BEDROCK_GUARDRAIL_ID,
+  guardrailVersion: process.env.BEDROCK_GUARDRAIL_VERSION,
+});
+await recordAttempt(execute);
+return extracted;
 ```
 
-Wrap the call so a `GuardrailInterventionError` still reaches `recordAttempt` before propagating — `recordAttempt` must run whether extraction succeeded or the guardrail intervened, since both are a real, billed Bedrock call that reached and responded; only a failure *before* this point (auth, cap check, file validation) should skip recording:
+Wrap the call so a `GuardrailInterventionError` still reaches `recordAttempt` before propagating — `recordAttempt` must run whether extraction succeeded or the guardrail intervened, since both are a real, billed Bedrock call that reached and responded; only a failure _before_ this point (auth, cap check, file validation) should skip recording:
 
 ```javascript
-        let extracted;
-        try {
-          extracted = await extractTransactions(bedrock, {
-            fileType,
-            fileContent,
-            categoryNames,
-            modelId: process.env.BEDROCK_MODEL_ID,
-            guardrailId: process.env.BEDROCK_GUARDRAIL_ID,
-            guardrailVersion: process.env.BEDROCK_GUARDRAIL_VERSION,
-          });
-        } catch (err) {
-          if (err instanceof GuardrailInterventionError) await recordAttempt(execute);
-          throw err;
-        }
-        await recordAttempt(execute);
-        return extracted;
+let extracted;
+try {
+  extracted = await extractTransactions(bedrock, {
+    fileType,
+    fileContent,
+    categoryNames,
+    modelId: process.env.BEDROCK_MODEL_ID,
+    guardrailId: process.env.BEDROCK_GUARDRAIL_ID,
+    guardrailVersion: process.env.BEDROCK_GUARDRAIL_VERSION,
+  });
+} catch (err) {
+  if (err instanceof GuardrailInterventionError) await recordAttempt(execute);
+  throw err;
+}
+await recordAttempt(execute);
+return extracted;
 ```
 
 - [ ] **Step 4: Run the tests to verify they pass**

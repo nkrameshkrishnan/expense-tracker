@@ -1,6 +1,10 @@
 /* Chart.js wrappers. Each call destroys the previous instance on that canvas,
    which is what stops the classic "ghost tooltip from the old chart" bug. */
-import { personColorIndex, categoryColorIndex, currentCurrency } from "./store.js";
+import {
+  personColorIndex,
+  categoryColorIndex,
+  currentCurrency,
+} from "./store.js";
 
 const INK = "#14151a",
   INK3 = "#8a8d99",
@@ -12,9 +16,18 @@ const TEAL = "#00a389",
   PURPLE = "#a855f7",
   SAND = "#c7cad1";
 const CATEGORY_SPECTRUM = [
-  "#3b82f6", "#a855f7", "#ec4899", "#f59e0b",
-  "#10b981", "#06b6d4", "#f97316", "#8b5cf6",
-  "#ef4444", "#14b8a6", "#eab308", "#84cc16",
+  "#3b82f6",
+  "#a855f7",
+  "#ec4899",
+  "#f59e0b",
+  "#10b981",
+  "#06b6d4",
+  "#f97316",
+  "#8b5cf6",
+  "#ef4444",
+  "#14b8a6",
+  "#eab308",
+  "#84cc16",
 ];
 
 const registry = new Map();
@@ -457,7 +470,11 @@ export function cashFlow(flows) {
         },
       ],
     },
-    options: { responsive: true, maintainAspectRatio: false, animation: drawIn },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: drawIn,
+    },
   });
 }
 
@@ -476,7 +493,12 @@ export function netTrendLine(series) {
             const { chart } = ctx;
             const { ctx: c, chartArea } = chart;
             if (!chartArea) return TEAL;
-            const gradient = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+            const gradient = c.createLinearGradient(
+              0,
+              chartArea.top,
+              0,
+              chartArea.bottom,
+            );
             gradient.addColorStop(0, "rgba(0, 163, 137, 0.25)");
             gradient.addColorStop(1, "rgba(229, 72, 77, 0.15)");
             return gradient;
@@ -513,7 +535,9 @@ export function spendingDonut(rows, onSliceClick) {
           // visible right now, which a global hash across all possible
           // categories can't guarantee for whichever 6-7 happen to be shown.
           backgroundColor: rows.map((r, i) =>
-            r.category === "Other" ? RULE : CATEGORY_SPECTRUM[i % CATEGORY_SPECTRUM.length],
+            r.category === "Other"
+              ? RULE
+              : CATEGORY_SPECTRUM[i % CATEGORY_SPECTRUM.length],
           ),
           borderWidth: 2,
           borderColor: "#ffffff",
@@ -539,7 +563,13 @@ export function spendTrend(series) {
     type: "bar",
     data: {
       labels: series.map((s) => s.month),
-      datasets: [{ label: "Spend", data: series.map((s) => s.expense), backgroundColor: AMBER }],
+      datasets: [
+        {
+          label: "Spend",
+          data: series.map((s) => s.expense),
+          backgroundColor: AMBER,
+        },
+      ],
     },
     options: {
       maintainAspectRatio: false,
@@ -554,8 +584,6 @@ export function spendTrend(series) {
 export function highlightSlice(index) {
   const chart = registry.get("c-spend-donut");
   if (!chart) return;
-  chart.setActiveElements(
-    index === null ? [] : [{ datasetIndex: 0, index }],
-  );
+  chart.setActiveElements(index === null ? [] : [{ datasetIndex: 0, index }]);
   chart.update("none");
 }

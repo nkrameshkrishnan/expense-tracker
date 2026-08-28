@@ -30,7 +30,11 @@ function readBody(req) {
     req.on("data", (chunk) => {
       total += chunk.length;
       if (total > MAX_BODY_BYTES) {
-        reject(Object.assign(new Error("Request body too large."), { statusCode: 413 }));
+        reject(
+          Object.assign(new Error("Request body too large."), {
+            statusCode: 413,
+          }),
+        );
         req.destroy();
         return;
       }
