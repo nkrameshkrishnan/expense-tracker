@@ -7,15 +7,21 @@
      render site in app.js, but this narrows the blast radius if that's ever
      missed somewhere. style-src needs 'unsafe-inline' because templates set
      inline style="" attributes (budget bar widths etc) directly; script-src
-     does not, which is the directive that actually matters for XSS. connect-src
-     covers Apps Script, its script.googleusercontent.com redirect target, and
+     does not, which is the directive that actually matters for XSS. It must
+     list every CDN a <script> is ever injected from - cdn.jsdelivr.net for
+     Chart.js and the Supabase SDK, cdn.sheetjs.com for the xlsx import/export
+     library - or the browser silently blocks the injected <script> tag itself;
+     that block fires the same onerror handler as a real network failure, so it
+     surfaced as "Could not load the spreadsheet library. Check your connection
+     and try again." even with a perfectly good connection. connect-src covers
      Supabase - wildcarded to *.supabase.co since the project subdomain is
-     chosen per-deployment, not fixed at build time. frame-ancestors is not
-     supported in a <meta> CSP (HTTP-header-only per spec) so it is omitted
-     rather than silently ignored-and-assumed-active. -->
+     chosen per-deployment, not fixed at build time - plus Google's
+     sign-in/token endpoints. frame-ancestors is not supported in a <meta> CSP
+     (HTTP-header-only per spec) so it is omitted rather than silently
+     ignored-and-assumed-active. -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' https://accounts.google.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://*.supabase.co https://accounts.google.com https://oauth2.googleapis.com; frame-src https://accounts.google.com; object-src 'none'; base-uri 'self'; form-action 'self';"
+      content="default-src 'self'; script-src 'self' https://accounts.google.com https://cdn.jsdelivr.net https://cdn.sheetjs.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://*.supabase.co https://accounts.google.com https://oauth2.googleapis.com; frame-src https://accounts.google.com; object-src 'none'; base-uri 'self'; form-action 'self';"
     />
     <title>Ledger &mdash; Expense Tracker 2026</title>
     <!-- Inline SVG favicon: no extra file to host, and it survives being served

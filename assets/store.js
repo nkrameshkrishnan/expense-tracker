@@ -1,20 +1,22 @@
 /* Storage layer.
 
-   SheetsStore is the real one: your Google Sheet is the database, reached through an
-   Apps Script web app. LocalStore (IndexedDB) remains as the no-configuration fallback
-   so the app is usable before you wire up the sheet, and MemoryStore covers browsers
-   where IndexedDB is blocked.
+   SupabaseStore is the real one: a Supabase/Postgres project is the database,
+   reached directly via the Supabase SDK (loaded from a CDN on first use - see
+   loadSupabaseSdk() below), with Row Level Security enforcing the household
+   allow-list. LocalStore (IndexedDB) remains as the no-configuration fallback
+   so the app is usable before Supabase is wired up, and MemoryStore covers
+   browsers where IndexedDB is blocked.
 
-   Config precedence: what you type under Data → Google Sheet (localStorage) wins over
+   The Google Sheets/Apps Script backend (SheetsStore) that used to sit ahead
+   of Supabase in this chain has been removed - Supabase is now the only real
+   backend. GOOGLE_CLIENT_ID / Google sign-in stays: it is the identity
+   provider whose ID token Supabase exchanges for a session (see
+   signInWithGoogleIdToken below), not something specific to Sheets.
+
+   Config precedence: what you type under Data → Supabase (localStorage) wins over
    the build-time values injected from GitHub secrets. */
 
-import {
-  SHEETS_ENDPOINT,
-  SHEETS_TOKEN,
-  GOOGLE_CLIENT_ID,
-  SUPABASE_URL,
-  SUPABASE_ANON_KEY,
-} from "./config.js";
+import { GOOGLE_CLIENT_ID, SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -129,8 +131,6 @@ export const NET_WORTH_ACCOUNTS = [
 ];
 
 export const CUSTOM_KEY = "ledger.customLists";
-export const ENDPOINT_KEY = "ledger.sheetsEndpoint";
-export const TOKEN_KEY = "ledger.sheetsToken";
 export const ID_TOKEN_KEY = "ledger.googleIdToken";
 export const NONCE_KEY = "ledger.googleNonce";
 
@@ -181,23 +181,18 @@ export const setNonce = (n) => {
   _nonceMem = n || "";
 };
 
-export const getEndpoint = () =>
-  (localStorage.getItem(ENDPOINT_KEY) || SHEETS_ENDPOINT || "").trim();
-export const getToken = () =>
-  (localStorage.getItem(TOKEN_KEY) || SHEETS_TOKEN || "").trim();
-export const endpointSource = () =>
-  localStorage.getItem(ENDPOINT_KEY)
-    ? "runtime"
-    : SHEETS_ENDPOINT
-      ? "build"
-      : "none";
-
 export const SUPABASE_URL_KEY = "ledger.supabaseUrl";
 export const SUPABASE_KEY_KEY = "ledger.supabaseAnonKey";
 export const getSupabaseUrl = () =>
   (localStorage.getItem(SUPABASE_URL_KEY) || SUPABASE_URL || "").trim();
 export const getSupabaseAnonKey = () =>
   (localStorage.getItem(SUPABASE_KEY_KEY) || SUPABASE_ANON_KEY || "").trim();
+export const supabaseConfigSource = () =>
+  localStorage.getItem(SUPABASE_URL_KEY)
+    ? "runtime"
+    : SUPABASE_URL
+      ? "build"
+      : "none";
 
 const DB_NAME = "ledger-expense-tracker";
 const DB_VERSION = 1;
@@ -217,14 +212,15 @@ export function normalise(r) {
   if (!TYPES.includes(type)) type = "Expense";
   const raw = r.category || r.cat;
   return {
-    // Sheets (via Code.gs) always returns a real JS number here already.
     // Postgres bigint columns (used for Supabase's identity primary keys)
-    // serialize as STRINGS over JSON instead - both pg and PostgREST do
-    // this deliberately, since a full 64-bit integer isn't always safely
-    // representable as a JS number. Coercing here means every id
-    // comparison anywhere in the app (strict equality included) behaves
-    // consistently regardless of which backend produced the record - this
-    // was found by a real bug: a strict `!==` comparison in remove()
+    // serialize as STRINGS over JSON - both pg and PostgREST do this
+    // deliberately, since a full 64-bit integer isn't always safely
+    // representable as a JS number. LocalStore/MemoryStore ids are always
+    // real JS numbers already, so this coercion is a no-op for them and
+    // matters only for Supabase - but doing it unconditionally here means
+    // every id comparison anywhere in the app (strict equality included)
+    // behaves consistently regardless of which backend produced the record.
+    // This was found by a real bug: a strict `!==` comparison in remove()
     // silently never matched a Postgres-sourced id against a coerced
     // Number(id), because the cached id was still a string.
     id: Number(r.id) || 0,
@@ -244,398 +240,11 @@ export function normalise(r) {
   };
 }
 
-/* ------------------------------------------------------------- Google Sheets */
-class SheetsStore {
-  constructor(endpoint, token) {
-    this.endpoint = endpoint.replace(/\/+$/, "");
-    this.token = token;
-    this.kind = "sheets";
-    this.cache = null;
-    this.sheetName = "";
-  }
-
-  async _get(opts = {}, attempt = 1) {
-    const { year, txYear } = opts;
-    const yq = year ? `&year=${encodeURIComponent(year)}` : "";
-    // txYear is independent of Budget's `year` - omitting it means "return
-    // every year's transactions", exactly like before this existed. -1 is
-    // used deliberately by the metadata-only refresh below: no real
-    // transaction can ever be dated year -1, so it is a cheap way to ask for
-    // "everything except transactions" without needing a second server-side
-    // flag.
-    const tq =
-      txYear !== undefined && txYear !== null
-        ? `&txYear=${encodeURIComponent(txYear)}`
-        : "";
-    const url = `${this.endpoint}?idToken=${encodeURIComponent(getIdToken())}${yq}${tq}&t=${Date.now()}`;
-    let res;
-    try {
-      // cache:'no-store' matters specifically for redirect-following requests
-      // like this one: Apps Script /exec URLs 302-redirect to a
-      // script.googleusercontent.com/macros/echo?...&lib=... target, and
-      // after a Code.gs redeploy that target changes. Without an explicit
-      // no-store, the browser can keep resolving to the OLD cached redirect
-      // target, which now 404s - and since every retry hits the SAME stale
-      // cache entry, retrying alone never recovers. That is exactly the
-      // "several retries, then gives up, but manually re-testing the
-      // connection works" pattern: the manual retry happened long enough
-      // after, or through a different code path, to escape the same cache
-      // hit. The query-string cache-buster on the /exec URL itself does not
-      // help here - it only affects that first URL, not the redirect target.
-      res = await fetch(url, {
-        method: "GET",
-        redirect: "follow",
-        cache: "no-store",
-      });
-    } catch (networkErr) {
-      // A dropped connection is exactly the kind of transient blip retrying
-      // absorbs - fetch() throws for this rather than returning a status.
-      if (attempt < 6) {
-        await sleep(500 * attempt);
-        return this._get(opts, attempt + 1);
-      }
-      throw new Error(
-        `Could not reach the sheet (${networkErr.message}). Check your connection.`,
-      );
-    }
-    if (!res.ok) {
-      // Apps Script /exec endpoints are known to intermittently 404 for
-      // several seconds right after a redeploy, and after any real idle
-      // period a "cold" deployment can take a few seconds to spin back up -
-      // neither means the deployment is actually misconfigured. The FIRST
-      // ping right after a fresh sign-in is the worst case specifically: it
-      // can stack a cold Apps Script start together with the extra latency
-      // of Code.gs's own requireUser() making an OUTBOUND call to Google's
-      // tokeninfo endpoint to verify the just-issued JWT, on top of the
-      // normal cold-start delay. Was 5 attempts over ~6s, and a direct
-      // report confirmed that still was not always enough; 7 attempts over
-      // ~12.6s of sleep (plus each attempt's own round trip) gives real
-      // headroom for that compounded case without hanging a truly broken
-      // deployment forever.
-      if (res.status === 404 && attempt < 7) {
-        await sleep(600 * attempt);
-        return this._get(opts, attempt + 1);
-      }
-      throw new Error(
-        `Sheet responded ${res.status}${attempt > 1 ? ` (after ${attempt} attempts)` : ""}. Check the deployment is set to "Anyone".`,
-      );
-    }
-    const text = await res.text();
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      // Almost always Google's sign-in page: the web app is not public.
-      throw new Error(
-        'Got HTML instead of JSON — redeploy the Apps Script with Access set to "Anyone".',
-      );
-    }
-    if (!data.ok) {
-      const err = new Error(data.error || "Sheet refused the request.");
-      if (/sign in|sign-in|not permitted|rejected that sign/i.test(err.message))
-        err.auth = true;
-      throw err;
-    }
-    return data;
-  }
-
-  /* text/plain dodges the CORS preflight that Apps Script cannot answer. */
-  async _post(payload, attempt = 1) {
-    // Retrying a write is only safe when re-applying it produces the same
-    // end state either way. 'update'/'delete'/'setBudget'/'setBalances' all
-    // overwrite by design, so replaying one changes nothing if it actually
-    // landed the first time. 'create'/'bulk'/'addDebt'/'importDebts' APPEND
-    // rows - retrying one of those after an ambiguous failure could leave a
-    // duplicate row behind, so those are never auto-retried here.
-    const idempotent = [
-      "update",
-      "delete",
-      "clear",
-      "setBudget",
-      "setBalances",
-      "deleteBalanceDate",
-      "deleteDebt",
-      "updateDebt",
-    ].includes(payload.action);
-    let res;
-    try {
-      res = await fetch(this.endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ ...payload, idToken: getIdToken() }),
-        redirect: "follow",
-        cache: "no-store",
-      });
-    } catch (networkErr) {
-      // fetch() throwing (not a bad status, a genuinely failed request) means
-      // it is unclear whether the server ever saw it. Retrying is not risk-free
-      // even for idempotent actions - but leaving the person stuck on a dropped
-      // connection is worse, so retry once for those specifically.
-      if (idempotent && attempt < 2) {
-        await sleep(600);
-        return this._post(payload, attempt + 1);
-      }
-      throw new Error(
-        `Could not reach the sheet (${networkErr.message}). Check your connection and try again.`,
-      );
-    }
-    if (!res.ok) {
-      if (idempotent && res.status === 404 && attempt < 2) {
-        await sleep(600);
-        return this._post(payload, attempt + 1);
-      }
-      throw new Error(`Sheet responded ${res.status}.`);
-    }
-    const data = JSON.parse(await res.text());
-    if (!data.ok) {
-      const err = new Error(data.error || "Write rejected by the sheet.");
-      if (/sign in|sign-in|not permitted|rejected that sign/i.test(err.message))
-        err.auth = true;
-      throw err;
-    }
-    // No blanket cache invalidation here anymore. That used to mean EVERY
-    // write - adding one transaction, editing one, changing the budget -
-    // wiped the entire cache and forced a full re-download of the whole
-    // transaction history on the next read, regardless of how large that
-    // history had grown. Each caller (add/update/remove/setBudget/etc) now
-    // patches exactly the slice it changed, using the record the server just
-    // handed back - which it already has, for free, in this response.
-    return data;
-  }
-
-  _fill(d) {
-    const rows = d.transactions.map(normalise);
-    // Safety is the DEFAULT, not something a caller has to remember to ask
-    // for. The signal that matters is simply whether this.cache already
-    // exists - if it does, there is potentially real, locally-known data
-    // (a write patched in directly, ahead of any server round trip) that a
-    // wholesale replace could silently erase. A caller explicitly passing
-    // `merge: false` used to be required to get this right; getting it wrong
-    // by omission was the actual failure mode a deterministic test caught -
-    // calling _fill() with a stale, pre-write snapshot and no merge flag
-    // erased a real transaction. Basing the decision on cache presence
-    // instead of a flag means there is no unsafe default left to forget.
-    if (this.cache) {
-      const seen = new Set(this.cache.transactions.map((r) => r.id));
-      this.cache.transactions.push(...rows.filter((r) => !seen.has(r.id)));
-    } else {
-      this.cache = { transactions: rows };
-    }
-    this.cache.budget = d.budget;
-    this.cache.budgetYear = d.budgetYear || currentYear();
-    this.cache.balances = d.balances || [];
-    this.cache.debts = d.debts || [];
-    this.cache.allTxYears = d.transactionYearsAvailable || [];
-    this.cache.loadedTxYears = this.cache.loadedTxYears || new Set();
-    this.sheetName = d.sheetName || "";
-    this.user = d.user || null; // verified by Apps Script, not by the browser
-    return this.cache;
-  }
-  // Was an UNSCOPED fetch - ping() runs first, inside openStore(), before
-  // _ensure() ever gets called. Since _ensure() only does the fast scoped
-  // fetch when the cache is still empty, an unscoped ping() here silently
-  // defeated the entire point of year-scoping: by the time _ensure() ran,
-  // the cache was already fully populated, so its "first call this session"
-  // branch never actually fired on the real boot path. Caught by tracing
-  // the real call sequence end to end, not from reading either function in
-  // isolation - each looked correct on its own.
-  async ping() {
-    return this._ensure();
-  }
-
-  /** First call this session: fetch only the CURRENT year, so the very
-      first paint does not wait on however many years of history exist -
-      that download only grows over time otherwise. Every later call just
-      returns what is already cached; use ensureYearLoaded/ensureAllYearsLoaded
-      to bring in more. */
-  async _ensure() {
-    if (this.cache) return this.cache;
-    const y = currentYear();
-    const d = await this._get({ txYear: y });
-    this._fill(d);
-    this.cache.loadedTxYears = new Set([y]);
-    this.cache.allYearsLoaded = this.cache.allTxYears.length <= 1;
-    return this.cache;
-  }
-
-  /** Bring in one specific year not yet loaded (e.g. the Dashboard's year
-      selector jumping to a year outside the fast initial fetch). A no-op if
-      that year - or everything - is already cached. */
-  async ensureYearLoaded(year) {
-    await this._ensure();
-    if (this.cache.allYearsLoaded || this.cache.loadedTxYears.has(year)) return;
-    const d = await this._get({ txYear: year });
-    this._fill(d); // merge is now automatic whenever this.cache already exists
-    this.cache.loadedTxYears.add(year);
-  }
-
-  /** Silently bring in every remaining year in the background. Meant to be
-      called right after the fast initial paint, not awaited by anything
-      that blocks the UI - by the time a person actually reaches for a
-      different year or searches Transactions, this has usually already
-      finished, so cross-year features still feel instant in practice. */
-  async ensureAllYearsLoaded() {
-    await this._ensure();
-    if (this.cache.allYearsLoaded) return;
-    const d = await this._get({}); // no txYear = every year, in one call
-    // _fill() merges automatically whenever this.cache already exists - this
-    // fetch can take a real network round trip, and a transaction added
-    // WHILE it was in flight is already sitting in the cache by the time
-    // this response lands. Verified directly: a deterministic test forces a
-    // stale, pre-write snapshot to land via _fill() and confirms the write
-    // survives rather than getting silently erased.
-    this._fill(d);
-    this.cache.loadedTxYears = new Set(this.cache.allTxYears);
-    this.cache.allYearsLoaded = true;
-  }
-
-  async list() {
-    return (await this._ensure()).transactions;
-  }
-  async getBalances() {
-    return (await this._ensure()).balances || [];
-  }
-  async getDebts() {
-    return (await this._ensure()).debts || [];
-  }
-  async addDebt(record) {
-    const r = await this._post({ action: "addDebt", record });
-    await this._refreshMeta();
-    return r.id;
-  }
-  async updateDebt(id, record) {
-    await this._post({ action: "updateDebt", id, record });
-    await this._refreshMeta();
-  }
-  async deleteDebt(id) {
-    await this._post({ action: "deleteDebt", id });
-    await this._refreshMeta();
-  }
-  async importDebts(records) {
-    const r = await this._post({ action: "importDebts", records });
-    await this._refreshMeta();
-    return r;
-  }
-  async setBalances(date, entries) {
-    await this._post({ action: "setBalances", date, entries });
-    await this._refreshMeta();
-  }
-  async deleteBalanceDate(date) {
-    await this._post({ action: "deleteBalanceDate", date });
-    await this._refreshMeta();
-  }
-  async getBudget(year) {
-    const cached = await this._ensure();
-    const wantsCachedYear = !year || year === cached.budgetYear;
-    const b = wantsCachedYear
-      ? cached.budget
-      : (await this._get({ year })).budget;
-    const full = emptyBudget();
-    if (b)
-      for (const c of Object.keys(b))
-        if (full[c])
-          for (let m = 1; m <= 12; m++) full[c][m] = Number(b[c][m]) || 0;
-    return full;
-  }
-  async setBudget(budget, year) {
-    await this._post({ action: "setBudget", budget, year });
-    await this._refreshMeta();
-    return budget;
-  }
-
-  /** Refreshes budget/balances/debts without touching the transactions
-      cache at all. txYear:-1 can never match a real row (no transaction is
-      ever dated year -1), so the server returns an empty transactions array
-      - this is a cheap way to pick up changes to the OTHER three tabs after
-      a write to one of them, without re-downloading transaction history or
-      disturbing whatever years are already accumulated client-side. */
-  async _refreshMeta() {
-    if (!this.cache) return;
-    const d = await this._get({ txYear: -1 });
-    this.cache.budget = d.budget;
-    this.cache.budgetYear = d.budgetYear || currentYear();
-    this.cache.balances = d.balances || [];
-    this.cache.debts = d.debts || [];
-  }
-
-  async add(rec) {
-    const r = normalise(rec);
-    delete r.id;
-    const result = normalise(
-      (await this._post({ action: "create", record: r })).record,
-    );
-    // The server just told us exactly what was written - use that directly
-    // instead of re-downloading the whole history to learn what we already
-    // know. If this row's year has not been individually fetched yet, it is
-    // still correctly present; ensureYearLoaded/ensureAllYearsLoaded simply
-    // has one less row to bring in later for that year.
-    if (this.cache) this.cache.transactions.push(result);
-    return result;
-  }
-  async bulkAdd(list, onProgress) {
-    const records = list.map((r) => {
-      const n = normalise(r);
-      delete n.id;
-      return n;
-    });
-    // Apps Script now writes a chunk with a handful of batched range calls, so
-    // larger chunks mean fewer HTTP round trips without risking the 6-min limit.
-    const CHUNK = 1000;
-    let inserted = 0;
-    for (let i = 0; i < records.length; i += CHUNK) {
-      inserted += (
-        await this._post({
-          action: "bulk",
-          records: records.slice(i, i + CHUNK),
-        })
-      ).inserted;
-      onProgress?.(Math.min(i + CHUNK, records.length), records.length);
-    }
-    // A bulk import can span arbitrary years and arbitrary volume - simplest
-    // and safest to just bring the client back in sync with a real fetch
-    // afterward, rather than trying to patch potentially thousands of rows
-    // in place.
-    if (this.cache) {
-      this.cache = null;
-      await this._ensure();
-      await this.ensureAllYearsLoaded();
-    }
-    return inserted;
-  }
-  async update(id, rec) {
-    const r = normalise({ ...rec, id });
-    const result = normalise(
-      (await this._post({ action: "update", id, record: r })).record,
-    );
-    if (this.cache) {
-      const i = this.cache.transactions.findIndex((x) => x.id === result.id);
-      if (i !== -1) this.cache.transactions[i] = result;
-      else this.cache.transactions.push(result); // edited row from a not-yet-loaded year
-    }
-    return result;
-  }
-  async remove(id) {
-    await this._post({ action: "delete", id });
-    if (this.cache)
-      this.cache.transactions = this.cache.transactions.filter(
-        (x) => x.id !== Number(id),
-      );
-  }
-  async clear() {
-    await this._post({ action: "clear" });
-    this.cache = null;
-  }
-  async isEmpty() {
-    return (await this.list()).length === 0;
-  }
-}
-
 /* ------------------------------------------------------------------- Supabase
-   Fourth implementation of the same storage interface SheetsStore/LocalStore/
-   MemoryStore already share. openStore() picks this over SheetsStore once
-   both a Supabase URL and anon key are actually configured. Nothing in
-   app.js changes to support this - it only ever calls state.store.list()/
-   .add()/.getBudget()/etc, never anything backend-specific.
+   The real storage backend - one of three implementations of the same
+   interface (this one, LocalStore, MemoryStore) that openStore() below picks
+   between. Nothing in app.js changes to support this - it only ever calls
+   state.store.list()/.add()/.getBudget()/etc, never anything backend-specific.
 
    No build step means no npm import for the SDK - it is loaded from a CDN on
    first actual use, same lazy pattern as xlsxio.js's loadXLSX(): most
@@ -704,8 +313,7 @@ class SupabaseStore {
     this.url = url;
     this.anonKey = anonKey;
     this.sb = null; // created lazily once the SDK has loaded
-    this.cache = null; // same accumulating, year-aware cache shape as SheetsStore
-    this.sheetName = "Supabase";
+    this.cache = null; // accumulating, year-aware cache - see _loadYear()/ensureYearLoaded() below
     this.user = null;
   }
 
@@ -1071,8 +679,8 @@ class SupabaseStore {
 }
 
 /** Postgres rows (one per year/category/month) -> the same {category: {month:
-    amount}} shape SheetsStore/LocalStore/MemoryStore all use, so app.js never
-    needs to know which backend produced a budget. */
+    amount}} shape LocalStore/MemoryStore also use, so app.js never needs to
+    know which backend produced a budget. */
 function budgetRowsToShape(rows) {
   const full = emptyBudget();
   for (const row of rows || [])
@@ -1086,10 +694,10 @@ class LocalStore {
     this.db = db;
     this.kind = "local";
   }
-  // No-ops: unlike SheetsStore, IndexedDB always holds the full history
+  // No-ops: unlike SupabaseStore, IndexedDB always holds the full history
   // already - there is no partial year-scoping to catch up on. These exist
   // so app.js can call them unconditionally regardless of which adapter is
-  // active, without an `if (store.kind === 'sheets')` check at every call site.
+  // active, without an `if (store.kind === 'supabase')` check at every call site.
   async ensureYearLoaded() {}
   async ensureAllYearsLoaded() {}
   static open() {
@@ -1388,11 +996,9 @@ class MemoryStore {
 }
 
 export async function openStore(onNotice) {
-  // Supabase is preferred once BOTH pieces are configured - during a
-  // transition period this lets the app be pointed at either backend
-  // without disturbing whichever one is not yet set up. Falls through to
-  // Sheets, then Local/Memory, on any failure - exactly the same graceful
-  // degradation the app already had for Sheets alone.
+  // Supabase is the only real backend now. Falls through to Local/Memory on
+  // any failure - the same graceful degradation the app always had, just
+  // with one fewer intermediate backend to fall through first.
   const supabaseUrl = getSupabaseUrl(),
     supabaseKey = getSupabaseAnonKey();
   if (supabaseUrl && supabaseKey) {
@@ -1404,27 +1010,13 @@ export async function openStore(onNotice) {
       return s;
     } catch (e) {
       onNotice?.(
-        `Supabase unreachable: ${e.message} Falling back to Google Sheets or this browser's storage.`,
+        `Supabase unreachable: ${e.message} Falling back to this browser's storage — changes will NOT reach Supabase.`,
         "bad",
       );
     }
-  }
-  const endpoint = getEndpoint(),
-    token = getToken();
-  if (endpoint) {
-    try {
-      const s = new SheetsStore(endpoint, token);
-      await s.ping();
-      return s;
-    } catch (e) {
-      onNotice?.(
-        `Google Sheet unreachable: ${e.message} Falling back to this browser's storage — changes will NOT reach the sheet.`,
-        "bad",
-      );
-    }
-  } else if (!supabaseUrl) {
+  } else {
     onNotice?.(
-      "No Google Sheet connected. Using browser storage — connect the sheet under Data.",
+      "No Supabase project connected. Using browser storage — connect it under Data.",
     );
   }
   try {
@@ -1438,4 +1030,4 @@ export async function openStore(onNotice) {
   }
 }
 
-export { SheetsStore, SupabaseStore };
+export { SupabaseStore };

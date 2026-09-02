@@ -8,10 +8,11 @@ import {
   ACCOUNTS,
   MONTHS,
   currentYear,
-  ENDPOINT_KEY,
-  TOKEN_KEY,
-  endpointSource,
-  getEndpoint,
+  SUPABASE_URL_KEY,
+  SUPABASE_KEY_KEY,
+  supabaseConfigSource,
+  getSupabaseUrl,
+  getSupabaseAnonKey,
   emptyBudget,
   PEOPLE,
   UNASSIGNED,
@@ -22,8 +23,7 @@ import {
   setIdToken,
   setNonce,
   NET_WORTH_ACCOUNTS,
-  SheetsStore,
-  getToken,
+  SupabaseStore,
 } from "./store.js";
 import {
   aggregate,
@@ -69,12 +69,13 @@ const state = {
 
 /* ------------------------------------------------------------ Google sign-in
    The ID token lives in sessionStorage, so closing the tab signs you out.
-   It is only ever a claim - Apps Script decides whether it is honoured. */
+   It is only ever a claim - Supabase Row Level Security decides whether it
+   is honoured. */
 /* A true full-viewport overlay rather than a sibling whose visibility has to
    stay manually in sync with #view. That sync WAS the bug: only the initial
    page-load path and a successful sign-in ever touched it, so any auth
    failure that happened mid-session (a token expiring after ~an hour, then
-   the user clicking Reload, Add, or anything else that hits the sheet) left
+   the user clicking Reload, Add, or anything else that hits Supabase) left
    the previous page's content fully rendered underneath a banner that
    explained nothing and offered no way back in. Wrapping this in a fixed,
    opaque, high-z-index layer means showing it can never result in stale
@@ -108,7 +109,7 @@ function showGate(message) {
       <h1 class="gate-title">Ledger</h1>
       <p class="gate-sub">${esc(message || "Sign in with the Google account linked to this tracker.")}</p>
       <div id="gsi-button"></div>
-      <p class="gate-note">Access is verified by Apps Script against an allow-list.
+      <p class="gate-note">Access is verified by Supabase Row Level Security against an allow-list.
         Signing in here does not grant access on its own.</p>
     </div>`;
 
@@ -116,7 +117,7 @@ function showGate(message) {
   if (!cid) {
     $("#gsi-button").innerHTML =
       `<p class="gate-error">No Google client ID configured. Set GOOGLE_CLIENT_ID in
-       assets/config.js (and OAUTH_CLIENT_ID in Code.gs), then reload.</p>`;
+       assets/config.js, then reload.</p>`;
     return;
   }
   const start = async () => {
@@ -433,7 +434,6 @@ async function refresh() {
   renderPeopleSwitch();
   const c = $("#conn");
   const label = {
-    sheets: "\u25cf google sheet",
     supabase: "\u25cf supabase",
     local: "\u25cf browser only",
     memory: "\u25cf session only",
@@ -449,11 +449,9 @@ async function refresh() {
       : "");
   $("#signout")?.addEventListener("click", signOut);
   c.title =
-    state.store.kind === "sheets"
-      ? `Reading and writing "${state.store.sheetName || "your sheet"}" live`
-      : state.store.kind === "supabase"
-        ? "Reading and writing your Supabase project live"
-        : "Not connected to a Google Sheet or Supabase — changes stay in this browser";
+    state.store.kind === "supabase"
+      ? "Reading and writing your Supabase project live"
+      : "Not connected to Supabase — changes stay in this browser";
   c.className = "conn" + (isRemoteStore(state.store) ? " remote" : "");
 }
 
@@ -462,12 +460,15 @@ async function refresh() {
     current year even if it has nothing yet (so Jan 1 of a new year isn't
     stuck picking a year with zero transactions to select from). */
 function availableYears() {
-  // SheetsStore's cache carries allTxYears straight from the server - every
-  // year that actually EXISTS in the sheet, independent of which years have
-  // had their data fetched yet. Scanning state.rows alone would only show
-  // years already loaded, which is wrong the moment a year is fetched lazily
-  // rather than eagerly. LocalStore/MemoryStore never partially load, so
-  // scanning state.rows for them is already complete and correct.
+  // A backend whose cache exposes allTxYears (every year that actually
+  // exists, independent of which years have had their data fetched yet)
+  // gets an accurate list even before every year is loaded. Nothing
+  // currently populates this for SupabaseStore - it lazy-loads by year the
+  // same way the old SheetsStore did, but has no "list distinct years"
+  // query wired up yet - so this falls through to scanning state.rows,
+  // which is only as complete as whatever years have been fetched so far.
+  // LocalStore/MemoryStore never partially load, so scanning state.rows for
+  // them is already complete and correct regardless.
   const serverYears = state.store?.cache?.allTxYears;
   const fromData = new Set(
     serverYears?.length
@@ -2030,9 +2031,9 @@ function renderNetWorth() {
   ${
     !isRemoteStore(state.store)
       ? `<div class="nw-warn" style="border-left-color:var(--red)">
-    <b>Not connected to a Google Sheet or Supabase.</b> Everything on this page is saved to
+    <b>Not connected to Supabase.</b> Everything on this page is saved to
     ${state.store.kind === "memory" ? "this session only \u2014 it will be lost on reload" : "this browser only"}.
-    Connect under <b>Data \u2192 Google Sheet</b> (or configure Supabase) if you want balances to persist.
+    Connect under <b>Data \u2192 Supabase</b> if you want balances to persist.
   </div>`
       : ""
   }
@@ -2945,8 +2946,8 @@ function renderBalanceForm(copyFrom) {
       if (
         !isRemoteStore(state.store) &&
         !confirm(
-          `Not connected to a Google Sheet or Supabase right now. This import will go to ${target}.\n\n` +
-            `Connect first under Data \u2192 Google Sheet (or configure Supabase) if you want it saved there instead. Continue anyway?`,
+          `Not connected to Supabase right now. This import will go to ${target}.\n\n` +
+            `Connect first under Data \u2192 Supabase if you want it saved there instead. Continue anyway?`,
         )
       ) {
         out.textContent = "Cancelled.";
@@ -2997,8 +2998,8 @@ function renderBalanceForm(copyFrom) {
     if (
       !isRemoteStore(state.store) &&
       !confirm(
-        `Not connected to a Google Sheet or Supabase right now. This will save to ${target}.\n\n` +
-          `Connect first under Data \u2192 Google Sheet (or configure Supabase) if you want it saved there instead. Continue anyway?`,
+        `Not connected to Supabase right now. This will save to ${target}.\n\n` +
+          `Connect first under Data \u2192 Supabase if you want it saved there instead. Continue anyway?`,
       )
     )
       return;
@@ -3021,42 +3022,45 @@ function renderBalanceForm(copyFrom) {
 
 /* ====================================================================== DATA */
 function renderData() {
-  const src = endpointSource();
-  const ep = localStorage.getItem(ENDPOINT_KEY) || "";
-  const live = state.store.kind === "sheets";
+  const src = supabaseConfigSource();
+  const url = localStorage.getItem(SUPABASE_URL_KEY) || "";
+  const anonKey = localStorage.getItem(SUPABASE_KEY_KEY) || "";
+  const live = state.store.kind === "supabase";
   const who = state.store.user?.email || "";
 
   view.innerHTML = `
   <div class="head"><div><h1>Data</h1><p class="sub">Where your data lives, and how to get it in and out.</p></div></div>
 
-  <div class="eyebrow">Google Sheet connection</div>
+  <div class="eyebrow">Supabase connection</div>
   <div class="panel stack">
     <p class="note" style="margin:0">Status: <b>${
       live
-        ? 'connected \u2014 reading and writing "' +
-          esc(state.store.sheetName || "your sheet") +
-          '" live' +
+        ? "connected — reading and writing your Supabase project live" +
           (who ? " as " + esc(who) : "")
         : state.store.kind === "memory"
           ? "session memory only, nothing is being saved"
-          : "not connected \u2014 changes stay in this browser"
+          : "not connected — changes stay in this browser"
     }</b>.
-      Endpoint source: <b>${src === "build" ? "GitHub secret, injected at deploy" : src === "runtime" ? "entered here, stored in this browser only" : "none"}</b>.
-      Access: <b>Google sign-in</b>, verified by Apps Script against an allow-list \u2014 there is no separate token to manage here anymore.</p>
+      Config source: <b>${src === "build" ? "GitHub secret, injected at deploy" : src === "runtime" ? "entered here, stored in this browser only" : "none"}</b>.
+      Access: <b>Google sign-in</b>, verified by Supabase Row Level Security against an allow-list — there is no separate token to manage here.</p>
     <div class="stack" style="max-width:620px">
-      <label class="f"><span>Apps Script web app URL</span>
-        <input id="ep" placeholder="https://script.google.com/macros/s/AKfy.../exec" value="${esc(ep)}"></label>
+      <label class="f"><span>Supabase project URL</span>
+        <input id="sb-url" placeholder="https://xxxxxxxx.supabase.co" value="${esc(url)}"></label>
+      <label class="f"><span>Supabase anon (public) key</span>
+        <input id="sb-key" placeholder="eyJhbG..." value="${esc(anonKey)}"></label>
     </div>
     <div class="actions">
       <button class="btn" id="connect">Connect &amp; test</button>
       <button class="btn ghost" id="disconnect">Disconnect</button>
-      <button class="btn ghost" id="reload" ${live ? "" : "disabled"}>Reload from sheet</button>
+      <button class="btn ghost" id="reload" ${live ? "" : "disabled"}>Reload from Supabase</button>
       ${getIdToken() ? '<button class="btn ghost" id="data-signout">Sign out</button>' : ""}
     </div>
-    <p class="note"><b>The endpoint URL stays in this browser and is never published.</b> Values injected from
-    GitHub secrets end up in <code>assets/config.js</code>, which is served to every visitor of the site \u2014
-    a secret in Actions keeps it out of the repo, not out of the page. Enter it here instead if you would
-    rather it never appear in the deployed site at all.</p>
+    <p class="note"><b>The URL and anon key stay in this browser and are never published.</b> Values injected from
+    GitHub secrets end up in <code>assets/config.js</code>, which is served to every visitor of the site —
+    a secret in Actions keeps it out of the repo, not out of the page. Enter them here instead if you would
+    rather they never appear in the deployed site at all. Either way, access is enforced by Row Level Security
+    on the database (see <code>supabase/schema.sql</code>), not by keeping the anon key secret — it is
+    meant to be public.</p>
   </div>
 
   <div class="eyebrow">Export</div>
@@ -3066,9 +3070,9 @@ function renderData() {
       <button class="btn ghost" id="json">Download .json backup</button>
       <span class="muted">${state.rows.length} transactions</span>
     </div>
-    <p class="note">Three sheets \u2014 Transactions, Budget, and a Pivot cross-tab of live SUMIFS formulas that keep
-    working in Google Sheets. No charts: the browser cannot write chart objects into an .xlsx. The charts you see
-    on the Dashboard are rendered live from the sheet data instead.</p>
+    <p class="note">Three sheets — Transactions, Budget, and a Pivot cross-tab of live SUMIFS formulas you can
+    use if you open the file in Excel or Google Sheets. No charts: the browser cannot write chart objects into an
+    .xlsx. The charts you see on the Dashboard are rendered live from your Supabase data instead.</p>
   </div>
 
   <div class="eyebrow">Import</div>
@@ -3077,7 +3081,7 @@ function renderData() {
     <div class="actions"><label><input type="checkbox" id="replace"> Replace everything first</label></div>
     <div id="imp" class="note"></div>
     <p class="note">Needs a flat table with at least <code>Date</code> and <code>Amount</code> columns. Rows are
-    appended to the connected sheet in batches of 500.</p>
+    written to Supabase in batches of 1000.</p>
   </div>
 
   <div class="eyebrow">People</div>
@@ -3094,39 +3098,44 @@ function renderData() {
     <div class="actions">
       ${PEOPLE.map((pp) => `<button class="btn ghost" data-assign="${pp}">Assign all to ${pp}</button>`).join("")}
     </div>
-    <p class="note">This rewrites every unassigned row in the sheet. You can still change individual entries afterwards from Transactions → edit.</p>`
+    <p class="note">This rewrites every unassigned row in Supabase. You can still change individual entries afterwards from Transactions → edit.</p>`
         : ""
     }
   </div>
 
   <div class="eyebrow">Danger zone</div>
   <div class="panel"><div class="actions">
-    <button class="btn danger" id="wipe">Delete every row${live ? " from the sheet" : ""}</button>
-    <span class="muted">Export first \u2014 this cannot be undone.</span>
+    <button class="btn danger" id="wipe">Delete every row${live ? " from Supabase" : ""}</button>
+    <span class="muted">Export first — this cannot be undone.</span>
   </div></div>`;
 
   $("#connect").onclick = async () => {
-    const url = $("#ep").value.trim();
-    if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(url)) {
+    const sbUrl = $("#sb-url").value.trim();
+    const sbKey = $("#sb-key").value.trim();
+    if (!/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(sbUrl)) {
       return notice(
-        "That does not look like an Apps Script /exec URL. Deploy the script as a Web app and copy the URL ending in /exec.",
+        "That does not look like a Supabase project URL. Copy it from Project Settings → API — it should look like https://xxxxxxxx.supabase.co.",
         "bad",
       );
     }
-    localStorage.setItem(ENDPOINT_KEY, url);
+    if (!sbKey) {
+      return notice("Enter the project's anon (public) key too.", "bad");
+    }
+    localStorage.setItem(SUPABASE_URL_KEY, sbUrl);
+    localStorage.setItem(SUPABASE_KEY_KEY, sbKey);
     if (getClientId() && !getIdToken()) {
       showGate();
       return;
     }
-    // Tests the URL just entered directly via SheetsStore, not through
-    // openStore() - openStore() prefers Supabase whenever it is configured,
-    // which would skip ever trying this endpoint at all and report failure
-    // even when the sheet itself is fine. ping() already throws with the
-    // specific reason (and .auth set, for an expired/rejected sign-in) -
-    // withBusy's catch surfaces that directly, so there is no need to
-    // reconstruct a reason from onNotice callbacks here.
+    // Tests the values just entered directly via SupabaseStore, not through
+    // openStore() - openStore() reads getSupabaseUrl()/getSupabaseAnonKey()
+    // itself, but constructing the store directly here means a failure
+    // reports the SPECIFIC reason (and .auth set, for an expired/rejected
+    // sign-in) rather than a generic fallback notice.
     await withBusy("Testing the connection", async () => {
-      const s = new SheetsStore(url, getToken());
+      const s = new SupabaseStore(sbUrl, sbKey);
+      const idToken = getIdToken();
+      if (idToken) await s.signInWithGoogleIdToken(idToken);
       await s.ping();
       state.store = s;
       await refresh();
@@ -3134,21 +3143,19 @@ function renderData() {
       // not a hot path - unlike normal boot, waiting the extra moment here
       // for the real total is worth it. Without this, the confirmation would
       // report only the current year's count (e.g. "24 rows loaded"), which
-      // reads as "your sheet only has 24 rows" rather than what it actually
+      // reads as "Supabase only has 24 rows" rather than what it actually
       // means: that many rows loaded SO FAR.
       await state.store.ensureAllYearsLoaded?.();
       state.rows = await state.store.list();
     });
-    if (state.store.kind === "sheets")
-      notice(
-        `Connected to "${state.store.sheetName}" \u2014 ${state.rows.length} rows loaded.`,
-        "ok",
-      );
+    if (state.store.kind === "supabase")
+      notice(`Connected to Supabase — ${state.rows.length} rows loaded.`, "ok");
     renderData();
   };
 
   $("#disconnect").onclick = async () => {
-    localStorage.removeItem(ENDPOINT_KEY);
+    localStorage.removeItem(SUPABASE_URL_KEY);
+    localStorage.removeItem(SUPABASE_KEY_KEY);
     state.store = await openStore(notice);
     await refresh();
     renderData();
@@ -3157,7 +3164,7 @@ function renderData() {
   $("#data-signout")?.addEventListener("click", signOut);
 
   $("#reload").onclick = async () => {
-    const done = await withBusy("Reloading from the sheet", async () => {
+    const done = await withBusy("Reloading from Supabase", async () => {
       state.store.cache = null;
       await refresh();
     });
@@ -3308,7 +3315,7 @@ document.querySelectorAll("#tabs button").forEach(
     }),
 );
 
-/** First run only, and only into browser storage. Seeding a live Google Sheet
+/** First run only, and only into browser storage. Seeding a live Supabase project
     behind your back would be the wrong default — do that from Data → Import. */
 async function seedIfEmpty() {
   if (isRemoteStore(state.store)) return;
@@ -3323,20 +3330,18 @@ async function seedIfEmpty() {
     await state.store.bulkAdd(rows);
     if (budget) await state.store.setBudget(budget, currentYear());
     notice(
-      `Loaded ${rows.length} rows from your Expense.xlsx into browser storage. Connect your Google Sheet under Data to make it the source of truth.`,
+      `Loaded ${rows.length} rows from your Expense.xlsx into browser storage. Connect Supabase under Data to make it the source of truth.`,
     );
   } catch {
     notice('No seed data loaded — add your first entry under "Add".');
   }
 }
 
-/* Staged, time-based messages for the boot-loading overlay - independent of
-   store.js's actual retry count, so this needs no wiring through several
-   layers to know "which attempt" is in flight. A cold sign-in can
-   legitimately take up to ~13 seconds (7 retries against a cold Apps Script
-   deployment, worst case), and a silent unlabeled spinner for that whole
-   window is indistinguishable from a frozen page to a real person watching
-   it - a direct report confirmed exactly that impression. */
+/* Staged, time-based messages for the boot-loading overlay. A cold sign-in
+   plus the first Supabase query can take a few seconds, and a silent
+   unlabeled spinner for that whole window is indistinguishable from a
+   frozen page to a real person watching it - a direct report confirmed
+   exactly that impression. */
 let _bootMsgTimers = [];
 function startBootMessages() {
   stopBootMessages();
@@ -3346,7 +3351,7 @@ function startBootMessages() {
     [0, ""],
     [1800, "Connecting\u2026"],
     [4500, "Still connecting \u2014 first sign-in can take a little longer"],
-    [8000, "Waking up the sheet \u2014 almost there"],
+    [8000, "Still working \u2014 almost there"],
   ];
   _bootMsgTimers = stages.map(([delay, text]) =>
     setTimeout(() => {
@@ -3370,27 +3375,24 @@ function revealApp() {
   if (header) header.style.visibility = "";
 }
 
-// "Connected to a real backend" - true for Sheets AND Supabase. Only
-// LocalStore/MemoryStore mean openStore() actually fell back; a resolved
-// Supabase connection is a success, not a degraded state, even though its
-// kind isn't "sheets".
-const isRemoteStore = (s) => s.kind === "sheets" || s.kind === "supabase";
+// "Connected to a real backend" - true only for Supabase now (the earlier
+// Sheets backend has been removed). LocalStore/MemoryStore mean openStore()
+// actually fell back; a resolved Supabase connection is a success, not a
+// degraded state.
+const isRemoteStore = (s) => s.kind === "supabase";
 
 // Shared across every "where is this actually being saved" message (Net
-// worth import/save, transactions import, the wipe confirmation) - these
-// used to hardcode "your Google Sheet" vs a generic "browser storage"
-// fallback with no Supabase case at all, which understated the blast radius
-// of a destructive action (the wipe confirmation would call it "browser
-// storage" while about to delete from a live Supabase database) and warned
-// "not connected" on a page that was, in fact, connected.
+// worth import/save, transactions import, the wipe confirmation) - naming
+// the backend explicitly (rather than a generic "connected"/"not connected")
+// matters most for a destructive action: the wipe confirmation needs to say
+// "your Supabase project" when it is about to delete from a live database,
+// not something vague enough to read as "browser storage" either way.
 const backendLabel = (s) =>
-  s.kind === "sheets"
-    ? "your Google Sheet"
-    : s.kind === "supabase"
-      ? "your Supabase project"
-      : s.kind === "memory"
-        ? "this session only (nothing will be saved after reload)"
-        : "this browser only";
+  s.kind === "supabase"
+    ? "your Supabase project"
+    : s.kind === "memory"
+      ? "this session only (nothing will be saved after reload)"
+      : "this browser only";
 
 async function boot() {
   startBootMessages();
@@ -3398,16 +3400,14 @@ async function boot() {
   await seedIfEmpty();
   await refresh();
   revealApp();
-  // A configured endpoint that still failed to connect (as opposed to no
-  // endpoint being saved at all, which is a normal, expected state) is the
-  // one case worth a real recovery action, not just informational text. The
-  // retry window in store.js now covers several seconds of genuine cold
-  // starts, but no window is infinite - when it does exhaust, the only
-  // previous recovery path was "go to Data, click Connect & test", which
-  // nothing on screen actually pointed you toward.
-  if (getEndpoint() && !isRemoteStore(state.store)) {
+  // A configured Supabase project that still failed to connect (as opposed
+  // to nothing being configured at all, which is a normal, expected state)
+  // is the one case worth a real recovery action, not just informational
+  // text - the only previous recovery path was "go to Data, click Connect &
+  // test", which nothing on screen actually pointed you toward.
+  if (getSupabaseUrl() && getSupabaseAnonKey() && !isRemoteStore(state.store)) {
     notice(
-      "Could not reach your Google Sheet just now \u2014 working from this browser\u2019s storage instead.",
+      "Could not reach Supabase just now \u2014 working from this browser\u2019s storage instead.",
       "bad",
       {
         label: "Retry connecting",
@@ -3415,14 +3415,14 @@ async function boot() {
           const done = await withBusy("Reconnecting", async () => {
             state.store = await openStore(notice);
             if (!isRemoteStore(state.store))
-              throw new Error("still could not reach the sheet");
+              throw new Error("still could not reach Supabase");
             await refresh();
             await state.store.ensureAllYearsLoaded?.(); // same reasoning as Connect & test: a rare, manual action, worth the accurate total
             state.rows = await state.store.list();
           });
           if (done) {
             notice(
-              `Connected to "${state.store.sheetName}" \u2014 ${state.rows.length} rows loaded.`,
+              `Connected to Supabase \u2014 ${state.rows.length} rows loaded.`,
               "ok",
             );
             (VIEWS[state.tab] || renderDashboard)();
@@ -3431,18 +3431,21 @@ async function boot() {
       },
     );
   }
-  // Tied to the ACTUAL current state - no sheet connected AND no local data
-  // either - not to a one-time "have you ever visited" flag. That flag lived
-  // in localStorage, which never expires: the very first page load after
-  // this feature shipped set it permanently, so it correctly fired once and
-  // then silently never fired again for that browser - including for
-  // someone who still has nothing connected and nothing recorded, which is
-  // exactly the case this was supposed to keep helping with. Checking real
-  // state instead means it naturally stops nagging the moment there is
-  // either a real sheet connection OR real local data worth not disrupting
-  // with a redirect - and keeps helping for as long as neither exists yet.
+  // Tied to the ACTUAL current state - no Supabase connection AND no local
+  // data either - not to a one-time "have you ever visited" flag. That flag
+  // lived in localStorage, which never expires: the very first page load
+  // after this feature shipped set it permanently, so it correctly fired
+  // once and then silently never fired again for that browser - including
+  // for someone who still has nothing connected and nothing recorded, which
+  // is exactly the case this was supposed to keep helping with. Checking
+  // real state instead means it naturally stops nagging the moment there is
+  // either a real Supabase connection OR real local data worth not
+  // disrupting with a redirect - and keeps helping for as long as neither
+  // exists yet.
   const firstRun =
-    !getEndpoint() && !isRemoteStore(state.store) && state.rows.length === 0;
+    !(getSupabaseUrl() && getSupabaseAnonKey()) &&
+    !isRemoteStore(state.store) &&
+    state.rows.length === 0;
   // Was: `(location.hash || '#dashboard').slice(1) in VIEWS ? location.hash.slice(1) : 'dashboard'`
   // - the '#dashboard' fallback was only used for the membership CHECK, then
   // the true branch re-read the original (still-empty) location.hash a
