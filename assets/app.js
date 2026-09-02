@@ -8,9 +8,6 @@ import {
   ACCOUNTS,
   MONTHS,
   currentYear,
-  SUPABASE_URL_KEY,
-  SUPABASE_KEY_KEY,
-  supabaseConfigSource,
   getSupabaseUrl,
   getSupabaseAnonKey,
   emptyBudget,
@@ -23,7 +20,6 @@ import {
   setIdToken,
   setNonce,
   NET_WORTH_ACCOUNTS,
-  SupabaseStore,
 } from "./store.js";
 import {
   aggregate,
@@ -3022,46 +3018,10 @@ function renderBalanceForm(copyFrom) {
 
 /* ====================================================================== DATA */
 function renderData() {
-  const src = supabaseConfigSource();
-  const url = localStorage.getItem(SUPABASE_URL_KEY) || "";
-  const anonKey = localStorage.getItem(SUPABASE_KEY_KEY) || "";
   const live = state.store.kind === "supabase";
-  const who = state.store.user?.email || "";
 
   view.innerHTML = `
   <div class="head"><div><h1>Data</h1><p class="sub">Where your data lives, and how to get it in and out.</p></div></div>
-
-  <div class="eyebrow">Supabase connection</div>
-  <div class="panel stack">
-    <p class="note" style="margin:0">Status: <b>${
-      live
-        ? "connected — reading and writing your Supabase project live" +
-          (who ? " as " + esc(who) : "")
-        : state.store.kind === "memory"
-          ? "session memory only, nothing is being saved"
-          : "not connected — changes stay in this browser"
-    }</b>.
-      Config source: <b>${src === "build" ? "GitHub secret, injected at deploy" : src === "runtime" ? "entered here, stored in this browser only" : "none"}</b>.
-      Access: <b>Google sign-in</b>, verified by Supabase Row Level Security against an allow-list — there is no separate token to manage here.</p>
-    <div class="stack" style="max-width:620px">
-      <label class="f"><span>Supabase project URL</span>
-        <input id="sb-url" placeholder="https://xxxxxxxx.supabase.co" value="${esc(url)}"></label>
-      <label class="f"><span>Supabase anon (public) key</span>
-        <input id="sb-key" placeholder="eyJhbG..." value="${esc(anonKey)}"></label>
-    </div>
-    <div class="actions">
-      <button class="btn" id="connect">Connect &amp; test</button>
-      <button class="btn ghost" id="disconnect">Disconnect</button>
-      <button class="btn ghost" id="reload" ${live ? "" : "disabled"}>Reload from Supabase</button>
-      ${getIdToken() ? '<button class="btn ghost" id="data-signout">Sign out</button>' : ""}
-    </div>
-    <p class="note"><b>The URL and anon key stay in this browser and are never published.</b> Values injected from
-    GitHub secrets end up in <code>assets/config.js</code>, which is served to every visitor of the site —
-    a secret in Actions keeps it out of the repo, not out of the page. Enter them here instead if you would
-    rather they never appear in the deployed site at all. Either way, access is enforced by Row Level Security
-    on the database (see <code>supabase/schema.sql</code>), not by keeping the anon key secret — it is
-    meant to be public.</p>
-  </div>
 
   <div class="eyebrow">Export</div>
   <div class="panel stack">
@@ -3108,71 +3068,6 @@ function renderData() {
     <button class="btn danger" id="wipe">Delete every row${live ? " from Supabase" : ""}</button>
     <span class="muted">Export first — this cannot be undone.</span>
   </div></div>`;
-
-  $("#connect").onclick = async () => {
-    const sbUrl = $("#sb-url").value.trim();
-    const sbKey = $("#sb-key").value.trim();
-    if (!/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(sbUrl)) {
-      return notice(
-        "That does not look like a Supabase project URL. Copy it from Project Settings → API — it should look like https://xxxxxxxx.supabase.co.",
-        "bad",
-      );
-    }
-    if (!sbKey) {
-      return notice("Enter the project's anon (public) key too.", "bad");
-    }
-    localStorage.setItem(SUPABASE_URL_KEY, sbUrl);
-    localStorage.setItem(SUPABASE_KEY_KEY, sbKey);
-    if (getClientId() && !getIdToken()) {
-      showGate();
-      return;
-    }
-    // Tests the values just entered directly via SupabaseStore, not through
-    // openStore() - openStore() reads getSupabaseUrl()/getSupabaseAnonKey()
-    // itself, but constructing the store directly here means a failure
-    // reports the SPECIFIC reason (and .auth set, for an expired/rejected
-    // sign-in) rather than a generic fallback notice.
-    await withBusy("Testing the connection", async () => {
-      const s = new SupabaseStore(sbUrl, sbKey);
-      const idToken = getIdToken();
-      if (idToken) await s.signInWithGoogleIdToken(idToken);
-      await s.ping();
-      state.store = s;
-      await refresh();
-      // This button is a one-time, manual "does this actually work" check,
-      // not a hot path - unlike normal boot, waiting the extra moment here
-      // for the real total is worth it. Without this, the confirmation would
-      // report only the current year's count (e.g. "24 rows loaded"), which
-      // reads as "Supabase only has 24 rows" rather than what it actually
-      // means: that many rows loaded SO FAR.
-      await state.store.ensureAllYearsLoaded?.();
-      state.rows = await state.store.list();
-    });
-    if (state.store.kind === "supabase")
-      notice(`Connected to Supabase — ${state.rows.length} rows loaded.`, "ok");
-    renderData();
-  };
-
-  $("#disconnect").onclick = async () => {
-    localStorage.removeItem(SUPABASE_URL_KEY);
-    localStorage.removeItem(SUPABASE_KEY_KEY);
-    state.store = await openStore(notice);
-    await refresh();
-    renderData();
-  };
-
-  $("#data-signout")?.addEventListener("click", signOut);
-
-  $("#reload").onclick = async () => {
-    const done = await withBusy("Reloading from Supabase", async () => {
-      state.store.cache = null;
-      await refresh();
-    });
-    if (done) {
-      renderData();
-      notice(`Reloaded ${state.rows.length} rows.`, "ok");
-    }
-  };
 
   view.querySelectorAll("[data-assign]").forEach(
     (b) =>
