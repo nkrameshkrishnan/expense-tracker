@@ -343,6 +343,18 @@ export function categoryByMonth(series, months, filterMonth = 0) {
           // library's default is tight enough that adjacent category labels
           // in a full-year, ~18-category diagram can visually run together.
           nodePadding: 14,
+          // Node labels sit right where flow ribbons converge, so on a busy
+          // multi-colour diagram (18 categories x 12 months) plain text
+          // reads as illegible noise against the ribbons behind it. A solid
+          // background chip behind each label keeps it readable regardless
+          // of what colour ribbon happens to pass underneath.
+          labels: {
+            backgroundColor: "rgba(255, 255, 255, 0.9)",
+            borderRadius: 3,
+            padding: 4,
+            color: INK,
+            font: { size: 11, weight: "600" },
+          },
         },
       ],
     },
