@@ -306,14 +306,16 @@ export function categoryByMonth(series, months, highlightMonth = 0) {
       if (s.data[i] > 0)
         flows.push({ from: months[i], to: s.category, flow: s.data[i] });
 
-  // Colour by month (the "from" side) so every flow leaving a given month
-  // reads as one colour, matching the "spotlight one month" idea from the
-  // bar-chart version this replaced: the highlighted month keeps its full
-  // colour, everything else fades to a flat grey - still legible, but the
-  // chosen month visually pops out of the diagram.
-  const monthColor = (m) =>
-    highlightMonth === 0 || m === months[highlightMonth - 1]
-      ? hashColor(m)
+  // Coloured by category (the "to" side) rather than month, so each
+  // category reads as one consistent colour everywhere it appears across
+  // the diagram - the same category is always the same colour whichever
+  // month it flowed from. Highlighting a month still works as an overlay:
+  // flows outside the chosen month fade to grey regardless of category, so
+  // you can spotlight one month's flows without losing the category colour
+  // coding on the ones that remain.
+  const flowColor = (cat, month) =>
+    highlightMonth === 0 || month === months[highlightMonth - 1]
+      ? hashColor(cat)
       : "hsl(0 0% 78%)";
 
   mount("c-cat-month", {
@@ -323,9 +325,11 @@ export function categoryByMonth(series, months, highlightMonth = 0) {
         {
           label: "Category spend by month",
           data: flows,
-          colorFrom: (c) => monthColor(c.dataset.data[c.dataIndex].from),
-          colorTo: (c) => monthColor(c.dataset.data[c.dataIndex].from),
-          colorMode: "from",
+          colorFrom: (c) =>
+            flowColor(c.dataset.data[c.dataIndex].to, c.dataset.data[c.dataIndex].from),
+          colorTo: (c) =>
+            flowColor(c.dataset.data[c.dataIndex].to, c.dataset.data[c.dataIndex].from),
+          colorMode: "to",
           alpha: 0.75,
           color: INK,
           font: { size: 10 },
