@@ -72,6 +72,7 @@ const state = {
   // year's shape is the more useful first thing to see; filtering down to
   // one month is something you opt into from the dropdown.
   catMonthHighlight: 0,
+  catMonthOrientation: "horizontal",
 };
 
 /* ------------------------------------------------------------ Google sign-in
@@ -575,7 +576,12 @@ function renderDashboard() {
   charts.paymentSplit(a.byPayment);
   charts.actualVsBudget(a.catRows);
   charts.topFive(a.top5);
-  charts.categoryByMonth(catSeries, MONTHS, state.catMonthHighlight);
+  charts.categoryByMonth(
+    catSeries,
+    MONTHS,
+    state.catMonthHighlight,
+    state.catMonthOrientation,
+  );
   if (a.dividends > 0) charts.dividendsTrend(a.series);
 }
 
@@ -603,7 +609,7 @@ function wireDashboard(showCompare) {
     renderDashboard();
   };
 
-  // "Category spend by month" panel's own year/highlight controls -
+  // "Category spend by month" panel's own year/filter/orientation controls -
   // deliberately separate state from #y-sel/#m-sel above, and re-renders
   // only this one chart rather than the whole dashboard.
   const refreshCategoryMonthChart = () => {
@@ -613,6 +619,7 @@ function wireDashboard(showCompare) {
       categorySeries(state.rows, state.catMonthYear),
       MONTHS,
       state.catMonthHighlight,
+      state.catMonthOrientation,
     );
   };
   $("#cm-y-sel").onchange = async (e) => {
@@ -627,6 +634,10 @@ function wireDashboard(showCompare) {
   };
   $("#cm-m-sel").onchange = (e) => {
     state.catMonthHighlight = Number(e.target.value);
+    refreshCategoryMonthChart();
+  };
+  $("#cm-o-sel").onchange = (e) => {
+    state.catMonthOrientation = e.target.value;
     refreshCategoryMonthChart();
   };
 
@@ -738,6 +749,10 @@ function buildDashboardShell(a, label, people, pSeries, showCompare) {
               (m, i) =>
                 `<option value="${i + 1}"${state.catMonthHighlight === i + 1 ? " selected" : ""}>${m}</option>`,
             ).join("")}
+          </select>
+          <select id="cm-o-sel" title="Orientation">
+            <option value="horizontal"${state.catMonthOrientation === "horizontal" ? " selected" : ""}>Horizontal</option>
+            <option value="vertical"${state.catMonthOrientation === "vertical" ? " selected" : ""}>Vertical</option>
           </select>
         </div>
       </div>

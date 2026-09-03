@@ -296,7 +296,7 @@ function hashColor(label) {
   return `hsl(${hue} 55% 45%)`;
 }
 
-export function categoryByMonth(series, months, filterMonth = 0) {
+export function categoryByMonth(series, months, filterMonth = 0, orientation = "horizontal") {
   // Sankey needs flat {from, to, flow} triples rather than the per-category
   // monthly-array shape the rest of the dashboard uses, and skips exact
   // zeros (a zero-flow link still draws as a visible sliver in this plugin).
@@ -315,15 +315,17 @@ export function categoryByMonth(series, months, filterMonth = 0) {
   // the same colour whichever month it flowed from.
   const flowColor = (cat) => hashColor(cat);
 
-  // Left-column nodes (months) default to being stacked by value, largest
-  // first - not calendar order. `priority` overrides that per node key;
-  // higher number sorts higher up, so Jan needs the highest priority and
-  // Dec the lowest to read top-to-bottom as Jan...Dec regardless of which
-  // month actually spent the most. Only month keys need an entry here -
-  // categories (the "to" column) are left on their default value-sorted
-  // order, which is the more useful ordering on that side.
+  // Left/top-column nodes (months) default to being stacked by value,
+  // largest first - not calendar order. `priority` overrides that per node
+  // key. Verified empirically (rendered both orientations and read the
+  // actual output) rather than trusting the docs: LOWER priority sorts
+  // earlier - toward the top in horizontal mode, toward the left in
+  // vertical mode - so Jan needs the lowest number and Dec the highest for
+  // Jan...Dec to read in the natural direction either way. Only month keys
+  // need an entry here - categories (the "to" side) are left on their
+  // default value-sorted order, which is the more useful ordering there.
   const monthPriority = {};
-  months.forEach((m, i) => (monthPriority[m] = months.length - 1 - i));
+  months.forEach((m, i) => (monthPriority[m] = i));
 
   mount("c-cat-month", {
     type: "sankey",
@@ -338,6 +340,7 @@ export function categoryByMonth(series, months, filterMonth = 0) {
           alpha: 0.75,
           color: INK,
           font: { size: 10 },
+          orientation: orientation === "vertical" ? "vertical" : "horizontal",
           priority: monthPriority,
           // Vertical gap between nodes stacked in the same column - the
           // library's default is tight enough that adjacent category labels
