@@ -62,7 +62,7 @@ const state = {
   balances: [],
   debts: [],
   filter: { q: "", cat: "", month: "", type: "" },
-  // The "Category spend by month" panel has its own year/highlight-month
+  // The "Category spend by month" panel has its own year/month-filter
   // controls, independent of the Dashboard's year/period selector above it -
   // so switching that to review, say, 2024 doesn't yank this chart off the
   // current year too. Defaults to the real current year/month, not whatever
@@ -729,8 +729,8 @@ function buildDashboardShell(a, label, people, pSeries, showCompare) {
               )
               .join("")}
           </select>
-          <select id="cm-m-sel" title="Highlight month">
-            <option value="0"${state.catMonthHighlight === 0 ? " selected" : ""}>No highlight</option>
+          <select id="cm-m-sel" title="Filter to month">
+            <option value="0"${state.catMonthHighlight === 0 ? " selected" : ""}>All months</option>
             ${MONTHS.map(
               (m, i) =>
                 `<option value="${i + 1}"${state.catMonthHighlight === i + 1 ? " selected" : ""}>${m}</option>`,

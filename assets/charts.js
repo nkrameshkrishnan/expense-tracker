@@ -296,27 +296,24 @@ function hashColor(label) {
   return `hsl(${hue} 55% 45%)`;
 }
 
-export function categoryByMonth(series, months, highlightMonth = 0) {
+export function categoryByMonth(series, months, filterMonth = 0) {
   // Sankey needs flat {from, to, flow} triples rather than the per-category
   // monthly-array shape the rest of the dashboard uses, and skips exact
   // zeros (a zero-flow link still draws as a visible sliver in this plugin).
+  // A month picked in the dropdown scopes the diagram down to just that
+  // month's flows entirely, rather than dimming the others - with a whole
+  // year's flows removed, what's left is one month feeding straight into
+  // its categories.
   const flows = [];
   for (const s of series)
     for (let i = 0; i < s.data.length; i++)
-      if (s.data[i] > 0)
+      if (s.data[i] > 0 && (filterMonth === 0 || i + 1 === filterMonth))
         flows.push({ from: months[i], to: s.category, flow: s.data[i] });
 
-  // Coloured by category (the "to" side) rather than month, so each
-  // category reads as one consistent colour everywhere it appears across
-  // the diagram - the same category is always the same colour whichever
-  // month it flowed from. Highlighting a month still works as an overlay:
-  // flows outside the chosen month fade to grey regardless of category, so
-  // you can spotlight one month's flows without losing the category colour
-  // coding on the ones that remain.
-  const flowColor = (cat, month) =>
-    highlightMonth === 0 || month === months[highlightMonth - 1]
-      ? hashColor(cat)
-      : "hsl(0 0% 78%)";
+  // Coloured by category (the "to" side), so each category reads as one
+  // consistent colour everywhere it appears - the same category is always
+  // the same colour whichever month it flowed from.
+  const flowColor = (cat) => hashColor(cat);
 
   mount("c-cat-month", {
     type: "sankey",
@@ -325,10 +322,8 @@ export function categoryByMonth(series, months, highlightMonth = 0) {
         {
           label: "Category spend by month",
           data: flows,
-          colorFrom: (c) =>
-            flowColor(c.dataset.data[c.dataIndex].to, c.dataset.data[c.dataIndex].from),
-          colorTo: (c) =>
-            flowColor(c.dataset.data[c.dataIndex].to, c.dataset.data[c.dataIndex].from),
+          colorFrom: (c) => flowColor(c.dataset.data[c.dataIndex].to),
+          colorTo: (c) => flowColor(c.dataset.data[c.dataIndex].to),
           colorMode: "to",
           alpha: 0.75,
           color: INK,
