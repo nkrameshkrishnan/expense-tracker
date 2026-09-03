@@ -2441,6 +2441,8 @@ function debtDialog(existing) {
       </select></label>
     <label class="f"><span>Principal amount *</span>
       <input type="number" name="amount" step="0.01" min="0.01" value="${d.amount ?? ""}" required placeholder="0.00"></label>
+    <label class="f"><span>Interest rate (% p.a., optional)</span>
+      <input type="number" name="interestRate" step="0.01" min="0" value="${d.interestRate ?? ""}" placeholder="e.g. 5.5"></label>
     <label class="f"><span>Whose *</span>
       <select name="owner">${PEOPLE.map((p) => `<option${(d.owner || "Ramesh") === p ? " selected" : ""}>${esc(p)}</option>`).join("")}</select></label>
     <label class="f"><span>Date opened *</span>
@@ -2468,6 +2470,8 @@ function debtDialog(existing) {
         "Principal must be greater than zero.");
     if (!f.counterparty.trim())
       return ($("#debt-err").textContent = "Who is this with?");
+    if (f.interestRate !== "" && Number(f.interestRate) < 0)
+      return ($("#debt-err").textContent = "Interest rate can't be negative.");
     const rec = {
       kind: "Debt",
       parentId: null,
@@ -2476,6 +2480,7 @@ function debtDialog(existing) {
       description: f.description,
       date: f.date,
       amount: Number(f.amount),
+      interestRate: f.interestRate === "" ? null : Number(f.interestRate),
       owner: f.owner,
       notes: "",
     };
@@ -2606,6 +2611,7 @@ function renderDebtSection(scopeOwner) {
           <span class="debt-name">${esc(d.counterparty)}</span>
           <span class="tag ${d.direction === "Owed" ? "tag-liab" : ""}">${d.direction === "Owed" ? "You owe" : "Owed to you"}</span>
           ${d.settled ? '<span class="tag debt-settled-tag">Settled</span>' : ""}
+          ${d.interestRate != null ? `<span class="tag">${d.interestRate}% p.a.</span>` : ""}
           ${d.owner ? `<span class="person-chip" data-p="${esc(d.owner)}">${esc(d.owner)}</span>` : ""}
           ${d.description ? `<div class="debt-desc">${esc(d.description)}</div>` : ""}
         </div>
