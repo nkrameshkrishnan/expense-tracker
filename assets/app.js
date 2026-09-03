@@ -31,6 +31,7 @@ import {
   byPersonFilter,
   personBreakdown,
   personSeries,
+  categorySeries,
 } from "./xlsxio.js";
 import * as charts from "./charts.js";
 
@@ -531,6 +532,7 @@ function renderDashboard() {
   // even while the rest of the page is filtered to one person.
   const people = personBreakdown(state.rows, state.month, state.year);
   const pSeries = personSeries(state.rows, state.year);
+  const catSeries = categorySeries(state.rows, state.year);
   const showCompare = people.length > 1;
   const shape = dashboardShape(a, showCompare);
 
@@ -563,6 +565,7 @@ function renderDashboard() {
   charts.paymentSplit(a.byPayment);
   charts.actualVsBudget(a.catRows);
   charts.topFive(a.top5);
+  charts.categoryByMonth(catSeries, MONTHS);
   if (a.dividends > 0) charts.dividendsTrend(a.series);
 }
 
@@ -679,6 +682,7 @@ function buildDashboardShell(a, label, people, pSeries, showCompare) {
       ${a.unattributed > 0 ? `<p class="note" id="dash-unattr-note">${money(a.unattributed)} has no payment method set, so it is excluded here.</p>` : ""}</div>
     <div class="panel"><h3>Actual vs budget by category &mdash; <span id="dash-cat-label">${esc(label)}</span></h3><div class="chartbox tall"><canvas id="c-cat"></canvas></div></div>
     <div class="panel"><h3>Top 5 spend categories &mdash; <span id="dash-top-label">${esc(label)}</span></h3><div class="chartbox tall"><canvas id="c-top"></canvas></div></div>
+    <div class="panel wide"><h3>Category spend by month &mdash; <span id="dash-catmonth-label">${state.year}</span></h3><div class="chartbox tall"><canvas id="c-cat-month"></canvas></div></div>
   </div>
 
   <div class="eyebrow">Category detail &mdash; <span id="dash-catdetail-label">${esc(label)}</span></div>
@@ -767,6 +771,8 @@ function updateDashboardValues(a, label, people, pSeries, showCompare) {
   });
   const catTb = $("#catdetail-tbody");
   if (catTb) catTb.innerHTML = catDetailRows(a);
+  const cm = $("#dash-catmonth-label");
+  if (cm) cm.textContent = state.year;
 }
 
 function overBudgetRows(a) {

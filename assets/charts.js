@@ -284,6 +284,52 @@ export function personByMonth(series, months) {
   });
 }
 
+/** Deterministic colour per category label, so the same category always
+    gets the same colour across renders/panels without charts.js needing to
+    import the fixed category list from store.js - it just hashes whatever
+    label string it's handed. */
+function hashColor(label) {
+  let h = 0;
+  for (let i = 0; i < label.length; i++)
+    h = (h * 31 + label.charCodeAt(i)) >>> 0;
+  const hue = h % 360;
+  return `hsl(${hue} 55% 45%)`;
+}
+
+export function categoryByMonth(series, months) {
+  mount("c-cat-month", {
+    type: "bar",
+    data: {
+      labels: months,
+      datasets: series.map((s) => ({
+        label: s.category,
+        data: s.data,
+        backgroundColor: hashColor(s.category),
+      })),
+    },
+    options: {
+      maintainAspectRatio: false,
+      responsive: true,
+      plugins: {
+        legend: {
+          position: "bottom",
+          labels: { boxWidth: 10, boxHeight: 10, padding: 8, font: { size: 9 } },
+        },
+        tooltip: {
+          callbacks: {
+            footer: (items) =>
+              "Total: " + money0(items.reduce((a, it) => a + it.parsed.y, 0)),
+          },
+        },
+      },
+      scales: {
+        x: { ...gridX, stacked: true },
+        y: { ...gridY, stacked: true },
+      },
+    },
+  });
+}
+
 export function personVsBudget(rows) {
   mount("c-person-cat", {
     type: "bar",

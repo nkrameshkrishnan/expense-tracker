@@ -107,6 +107,29 @@ export function personSeries(rows, year = currentYear()) {
     .filter((s) => s.data.some((v) => v > 0));
 }
 
+/** Monthly expense series split by category — feeds the "category spend by
+    month" chart. Same shape/filtering convention as personSeries above:
+    one row per category, twelve monthly totals, categories with nothing
+    spent all year dropped so the stacked chart/legend isn't cluttered with
+    empty entries. */
+export function categorySeries(rows, year = currentYear()) {
+  return EXPENSE_CATS.map((c) => ({
+    category: c,
+    data: MONTHS.map((_, i) => {
+      const m = i + 1;
+      return rows
+        .filter(
+          (r) =>
+            Number(String(r.date).slice(0, 4)) === year &&
+            monthOf(r) === m &&
+            r.type === "Expense" &&
+            r.category === c,
+        )
+        .reduce((a, r) => a + r.amount, 0);
+    }),
+  })).filter((s) => s.data.some((v) => v > 0));
+}
+
 /** All dashboard numbers come from here. month = 0 means the whole year. */
 export function aggregate(rows, budget, month, year = currentYear()) {
   const inScope = rows.filter(
