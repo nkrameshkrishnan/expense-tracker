@@ -821,7 +821,7 @@ class LocalStore {
     let id = Math.max(0, ...all.map((d) => Number(d.id) || 0)) + 1;
     const fileToReal = {};
     for (const r of records)
-      if (r.kind !== "Payment") {
+      if (r.kind === "Debt") {
         fileToReal[String(r.fileRef)] = id++;
       }
     const rows = [];
@@ -830,7 +830,7 @@ class LocalStore {
       skipped = 0;
     id = Math.max(0, ...all.map((d) => Number(d.id) || 0)) + 1;
     for (const r of records) {
-      if (r.kind !== "Payment") {
+      if (r.kind === "Debt") {
         rows.push({ ...r, id, parentId: null });
         id++;
         nD++;
@@ -954,7 +954,7 @@ class MemoryStore {
     let id = Math.max(0, ...this.debts.map((d) => Number(d.id) || 0)) + 1;
     const fileToReal = {};
     for (const r of records)
-      if (r.kind !== "Payment") {
+      if (r.kind === "Debt") {
         fileToReal[String(r.fileRef)] = id++;
       }
     const rows = [];
@@ -963,7 +963,7 @@ class MemoryStore {
       skipped = 0;
     id = Math.max(0, ...this.debts.map((d) => Number(d.id) || 0)) + 1;
     for (const r of records) {
-      if (r.kind !== "Payment") {
+      if (r.kind === "Debt") {
         rows.push({ ...r, id, parentId: null });
         id++;
         nD++;
