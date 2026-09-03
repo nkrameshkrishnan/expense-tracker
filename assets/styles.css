@@ -320,6 +320,25 @@ label.f > textarea {
   color: var(--ink-2);
   font-weight: 700;
 }
+.panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.panel-head h3 {
+  margin: 0 0 12px;
+}
+.panel-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.panel-controls select {
+  font-size: 11px;
+  padding: 4px 6px;
+}
 .chartbox {
   position: relative;
   height: 260px;

@@ -287,16 +287,18 @@ export function personByMonth(series, months) {
 /** Deterministic colour per category label, so the same category always
     gets the same colour across renders/panels without charts.js needing to
     import the fixed category list from store.js - it just hashes whatever
-    label string it's handed. */
-function hashColor(label) {
+    label string it's handed. alpha lets callers dim specific data points
+    (e.g. every month except a highlighted one) without picking a second,
+    unrelated colour. */
+function hashColor(label, alpha = 1) {
   let h = 0;
   for (let i = 0; i < label.length; i++)
     h = (h * 31 + label.charCodeAt(i)) >>> 0;
   const hue = h % 360;
-  return `hsl(${hue} 55% 45%)`;
+  return `hsl(${hue} 55% 45% / ${alpha})`;
 }
 
-export function categoryByMonth(series, months) {
+export function categoryByMonth(series, months, highlightMonth = 0) {
   mount("c-cat-month", {
     type: "bar",
     data: {
@@ -304,7 +306,12 @@ export function categoryByMonth(series, months) {
       datasets: series.map((s) => ({
         label: s.category,
         data: s.data,
-        backgroundColor: hashColor(s.category),
+        // With a month picked to highlight, every other month is dimmed
+        // per data point (not per dataset) so the stacked totals for every
+        // month stay visible for context, but the chosen month still pops.
+        backgroundColor: s.data.map((_, i) =>
+          hashColor(s.category, highlightMonth === 0 || i + 1 === highlightMonth ? 1 : 0.25),
+        ),
       })),
     },
     options: {
@@ -323,7 +330,16 @@ export function categoryByMonth(series, months) {
         },
       },
       scales: {
-        x: { ...gridX, stacked: true },
+        x: {
+          ...gridX,
+          stacked: true,
+          ticks: {
+            color: (ctx) =>
+              highlightMonth && ctx.index + 1 === highlightMonth
+                ? INK
+                : INK3,
+          },
+        },
         y: { ...gridY, stacked: true },
       },
     },

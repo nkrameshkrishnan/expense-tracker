@@ -62,6 +62,13 @@ const state = {
   balances: [],
   debts: [],
   filter: { q: "", cat: "", month: "", type: "" },
+  // The "Category spend by month" panel has its own year/highlight-month
+  // controls, independent of the Dashboard's year/period selector above it -
+  // so switching that to review, say, 2024 doesn't yank this chart off the
+  // current year too. Defaults to the real current year/month, not whatever
+  // state.year/state.month happen to be set to.
+  catMonthYear: currentYear(),
+  catMonthHighlight: new Date().getMonth() + 1,
 };
 
 /* ------------------------------------------------------------ Google sign-in
@@ -532,7 +539,7 @@ function renderDashboard() {
   // even while the rest of the page is filtered to one person.
   const people = personBreakdown(state.rows, state.month, state.year);
   const pSeries = personSeries(state.rows, state.year);
-  const catSeries = categorySeries(state.rows, state.year);
+  const catSeries = categorySeries(state.rows, state.catMonthYear);
   const showCompare = people.length > 1;
   const shape = dashboardShape(a, showCompare);
 
@@ -565,7 +572,7 @@ function renderDashboard() {
   charts.paymentSplit(a.byPayment);
   charts.actualVsBudget(a.catRows);
   charts.topFive(a.top5);
-  charts.categoryByMonth(catSeries, MONTHS);
+  charts.categoryByMonth(catSeries, MONTHS, state.catMonthHighlight);
   if (a.dividends > 0) charts.dividendsTrend(a.series);
 }
 
@@ -592,6 +599,34 @@ function wireDashboard(showCompare) {
     state.budget = await state.store.getBudget(state.year);
     renderDashboard();
   };
+
+  // "Category spend by month" panel's own year/highlight controls -
+  // deliberately separate state from #y-sel/#m-sel above, and re-renders
+  // only this one chart rather than the whole dashboard.
+  const refreshCategoryMonthChart = () => {
+    const label = $("#dash-catmonth-label");
+    if (label) label.textContent = state.catMonthYear;
+    charts.categoryByMonth(
+      categorySeries(state.rows, state.catMonthYear),
+      MONTHS,
+      state.catMonthHighlight,
+    );
+  };
+  $("#cm-y-sel").onchange = async (e) => {
+    state.catMonthYear = Number(e.target.value);
+    // state.rows only holds years fetched so far (boot loads the current
+    // year first, others lazily in the background) - same guard as #y-sel,
+    // otherwise picking a not-yet-loaded year would silently draw an
+    // all-zero chart instead of that year's real data.
+    await state.store.ensureYearLoaded?.(state.catMonthYear);
+    state.rows = await state.store.list();
+    refreshCategoryMonthChart();
+  };
+  $("#cm-m-sel").onchange = (e) => {
+    state.catMonthHighlight = Number(e.target.value);
+    refreshCategoryMonthChart();
+  };
+
   view.querySelectorAll("[data-jump]").forEach(
     (el) =>
       (el.onclick = () => {
@@ -682,7 +717,29 @@ function buildDashboardShell(a, label, people, pSeries, showCompare) {
       ${a.unattributed > 0 ? `<p class="note" id="dash-unattr-note">${money(a.unattributed)} has no payment method set, so it is excluded here.</p>` : ""}</div>
     <div class="panel"><h3>Actual vs budget by category &mdash; <span id="dash-cat-label">${esc(label)}</span></h3><div class="chartbox tall"><canvas id="c-cat"></canvas></div></div>
     <div class="panel"><h3>Top 5 spend categories &mdash; <span id="dash-top-label">${esc(label)}</span></h3><div class="chartbox tall"><canvas id="c-top"></canvas></div></div>
-    <div class="panel wide"><h3>Category spend by month &mdash; <span id="dash-catmonth-label">${state.year}</span></h3><div class="chartbox tall"><canvas id="c-cat-month"></canvas></div></div>
+    <div class="panel wide">
+      <div class="panel-head">
+        <h3>Category spend by month &mdash; <span id="dash-catmonth-label">${state.catMonthYear}</span></h3>
+        <div class="panel-controls">
+          <select id="cm-y-sel" title="Year">
+            ${availableYears()
+              .map(
+                (y) =>
+                  `<option value="${y}"${y === state.catMonthYear ? " selected" : ""}>${y}</option>`,
+              )
+              .join("")}
+          </select>
+          <select id="cm-m-sel" title="Highlight month">
+            <option value="0"${state.catMonthHighlight === 0 ? " selected" : ""}>No highlight</option>
+            ${MONTHS.map(
+              (m, i) =>
+                `<option value="${i + 1}"${state.catMonthHighlight === i + 1 ? " selected" : ""}>${m}</option>`,
+            ).join("")}
+          </select>
+        </div>
+      </div>
+      <div class="chartbox tall"><canvas id="c-cat-month"></canvas></div>
+    </div>
   </div>
 
   <div class="eyebrow">Category detail &mdash; <span id="dash-catdetail-label">${esc(label)}</span></div>
@@ -772,7 +829,7 @@ function updateDashboardValues(a, label, people, pSeries, showCompare) {
   const catTb = $("#catdetail-tbody");
   if (catTb) catTb.innerHTML = catDetailRows(a);
   const cm = $("#dash-catmonth-label");
-  if (cm) cm.textContent = state.year;
+  if (cm) cm.textContent = state.catMonthYear;
 }
 
 function overBudgetRows(a) {
