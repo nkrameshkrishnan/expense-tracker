@@ -346,6 +346,12 @@ label.f > textarea {
 .chartbox.tall {
   height: 420px;
 }
+.chartbox.sankey {
+  /* A full year x every expense category is a lot of nodes on the right
+     side - noticeably taller than the other "tall" charts keeps node
+     labels from overlapping. */
+  height: 640px;
+}
 
 /* ---------- ledger table ---------- */
 table {

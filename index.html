@@ -9,14 +9,15 @@
      inline style="" attributes (budget bar widths etc) directly; script-src
      does not, which is the directive that actually matters for XSS. It must
      list every CDN a <script> is ever injected from - cdn.jsdelivr.net for
-     Chart.js and the Supabase SDK, cdn.sheetjs.com for the xlsx import/export
-     library - or the browser silently blocks the injected <script> tag itself;
-     that block fires the same onerror handler as a real network failure, so it
-     surfaced as "Could not load the spreadsheet library. Check your connection
-     and try again." even with a perfectly good connection. connect-src covers
-     Supabase - wildcarded to *.supabase.co since the project subdomain is
-     chosen per-deployment, not fixed at build time - plus Google's
-     sign-in/token endpoints. frame-ancestors is not supported in a <meta> CSP
+     Chart.js, the chartjs-chart-sankey plugin, and the Supabase SDK,
+     cdn.sheetjs.com for the xlsx import/export library - or the browser
+     silently blocks the injected <script> tag itself; that block fires the
+     same onerror handler as a real network failure, so it surfaced as "Could
+     not load the spreadsheet library. Check your connection and try again."
+     even with a perfectly good connection. connect-src covers Supabase -
+     wildcarded to *.supabase.co since the project subdomain is chosen
+     per-deployment, not fixed at build time - plus Google's sign-in/token
+     endpoints. frame-ancestors is not supported in a <meta> CSP
      (HTTP-header-only per spec) so it is omitted rather than silently
      ignored-and-assumed-active. -->
     <meta
@@ -42,6 +43,14 @@
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script
       src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"
+      defer
+    ></script>
+    <!-- Sankey chart type for the "Category spend by month" panel. Must load
+     after Chart.js (both are classic `defer` scripts, which run in document
+     order), since its browser bundle registers itself onto the global
+     Chart object rather than being its own standalone library. -->
+    <script
+      src="https://cdn.jsdelivr.net/npm/chartjs-chart-sankey@0.15.0/dist/chartjs-chart-sankey.min.js"
       defer
     ></script>
     <!-- SheetJS (930KB, ~5x this app's own code) is no longer loaded here. It is

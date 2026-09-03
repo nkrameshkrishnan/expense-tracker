@@ -738,7 +738,7 @@ function buildDashboardShell(a, label, people, pSeries, showCompare) {
           </select>
         </div>
       </div>
-      <div class="chartbox tall"><canvas id="c-cat-month"></canvas></div>
+      <div class="chartbox sankey"><canvas id="c-cat-month"></canvas></div>
     </div>
   </div>
 

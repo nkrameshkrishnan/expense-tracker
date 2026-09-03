@@ -284,63 +284,65 @@ export function personByMonth(series, months) {
   });
 }
 
-/** Deterministic colour per category label, so the same category always
-    gets the same colour across renders/panels without charts.js needing to
-    import the fixed category list from store.js - it just hashes whatever
-    label string it's handed. alpha lets callers dim specific data points
-    (e.g. every month except a highlighted one) without picking a second,
-    unrelated colour. */
-function hashColor(label, alpha = 1) {
+/** Deterministic colour per label (month or category name), so the same
+    label always gets the same colour across renders/panels without
+    charts.js needing to import the fixed category/month lists from
+    store.js - it just hashes whatever string it's handed. */
+function hashColor(label) {
   let h = 0;
   for (let i = 0; i < label.length; i++)
     h = (h * 31 + label.charCodeAt(i)) >>> 0;
   const hue = h % 360;
-  return `hsl(${hue} 55% 45% / ${alpha})`;
+  return `hsl(${hue} 55% 45%)`;
 }
 
 export function categoryByMonth(series, months, highlightMonth = 0) {
+  // Sankey needs flat {from, to, flow} triples rather than the per-category
+  // monthly-array shape the rest of the dashboard uses, and skips exact
+  // zeros (a zero-flow link still draws as a visible sliver in this plugin).
+  const flows = [];
+  for (const s of series)
+    for (let i = 0; i < s.data.length; i++)
+      if (s.data[i] > 0)
+        flows.push({ from: months[i], to: s.category, flow: s.data[i] });
+
+  // Colour by month (the "from" side) so every flow leaving a given month
+  // reads as one colour, matching the "spotlight one month" idea from the
+  // bar-chart version this replaced: the highlighted month keeps its full
+  // colour, everything else fades to a flat grey - still legible, but the
+  // chosen month visually pops out of the diagram.
+  const monthColor = (m) =>
+    highlightMonth === 0 || m === months[highlightMonth - 1]
+      ? hashColor(m)
+      : "hsl(0 0% 78%)";
+
   mount("c-cat-month", {
-    type: "bar",
+    type: "sankey",
     data: {
-      labels: months,
-      datasets: series.map((s) => ({
-        label: s.category,
-        data: s.data,
-        // With a month picked to highlight, every other month is dimmed
-        // per data point (not per dataset) so the stacked totals for every
-        // month stay visible for context, but the chosen month still pops.
-        backgroundColor: s.data.map((_, i) =>
-          hashColor(s.category, highlightMonth === 0 || i + 1 === highlightMonth ? 1 : 0.25),
-        ),
-      })),
+      datasets: [
+        {
+          label: "Category spend by month",
+          data: flows,
+          colorFrom: (c) => monthColor(c.dataset.data[c.dataIndex].from),
+          colorTo: (c) => monthColor(c.dataset.data[c.dataIndex].from),
+          colorMode: "from",
+          alpha: 0.75,
+          color: INK,
+          font: { size: 10 },
+        },
+      ],
     },
     options: {
       maintainAspectRatio: false,
       responsive: true,
       plugins: {
-        legend: {
-          position: "bottom",
-          labels: { boxWidth: 10, boxHeight: 10, padding: 8, font: { size: 9 } },
-        },
+        legend: { display: false },
         tooltip: {
           callbacks: {
-            footer: (items) =>
-              "Total: " + money0(items.reduce((a, it) => a + it.parsed.y, 0)),
+            label: (item) =>
+              `${item.raw.from} \u2192 ${item.raw.to}: ${money0(item.raw.flow)}`,
           },
         },
-      },
-      scales: {
-        x: {
-          ...gridX,
-          stacked: true,
-          ticks: {
-            color: (ctx) =>
-              highlightMonth && ctx.index + 1 === highlightMonth
-                ? INK
-                : INK3,
-          },
-        },
-        y: { ...gridY, stacked: true },
       },
     },
   });
