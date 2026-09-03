@@ -1907,19 +1907,34 @@ function isCustomNwAccount(account) {
    here (a balance-sheet position changed). Counting it as an expense in
    Transactions would be the actual error - lending money is not spending it. */
 function debtSummary(debts) {
-  const agreements = debts.filter((d) => d.kind !== "Payment");
+  // Only a "Debt" row is its own agreement/card. "Payment" and "Receipt" rows
+  // are both children (via parentId) of an agreement, never cards on their own.
+  const agreements = debts.filter((d) => d.kind === "Debt");
   return agreements.map((a) => {
     const payments = debts
       .filter(
         (d) => d.kind === "Payment" && Number(d.parentId) === Number(a.id),
       )
       .sort((x, y) => (x.date < y.date ? 1 : -1));
+    // Receipts are itemized top-ups to the principal - money actually
+    // received/lent in stages instead of (or in addition to) the single
+    // amount on the agreement row itself. principal = agreement.amount +
+    // sum(receipts), so recording the full history as receipts and leaving
+    // the agreement's own amount at 0 works the same as one lump sum.
+    const receipts = debts
+      .filter(
+        (d) => d.kind === "Receipt" && Number(d.parentId) === Number(a.id),
+      )
+      .sort((x, y) => (x.date < y.date ? 1 : -1));
+    const received = receipts.reduce((s, r) => s + Number(r.amount || 0), 0);
     const paid = payments.reduce((s, p) => s + Number(p.amount || 0), 0);
-    const principal = Number(a.amount || 0);
+    const principal = Number(a.amount || 0) + received;
     const outstanding = Math.max(0, principal - paid);
     return {
       ...a,
       payments,
+      receipts,
+      received,
       paid,
       principal,
       outstanding,
@@ -2381,6 +2396,26 @@ function wireDebtHandlers() {
         }
       }),
   );
+
+  view.querySelectorAll("[data-delreceipt]").forEach(
+    (b) =>
+      (b.onclick = async () => {
+        if (
+          !confirm(
+            "Delete this item? The principal and outstanding balance will go down.",
+          )
+        )
+          return;
+        if (
+          await withBusy("Deleting item", async () => {
+            await state.store.deleteDebt(Number(b.dataset.delreceipt));
+          })
+        ) {
+          await reload();
+          notice("Item removed.", "ok");
+        }
+      }),
+  );
 }
 
 function debtDialog(existing) {
@@ -2607,6 +2642,26 @@ function renderDebtSection(scopeOwner) {
           ? `<div class="debt-warn">Transactions mentioning &ldquo;${esc(d.counterparty)}&rdquo;
         total ${money(relTotal)}, but ${money(d.paid)} is recorded here.
         ${relTotal > d.paid ? "Some cash movement has no matching payment." : "Some payments have no matching transaction."}</div>`
+          : ""
+      }
+
+      ${
+        d.receipts.length
+          ? `<details class="debt-history">
+        <summary>How this debt built up (${money(d.received)} in ${d.receipts.length} item${d.receipts.length === 1 ? "" : "s"})</summary>
+        <table class="debt-table"><tbody>
+          ${d.receipts
+            .map(
+              (r) => `<tr>
+            <td class="num">${esc(r.date)}</td>
+            <td>${esc(r.description) || '<span class="muted">\u2014</span>'}</td>
+            <td class="n num">${money(r.amount)}</td>
+            <td><button class="rowbtn" data-delreceipt="${r.id}" title="Delete this item">\u2715</button></td>
+          </tr>`,
+            )
+            .join("")}
+        </tbody></table>
+      </details>`
           : ""
       }
 
