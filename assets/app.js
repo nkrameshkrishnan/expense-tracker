@@ -68,7 +68,10 @@ const state = {
   // current year too. Defaults to the real current year/month, not whatever
   // state.year/state.month happen to be set to.
   catMonthYear: currentYear(),
-  catMonthHighlight: new Date().getMonth() + 1,
+  // Defaults to "All months" (0), not the current calendar month - a full
+  // year's shape is the more useful first thing to see; filtering down to
+  // one month is something you opt into from the dropdown.
+  catMonthHighlight: 0,
 };
 
 /* ------------------------------------------------------------ Google sign-in

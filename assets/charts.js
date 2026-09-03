@@ -315,6 +315,16 @@ export function categoryByMonth(series, months, filterMonth = 0) {
   // the same colour whichever month it flowed from.
   const flowColor = (cat) => hashColor(cat);
 
+  // Left-column nodes (months) default to being stacked by value, largest
+  // first - not calendar order. `priority` overrides that per node key;
+  // higher number sorts higher up, so Jan needs the highest priority and
+  // Dec the lowest to read top-to-bottom as Jan...Dec regardless of which
+  // month actually spent the most. Only month keys need an entry here -
+  // categories (the "to" column) are left on their default value-sorted
+  // order, which is the more useful ordering on that side.
+  const monthPriority = {};
+  months.forEach((m, i) => (monthPriority[m] = months.length - 1 - i));
+
   mount("c-cat-month", {
     type: "sankey",
     data: {
@@ -328,6 +338,11 @@ export function categoryByMonth(series, months, filterMonth = 0) {
           alpha: 0.75,
           color: INK,
           font: { size: 10 },
+          priority: monthPriority,
+          // Vertical gap between nodes stacked in the same column - the
+          // library's default is tight enough that adjacent category labels
+          // in a full-year, ~18-category diagram can visually run together.
+          nodePadding: 14,
         },
       ],
     },
