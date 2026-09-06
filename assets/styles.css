@@ -243,16 +243,30 @@ label.f > textarea {
 /* ---------- KPI strip ---------- */
 .kpis {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  /* 4 columns x 2 rows for the 8 dashboard KPIs (was 6, which left an
+     awkward half-empty second row once Avg/week and Avg/month were added -
+     4 divides 8 evenly with no dead trailing cells). The other .kpis usage
+     (Budget page, 4 items) already matched this via an inline override;
+     this just makes it the shared default instead of a one-off. */
+  grid-template-columns: repeat(4, 1fr);
   border: 1px solid var(--rule-2);
   background: #fff;
 }
 .kpi {
   padding: 13px 14px;
   border-right: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
 }
-.kpi:last-child {
+/* Right border only makes sense on non-rightmost columns; :last-child alone
+   missed every row-end except the true final card once there was more than
+   one row. :nth-child(4n) catches the rightmost card in every row instead. */
+.kpi:nth-child(4n) {
   border-right: 0;
+}
+/* Bottom border separates rows, but the actual last row (whichever position
+   it lands in) shouldn't have a trailing border against the panel edge. */
+.kpi:nth-last-child(-n + 4) {
+  border-bottom: 0;
 }
 .kpi .k {
   font-size: 10.5px;
@@ -281,10 +295,19 @@ label.f > textarea {
 }
 @media (max-width: 1100px) {
   .kpis {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
   }
-  .kpi {
+  .kpi:nth-child(4n) {
+    border-right: 1px solid var(--rule);
+  }
+  .kpi:nth-child(2n) {
+    border-right: 0;
+  }
+  .kpi:nth-last-child(-n + 4) {
     border-bottom: 1px solid var(--rule);
+  }
+  .kpi:nth-last-child(-n + 2) {
+    border-bottom: 0;
   }
 }
 @media (max-width: 620px) {
