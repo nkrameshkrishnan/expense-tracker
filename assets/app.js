@@ -2505,6 +2505,15 @@ function debtDialog(existing) {
   const known = [
     ...new Set((state.debts || []).map((x) => x.counterparty).filter(Boolean)),
   ];
+  const DEBT_TYPES = [
+    "Family",
+    "Auto Loan",
+    "Mortgage",
+    "Personal Loan",
+    "Credit Card",
+    "Student Loan",
+    "Other",
+  ];
   view.innerHTML = `
   <div class="head">
     <div><h1>${existing ? "Edit" : "Add"} debt or loan</h1>
@@ -2520,6 +2529,14 @@ function debtDialog(existing) {
         <option value="Lent"${d.direction === "Lent" ? " selected" : ""}>They owe me (I lent money)</option>
         <option value="Owed"${d.direction === "Owed" ? " selected" : ""}>I owe them</option>
       </select></label>
+    <label class="f"><span>Type</span>
+      <select name="debtType">
+        <option value=""${!d.debtType ? " selected" : ""}>&mdash; Not set &mdash;</option>
+        ${DEBT_TYPES.map(
+          (t) =>
+            `<option value="${t}"${d.debtType === t ? " selected" : ""}>${t}</option>`,
+        ).join("")}
+      </select></label>
     <label class="f"><span>Principal amount *</span>
       <input type="number" name="amount" step="0.01" min="0.01" value="${d.amount ?? ""}" required placeholder="0.00"></label>
     <label class="f"><span>Interest rate (% p.a., optional)</span>
@@ -2532,6 +2549,12 @@ function debtDialog(existing) {
       <input name="description" value="${esc(d.description || "")}" placeholder="What was it for?"></label>
     <div class="full">
       <div class="err" id="debt-err"></div>
+      ${
+        existing
+          ? ""
+          : `<p class="note" id="debt-merge-note" style="display:none">A <b>Family</b> debt (or one at <b>0% interest</b>) merges into your existing Family debt as an itemized entry under "How this debt built up" instead of starting a new card - uncheck below to add it as its own card anyway.
+              <label style="display:block;margin-top:6px"><input type="checkbox" id="debt-merge-toggle" checked> Add as an item under the existing Family debt</label></p>`
+      }
       <div class="actions">
         <button class="btn" type="submit">${existing ? "Save changes" : "Add"}</button>
         <button class="btn ghost" type="button" id="debt-cancel">Cancel</button>
@@ -2543,6 +2566,28 @@ function debtDialog(existing) {
 
   $("#debt-back").onclick = () => renderNetWorth();
   $("#debt-cancel").onclick = () => renderNetWorth();
+
+  // Existing "Family" agreement (if any) to potentially merge new entries
+  // into. Only meaningful when adding fresh - editing an existing row never
+  // re-routes it elsewhere.
+  const familyAgreement = existing
+    ? null
+    : debtSummary(state.debts || []).find((a) => a.debtType === "Family");
+
+  const updateMergeNote = () => {
+    const toggle = $("#debt-merge-toggle");
+    if (!toggle) return;
+    const f = Object.fromEntries(new FormData($("#debt-form")));
+    const wouldMerge =
+      familyAgreement &&
+      (f.debtType === "Family" || Number(f.interestRate) === 0);
+    $("#debt-merge-note").style.display = wouldMerge ? "block" : "none";
+  };
+  if (!existing) {
+    $("#debt-form").addEventListener("input", updateMergeNote);
+    updateMergeNote();
+  }
+
   $("#debt-form").onsubmit = async (ev) => {
     ev.preventDefault();
     const f = Object.fromEntries(new FormData(ev.target));
@@ -2553,25 +2598,57 @@ function debtDialog(existing) {
       return ($("#debt-err").textContent = "Who is this with?");
     if (f.interestRate !== "" && Number(f.interestRate) < 0)
       return ($("#debt-err").textContent = "Interest rate can't be negative.");
-    const rec = {
-      kind: "Debt",
-      parentId: null,
-      counterparty: f.counterparty.trim(),
-      direction: f.direction,
-      description: f.description,
-      date: f.date,
-      amount: Number(f.amount),
-      interestRate: f.interestRate === "" ? null : Number(f.interestRate),
-      owner: f.owner,
-      notes: "",
-    };
+
+    // Family debts (and anything explicitly 0% interest, which is how
+    // informal family-style loans tend to be recorded) fold into the
+    // existing Family agreement as an itemized "Receipt" rather than
+    // spawning a new top-level card, as long as the merge checkbox is
+    // still ticked and there's an existing Family debt to fold into.
+    const wantsMerge =
+      !existing &&
+      familyAgreement &&
+      (f.debtType === "Family" || Number(f.interestRate) === 0) &&
+      $("#debt-merge-toggle")?.checked;
+
+    const rec = wantsMerge
+      ? {
+          kind: "Receipt",
+          parentId: familyAgreement.id,
+          counterparty: familyAgreement.counterparty,
+          direction: familyAgreement.direction,
+          description: f.description || f.counterparty.trim(),
+          date: f.date,
+          amount: Number(f.amount),
+          owner: f.owner,
+          notes: "",
+        }
+      : {
+          kind: "Debt",
+          parentId: null,
+          counterparty: f.counterparty.trim(),
+          direction: f.direction,
+          description: f.description,
+          date: f.date,
+          amount: Number(f.amount),
+          interestRate: f.interestRate === "" ? null : Number(f.interestRate),
+          debtType: f.debtType || null,
+          owner: f.owner,
+          notes: "",
+        };
     const done = await withBusy(existing ? "Saving" : "Adding", async () => {
       if (existing) await state.store.updateDebt(existing.id, rec);
       else await state.store.addDebt(rec);
       state.debts = await state.store.getDebts();
     });
     if (done) {
-      notice(existing ? "Updated." : `Added ${f.counterparty.trim()}.`, "ok");
+      notice(
+        existing
+          ? "Updated."
+          : wantsMerge
+            ? `Added to ${familyAgreement.counterparty}.`
+            : `Added ${f.counterparty.trim()}.`,
+        "ok",
+      );
       renderNetWorth();
     }
   };
@@ -2692,6 +2769,7 @@ function renderDebtSection(scopeOwner) {
           <span class="debt-name">${esc(d.counterparty)}</span>
           <span class="tag ${d.direction === "Owed" ? "tag-liab" : ""}">${d.direction === "Owed" ? "You owe" : "Owed to you"}</span>
           ${d.settled ? '<span class="tag debt-settled-tag">Settled</span>' : ""}
+          ${d.debtType ? `<span class="tag">${esc(d.debtType)}</span>` : ""}
           ${d.interestRate != null ? `<span class="tag">${d.interestRate}% p.a.</span>` : ""}
           ${d.owner ? `<span class="person-chip" data-p="${esc(d.owner)}">${esc(d.owner)}</span>` : ""}
           ${d.description ? `<div class="debt-desc">${esc(d.description)}</div>` : ""}
