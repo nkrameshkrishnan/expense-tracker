@@ -677,9 +677,9 @@ function buildDashboardShell(a, label, people, pSeries, showCompare) {
       a.budgetUsed > 1 ? "neg" : "",
       "budgetused",
     )}
-    ${kpi("Avg / day", money(a.avgDaily), state.month === 0 ? `over ${state.year % 4 === 0 && (state.year % 100 !== 0 || state.year % 400 === 0) ? 366 : 365} days` : `over ${new Date(state.year, state.month, 0).getDate()} days`, "", "avgday")}
-    ${kpi("Avg / week", money(a.avgWeekly), "7-day rate", "", "avgweek")}
-    ${kpi("Avg / month", money(a.avgMonthly), "30.4-day rate", "", "avgmonth")}
+    ${kpi("Avg / day", money(a.avgDaily), label, "", "avgday")}
+    ${kpi("Avg / week", money(a.avgWeekly), label, "", "avgweek")}
+    ${kpi("Avg / month", money(a.avgMonthly), label, "", "avgmonth")}
   </div>
 
   ${
@@ -804,15 +804,9 @@ function updateDashboardValues(a, label, people, pSeries, showCompare) {
         : `of ${money(a.expenseBudget)}`
       : "no budget set",
   );
-  setKpi(
-    "avgday",
-    money(a.avgDaily),
-    state.month === 0
-      ? `over ${state.year % 4 === 0 && (state.year % 100 !== 0 || state.year % 400 === 0) ? 366 : 365} days`
-      : `over ${new Date(state.year, state.month, 0).getDate()} days`,
-  );
-  setKpi("avgweek", money(a.avgWeekly), "7-day rate");
-  setKpi("avgmonth", money(a.avgMonthly), "30.4-day rate");
+  setKpi("avgday", money(a.avgDaily), label);
+  setKpi("avgweek", money(a.avgWeekly), label);
+  setKpi("avgmonth", money(a.avgMonthly), label);
 
   if (a.dividends > 0) {
     const t = $("#dash-div-total");
