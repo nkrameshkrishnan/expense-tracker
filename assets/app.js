@@ -678,6 +678,8 @@ function buildDashboardShell(a, label, people, pSeries, showCompare) {
       "budgetused",
     )}
     ${kpi("Avg / day", money(a.avgDaily), state.month === 0 ? `over ${state.year % 4 === 0 && (state.year % 100 !== 0 || state.year % 400 === 0) ? 366 : 365} days` : `over ${new Date(state.year, state.month, 0).getDate()} days`, "", "avgday")}
+    ${kpi("Avg / week", money(a.avgWeekly), "7-day rate", "", "avgweek")}
+    ${kpi("Avg / month", money(a.avgMonthly), "30.4-day rate", "", "avgmonth")}
   </div>
 
   ${
@@ -809,6 +811,8 @@ function updateDashboardValues(a, label, people, pSeries, showCompare) {
       ? `over ${state.year % 4 === 0 && (state.year % 100 !== 0 || state.year % 400 === 0) ? 366 : 365} days`
       : `over ${new Date(state.year, state.month, 0).getDate()} days`,
   );
+  setKpi("avgweek", money(a.avgWeekly), "7-day rate");
+  setKpi("avgmonth", money(a.avgMonthly), "30.4-day rate");
 
   if (a.dividends > 0) {
     const t = $("#dash-div-total");

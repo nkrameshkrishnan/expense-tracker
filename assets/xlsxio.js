@@ -231,6 +231,12 @@ export function aggregate(rows, budget, month, year = currentYear()) {
     expenseBudget,
     budgetUsed: expenseBudget > 0 ? expense / expenseBudget : 0,
     avgDaily: expense / days,
+    // Same underlying daily rate, just rescaled - avgWeekly is exact (7 days
+    // is 7 days regardless of period), avgMonthly uses the actual average
+    // days-per-month (365.25 / 12) rather than a flat 30, so it doesn't
+    // drift low across months of different lengths or in leap years.
+    avgWeekly: (expense / days) * 7,
+    avgMonthly: (expense / days) * (365.25 / 12),
     catRows,
     top5: [...catRows]
       .filter((r) => r.actual > 0)
