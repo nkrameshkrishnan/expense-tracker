@@ -3417,6 +3417,13 @@ function go(tab) {
   document
     .querySelectorAll("#tabs button")
     .forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
+  // The person switch (#people) reflects state.person, which can change
+  // independently of the tab (clicking Ramesh/Surya/Joint calls go() to
+  // reload the current tab's data, but doesn't itself touch #tabs). It was
+  // only ever rendered once at boot, so its highlighted button silently
+  // froze on whatever was selected at load - re-render it every navigation
+  // so it always matches state.person, not just the tab buttons.
+  renderPeopleSwitch();
   location.hash = tab;
   (VIEWS[tab] || renderDashboard)();
   window.scrollTo(0, 0);
