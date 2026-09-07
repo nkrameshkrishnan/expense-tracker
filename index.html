@@ -20,16 +20,17 @@
      spreadsheet library. Check your connection and try again." even with a
      perfectly good connection. connect-src covers Supabase - wildcarded to
      *.supabase.co since the project subdomain is chosen per-deployment, not
-     fixed at build time - plus Google's sign-in/token endpoints. Source maps
-     (e.g. chart.js's .map file) are deliberately NOT allowed through
-     connect-src - that's a devtools-only fetch, blocking it is a harmless
-     "cannot load source map" note in the console with devtools open and
-     nothing else, not worth widening connect-src for. frame-ancestors is not
-     supported in a <meta> CSP (HTTP-header-only per spec) so it is omitted
-     rather than silently ignored-and-assumed-active. -->
+     fixed at build time - plus Google's sign-in/token endpoints, plus
+     cdn.jsdelivr.net so devtools can fetch source maps (e.g. chart.js's
+     .map file) for the scripts already trusted under script-src above -
+     blocking that on a script host already allowed to run code on the page
+     was a console warning for no real security benefit, not a boundary
+     worth keeping. frame-ancestors is not supported in a <meta> CSP
+     (HTTP-header-only per spec) so it is omitted rather than silently
+     ignored-and-assumed-active. -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' https://accounts.google.com https://cdn.jsdelivr.net https://cdn.sheetjs.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://*.supabase.co https://accounts.google.com https://oauth2.googleapis.com; frame-src https://accounts.google.com; object-src 'none'; base-uri 'self'; form-action 'self';"
+      content="default-src 'self'; script-src 'self' https://accounts.google.com https://cdn.jsdelivr.net https://cdn.sheetjs.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://*.supabase.co https://accounts.google.com https://oauth2.googleapis.com https://cdn.jsdelivr.net; frame-src https://accounts.google.com; object-src 'none'; base-uri 'self'; form-action 'self';"
     />
     <title>Ledger &mdash; Expense Tracker 2026</title>
     <!-- Inline SVG favicon: no extra file to host, and it survives being served
