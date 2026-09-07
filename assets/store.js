@@ -18,6 +18,35 @@
 
 import { GOOGLE_CLIENT_ID, SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js";
 
+// A stored Google ID token from a session over ~1hr old is already expired
+// by the time a later page load (e.g. a hard refresh) tries to reuse it -
+// signInWithIdToken() below already recovers correctly from that (the
+// resulting error is tagged .auth = true, which routes to the re-sign-in
+// screen), but only after actually making the doomed request first: a real
+// POST to Supabase's /auth/v1/token that Google's own verification was
+// always going to reject with 400. Decoding the token's own `exp` claim
+// locally catches this before spending that round trip - same recovery
+// path, minus the guaranteed-failing network call and the console entry
+// that comes with any non-2xx response regardless of whether the app's own
+// try/catch already handles it.
+function isJwtExpired(token) {
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    // 30s grace period, not exact-second precision - a token that expires
+    // between "this check" and "the request Supabase makes with it" a
+    // moment later should still be treated as expired now rather than
+    // trusting a razor-thin margin.
+    return !payload.exp || payload.exp * 1000 < Date.now() + 30_000;
+  } catch {
+    // Anything unparseable (truncated, corrupted, not actually a JWT) is
+    // not a token this app minted itself - safest to treat it as expired
+    // and let the normal re-sign-in path handle it, rather than risk
+    // throwing here on a malformed token which is likely stale localStorage
+    // data anyway.
+    return true;
+  }
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** The actual current calendar year, not a value baked in at build time.
@@ -1026,10 +1055,31 @@ export async function openStore(onNotice) {
     try {
       const s = new SupabaseStore(supabaseUrl, supabaseKey);
       const idToken = getIdToken();
-      if (idToken) await s.signInWithGoogleIdToken(idToken);
+      if (idToken) {
+        if (isJwtExpired(idToken)) {
+          // Same recovery this would eventually reach anyway via the 400
+          // from Supabase - see the comment on isJwtExpired() above for why
+          // it's worth catching here instead.
+          const e = new Error("Your session expired. Please sign in again.");
+          e.auth = true;
+          throw e;
+        }
+        await s.signInWithGoogleIdToken(idToken);
+      }
       await s.ping();
       return s;
     } catch (e) {
+      // An auth failure (expired/invalid session) is NOT the same situation
+      // as Supabase being unreachable, and must not be handled the same
+      // way. Falling through to LocalStore below - the ordinary behaviour
+      // for a real connectivity problem - would silently strand the person
+      // in local-only mode with nothing but an easy-to-miss banner, when
+      // what actually happened is their sign-in expired and boot()/main()
+      // needs to route them back to the sign-in gate instead (main()'s own
+      // catch already does exactly that, but only ever sees this error if
+      // it's allowed to propagate that far). Re-throwing here instead of
+      // notice()-and-fall-through is what makes that happen.
+      if (e?.auth) throw e;
       onNotice?.(
         `Supabase unreachable: ${e.message} Falling back to this browser's storage — changes will NOT reach Supabase.`,
         "bad",

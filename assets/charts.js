@@ -334,8 +334,25 @@ export function categoryByMonth(series, months, filterMonth = 0, orientation = "
         {
           label: "Category spend by month",
           data: flows,
-          colorFrom: (c) => flowColor(c.dataset.data[c.dataIndex].to),
-          colorTo: (c) => flowColor(c.dataset.data[c.dataIndex].to),
+          // Chart.js's sankey controller calls colorFrom/colorTo at least
+          // once during its internal label-building pass even when `flows`
+          // is empty (a brand-new account with zero transactions, or a
+          // month-filtered view where that month has nothing) - with no
+          // data point at that index, c.dataset.data[c.dataIndex] is
+          // undefined, and reading .to off that threw an uncaught
+          // TypeError that broke the chart entirely instead of just
+          // rendering empty. Falling back to a neutral colour for that case
+          // costs nothing visible (there's nothing to colour) and avoids
+          // the crash regardless of why Chart.js asks for a colour with no
+          // matching data.
+          colorFrom: (c) => {
+            const f = c.dataset.data[c.dataIndex];
+            return f ? flowColor(f.to) : INK3;
+          },
+          colorTo: (c) => {
+            const f = c.dataset.data[c.dataIndex];
+            return f ? flowColor(f.to) : INK3;
+          },
           colorMode: "to",
           alpha: 0.75,
           color: INK,
