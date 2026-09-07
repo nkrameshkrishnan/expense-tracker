@@ -291,6 +291,26 @@ let cachedSupabaseClientKey = "";
 // must return a FRESH query object each call - a supabase-js query builder
 // is not safely re-usable across repeated awaits.
 const SUPABASE_PAGE_SIZE = 1000;
+
+// Every Supabase write/read throws a plain Error(error.message) on failure -
+// except a session that expired mid-use (roughly hourly - see the comment
+// above sha256Hex in app.js) surfaces here as a JWT/permission/RLS error
+// from PostgREST, and THAT specific case needs to route to the re-sign-in
+// screen (see withBusy()'s catch in app.js, which checks e.auth) rather than
+// just showing a red "X failed: JWT expired" banner and leaving the page
+// half-authenticated with no way forward. One shared helper instead of
+// repeating the same tagging at each of the dozen-plus call sites below,
+// which is how _loadYear() originally had it but getBudget()'s separate
+// fetch path did not - the exact kind of drift a shared helper prevents.
+function dbError(error) {
+  const e = new Error(error.message);
+  // Real Postgres RLS violations read "...violates row-level security
+  // policy..." - the spelled-out phrase, never the bare acronym "RLS" - so
+  // matching only /RLS/i (as this originally did) silently never caught an
+  // actual RLS denial, only a JWT error or a generic "permission denied".
+  if (/JWT|permission|row-level security/i.test(error.message)) e.auth = true;
+  return e;
+}
 async function selectAllRows(buildQuery) {
   const rows = [];
   let from = 0;
@@ -398,11 +418,7 @@ class SupabaseStore {
       selectAllRows((from, to) => sb.from("debts").select("*").range(from, to)),
     ]);
     const err = e1 || e2 || e3 || e4;
-    if (err) {
-      const e = new Error(err.message);
-      if (/JWT|permission|RLS/i.test(err.message)) e.auth = true;
-      throw e;
-    }
+    if (err) throw dbError(err);
     this.cache = {
       transactions: tx.map(normalise),
       loadedYears: new Set([year]),
@@ -427,7 +443,7 @@ class SupabaseStore {
         .lte("date", `${year}-12-31`)
         .range(from, to),
     );
-    if (error) throw new Error(error.message);
+    if (error) throw dbError(error);
     const seen = new Set(this.cache.transactions.map((r) => r.id));
     this.cache.transactions.push(
       ...data.map(normalise).filter((r) => !seen.has(r.id)),
@@ -446,7 +462,7 @@ class SupabaseStore {
         .order("date", { ascending: false })
         .range(from, to),
     );
-    if (error) throw new Error(error.message);
+    if (error) throw dbError(error);
     const seen = new Set(this.cache.transactions.map((r) => r.id));
     this.cache.transactions.push(
       ...data.map(normalise).filter((r) => !seen.has(r.id)),
@@ -473,7 +489,7 @@ class SupabaseStore {
       .insert(r)
       .select()
       .single();
-    if (error) throw new Error(error.message);
+    if (error) throw dbError(error);
     const result = normalise(data);
     if (this.cache) this.cache.transactions.push(result);
     return result;
@@ -492,7 +508,7 @@ class SupabaseStore {
         .from("transactions")
         .insert(records.slice(i, i + CHUNK))
         .select();
-      if (error) throw new Error(error.message);
+      if (error) throw dbError(error);
       inserted += data.length;
       onProgress?.(Math.min(i + CHUNK, records.length), records.length);
     }
@@ -515,7 +531,7 @@ class SupabaseStore {
       .eq("id", id)
       .select()
       .single();
-    if (error) throw new Error(error.message);
+    if (error) throw dbError(error);
     const result = normalise(data);
     if (this.cache) {
       const i = this.cache.transactions.findIndex((x) => x.id === result.id);
@@ -527,7 +543,7 @@ class SupabaseStore {
   async remove(id) {
     const sb = await this._client();
     const { error } = await sb.from("transactions").delete().eq("id", id);
-    if (error) throw new Error(error.message);
+    if (error) throw dbError(error);
     if (this.cache)
       this.cache.transactions = this.cache.transactions.filter(
         (x) => x.id !== Number(id),
@@ -550,7 +566,7 @@ class SupabaseStore {
       .from("budget")
       .select("*")
       .eq("year", year);
-    if (error) throw new Error(error.message);
+    if (error) throw dbError(error);
     return budgetRowsToShape(data);
   }
   async setBudget(budget, year) {
@@ -563,7 +579,7 @@ class SupabaseStore {
     const { error } = await sb
       .from("budget")
       .upsert(rows, { onConflict: "year,category,month" });
-    if (error) throw new Error(error.message);
+    if (error) throw dbError(error);
     if (this.cache && year === this.cache.budgetYear)
       this.cache.budget = budget;
     return budget;
@@ -575,13 +591,13 @@ class SupabaseStore {
       entries.map((e) => ({ date, ...e })),
       { onConflict: "date,account" },
     );
-    if (error) throw new Error(error.message);
+    if (error) throw dbError(error);
     if (this.cache) await this._refreshBalances();
   }
   async deleteBalanceDate(date) {
     const sb = await this._client();
     const { error } = await sb.from("balances").delete().eq("date", date);
-    if (error) throw new Error(error.message);
+    if (error) throw dbError(error);
     if (this.cache) await this._refreshBalances();
   }
   async _refreshBalances() {
@@ -636,7 +652,7 @@ class SupabaseStore {
       .insert(this._toDbDebt(record))
       .select()
       .single();
-    if (error) throw new Error(error.message);
+    if (error) throw dbError(error);
     const result = this._normDebt(data);
     if (this.cache) this.cache.debts.push(result);
     return result.id;
@@ -651,7 +667,7 @@ class SupabaseStore {
       .eq("id", id)
       .select()
       .single();
-    if (error) throw new Error(error.message);
+    if (error) throw dbError(error);
     const result = this._normDebt(data);
     if (this.cache) {
       const i = this.cache.debts.findIndex((d) => d.id === result.id);
@@ -664,7 +680,7 @@ class SupabaseStore {
     const numId = Number(id);
     const sb = await this._client();
     const { error } = await sb.from("debts").delete().eq("id", id);
-    if (error) throw new Error(error.message);
+    if (error) throw dbError(error);
     if (this.cache)
       this.cache.debts = this.cache.debts.filter(
         (d) => d.id !== numId && d.parentId !== numId,
@@ -676,7 +692,7 @@ class SupabaseStore {
       .from("debts")
       .insert(records.map((r) => this._toDbDebt(r)))
       .select();
-    if (error) throw new Error(error.message);
+    if (error) throw dbError(error);
     const results = data.map((d) => this._normDebt(d));
     if (this.cache) this.cache.debts.push(...results);
     return { inserted: results.length };

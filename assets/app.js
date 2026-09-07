@@ -101,6 +101,20 @@ async function sha256Hex(text) {
     .join("");
 }
 
+// Google Identity Services keeps its own internal state once initialize()
+// runs (session tickets, an in-flight FedCM prompt, etc.) - calling it a
+// second time doesn't reset that state, it just warns "initialize() is
+// called multiple times" and can abort whatever prompt was already pending
+// (visible in devtools as an AbortError on the FedCM get() call). showGate()
+// legitimately runs more than once in a session on purpose (see the comment
+// above sha256Hex about a token expiring mid-session), so init must be
+// idempotent across those calls even though rendering the button and
+// attempting the prompt should still happen every time - the #gsi-button
+// element itself is a fresh DOM node on each call (gate.innerHTML is
+// rebuilt), so the button needs re-rendering into it regardless.
+let gsiInitialized = false;
+let gsiPrompted = false;
+
 function showGate(message) {
   // Named bootOverlay, not boot - a local `const boot` here would shadow the
   // outer async function boot() inside this function's own nested sign-in
@@ -129,65 +143,71 @@ function showGate(message) {
     return;
   }
   const start = async () => {
-    // Generated fresh per sign-in attempt: Google's initialize() gets the
-    // HASHED nonce (embedded in the resulting id token's own nonce claim),
-    // while the RAW value is stashed via setNonce() in the callback below
-    // for signInWithGoogleIdToken() to hand to Supabase later - see the
-    // comment on signInWithGoogleIdToken in store.js for why both matter.
-    const rawNonce = crypto.randomUUID();
-    const hashedNonce = await sha256Hex(rawNonce);
-    google.accounts.id.initialize({
-      client_id: cid,
-      nonce: hashedNonce,
-      // Chrome is phasing out the legacy One Tap prompt path in favour of
-      // its native FedCM API; without this flag the library silently falls
-      // back to a shim that logs deprecation warnings (including an inner
-      // one about the nonce request shape) instead of using FedCM directly.
-      // The isNotDisplayed()/isSkippedMoment() checks in prompt() below
-      // still work under FedCM - Google's guide flags them only because
-      // their semantics narrow slightly, not because they stop working.
-      use_fedcm_for_prompt: true,
-      callback: async (res) => {
-        setIdToken(res.credential);
-        setNonce(rawNonce);
-        gate.hidden = true;
-        // boot() below makes a real network fetch that can take several
-        // seconds on a cold start. Hiding the gate here without showing
-        // anything else left a genuinely blank #view for that whole window -
-        // the boot-loading overlay only ever covered the FIRST page load,
-        // never this second wait after a successful sign-in.
-        const bootOverlay = $("#boot-loading");
-        if (bootOverlay) bootOverlay.hidden = false;
-        startBootMessages();
-        // Unlike the top-level main() IIFE, this callback had no try/catch of
-        // its own - if boot() threw here for ANY reason, the failure became
-        // an unhandled rejection and the page was left exactly in the state
-        // being reported: gate hidden, boot-loading uncertain, #view empty,
-        // nothing to click, nothing explaining why. Whatever the underlying
-        // cause turns out to be, the page must never be able to end up with
-        // no visible UI at all - so on any failure here, fall back to
-        // showing the gate again with the real error message, the same
-        // recovery path used everywhere else auth-related failures surface.
-        try {
-          await boot();
-        } catch (e) {
-          setIdToken("");
-          setNonce("");
-          showGate(
-            e?.message ||
-              "Something went wrong loading your data. Please sign in again.",
-          );
-        }
-      },
-      // auto_select removed on purpose. Google's own docs: on ITP browsers
-      // (Safari, Firefox) the automatic One Tap prompt opens a pop-up, and
-      // Safari blocks pop-ups that were not triggered by a direct click. That
-      // failure is silent from here - no error, no callback, nothing - so a
-      // user on Safari could sign in with Google's own UI and still see
-      // exactly this same gate afterward with no clue why. The rendered
-      // button below is click-triggered, which satisfies the user-gesture
-      // requirement on every browser, so it is the primary path now.
-    });
+    if (!gsiInitialized) {
+      gsiInitialized = true;
+      // Generated fresh for this one sign-in attempt: Google's initialize()
+      // gets the HASHED nonce (embedded in the resulting id token's own
+      // nonce claim), while the RAW value is stashed via setNonce() in the
+      // callback below for signInWithGoogleIdToken() to hand to Supabase
+      // later - see the comment on signInWithGoogleIdToken in store.js for
+      // why both matter. Only generated here, inside the init-once guard,
+      // since initialize() (and therefore this nonce) is never re-issued on
+      // a later showGate() call - see the gsiInitialized comment above.
+      const rawNonce = crypto.randomUUID();
+      const hashedNonce = await sha256Hex(rawNonce);
+      google.accounts.id.initialize({
+        client_id: cid,
+        nonce: hashedNonce,
+        // Chrome is phasing out the legacy One Tap prompt path in favour of
+        // its native FedCM API; without this flag the library silently falls
+        // back to a shim that logs deprecation warnings (including an inner
+        // one about the nonce request shape) instead of using FedCM directly.
+        // The isNotDisplayed()/isSkippedMoment() checks in prompt() below
+        // still work under FedCM - Google's guide flags them only because
+        // their semantics narrow slightly, not because they stop working.
+        use_fedcm_for_prompt: true,
+        callback: async (res) => {
+          setIdToken(res.credential);
+          setNonce(rawNonce);
+          gate.hidden = true;
+          // boot() below makes a real network fetch that can take several
+          // seconds on a cold start. Hiding the gate here without showing
+          // anything else left a genuinely blank #view for that whole window -
+          // the boot-loading overlay only ever covered the FIRST page load,
+          // never this second wait after a successful sign-in.
+          const bootOverlay = $("#boot-loading");
+          if (bootOverlay) bootOverlay.hidden = false;
+          startBootMessages();
+          // Unlike the top-level main() IIFE, this callback had no try/catch of
+          // its own - if boot() threw here for ANY reason, the failure became
+          // an unhandled rejection and the page was left exactly in the state
+          // being reported: gate hidden, boot-loading uncertain, #view empty,
+          // nothing to click, nothing explaining why. Whatever the underlying
+          // cause turns out to be, the page must never be able to end up with
+          // no visible UI at all - so on any failure here, fall back to
+          // showing the gate again with the real error message, the same
+          // recovery path used everywhere else auth-related failures surface.
+          try {
+            await boot();
+          } catch (e) {
+            setIdToken("");
+            setNonce("");
+            showGate(
+              e?.message ||
+                "Something went wrong loading your data. Please sign in again.",
+            );
+          }
+        },
+        // auto_select removed on purpose. Google's own docs: on ITP browsers
+        // (Safari, Firefox) the automatic One Tap prompt opens a pop-up, and
+        // Safari blocks pop-ups that were not triggered by a direct click. That
+        // failure is silent from here - no error, no callback, nothing - so a
+        // user on Safari could sign in with Google's own UI and still see
+        // exactly this same gate afterward with no clue why. The rendered
+        // button below is click-triggered, which satisfies the user-gesture
+        // requirement on every browser, so it is the primary path now.
+      });
+    }
     google.accounts.id.renderButton($("#gsi-button"), {
       theme: "filled_black",
       size: "large",
@@ -196,17 +216,25 @@ function showGate(message) {
     });
 
     // Still attempt the automatic prompt as a nice-to-have on browsers where
-    // it works cleanly - but listen for the moment it is skipped or blocked,
-    // and say so plainly instead of leaving the screen looking identical to
-    // "please sign in" with no indication anything was even attempted.
-    google.accounts.id.prompt((notification) => {
-      if (notification.isNotDisplayed?.() || notification.isSkippedMoment?.()) {
-        const hint = $(".gate-sub");
-        if (hint)
-          hint.textContent =
-            "The automatic prompt did not open in this browser (common in Safari) \u2014 use the button below instead.";
-      }
-    });
+    // it works cleanly - but only on the FIRST call. Re-prompting on a later
+    // showGate() (e.g. after a mid-session token expiry) would either be a
+    // silent no-op or race the still-settling first prompt into an
+    // AbortError - and the user has already seen one attempt at that point,
+    // so the rendered button is the reliable path from here on regardless.
+    if (!gsiPrompted) {
+      gsiPrompted = true;
+      google.accounts.id.prompt((notification) => {
+        if (
+          notification.isNotDisplayed?.() ||
+          notification.isSkippedMoment?.()
+        ) {
+          const hint = $(".gate-sub");
+          if (hint)
+            hint.textContent =
+              "The automatic prompt did not open in this browser (common in Safari) \u2014 use the button below instead.";
+        }
+      });
+    }
   };
   if (window.google?.accounts?.id) start();
   else
