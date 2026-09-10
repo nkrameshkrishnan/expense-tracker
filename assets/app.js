@@ -2013,6 +2013,107 @@ function isCustomNwAccount(account) {
    Varun is a Transfer in Transactions (cash left an account) AND a payment
    here (a balance-sheet position changed). Counting it as an expense in
    Transactions would be the actual error - lending money is not spending it. */
+// jsPDF + autotable together are a genuinely large download (a few hundred
+// KB) for something only the "Export PDF" button on a debt card ever
+// touches - loaded on first actual use and cached, same reasoning and same
+// pattern as loadXLSX() in xlsxio.js for the spreadsheet Export/Import
+// buttons. Dynamic import() rather than a <script> tag: both libraries'
+// jsdelivr CDN builds are ES modules (the `+esm` on-the-fly bundle
+// jsdelivr generates for any npm package), and app.js is already loaded as
+// type="module", so this needs no UMD-global juggling the way xlsx.js's
+// script-tag approach does.
+let pdfLibsReady = null;
+function loadPdfLibs() {
+  if (pdfLibsReady) return pdfLibsReady;
+  pdfLibsReady = Promise.all([
+    import("https://cdn.jsdelivr.net/npm/jspdf@4.2.1/+esm"),
+    import("https://cdn.jsdelivr.net/npm/jspdf-autotable@5.0.8/+esm"),
+  ]).catch((e) => {
+    pdfLibsReady = null;
+    throw new Error(
+      "Could not load the PDF library. Check your connection and try again.",
+    );
+  });
+  return pdfLibsReady;
+}
+
+async function exportDebtPdf(d) {
+  const [{ jsPDF }, { autoTable }] = await loadPdfLibs();
+  const doc = new jsPDF();
+  const headStyles = { fillColor: [31, 41, 55] };
+
+  doc.setFontSize(14);
+  doc.text(d.counterparty, 14, 15);
+  doc.setFontSize(10);
+  doc.setTextColor(107, 118, 132);
+  doc.text(
+    `${d.direction === "Owed" ? "You owe" : "Owed to you"}${d.settled ? " \u00b7 Settled" : ""}`,
+    14,
+    21,
+  );
+  doc.setTextColor(18, 22, 28);
+
+  const summaryRows = [
+    ["Direction", d.direction === "Owed" ? "You owe" : "Owed to you"],
+  ];
+  if (d.debtType) summaryRows.push(["Type", d.debtType]);
+  if (d.interestRate != null)
+    summaryRows.push(["Interest rate", `${d.interestRate}% p.a.`]);
+  summaryRows.push(["Principal", money(d.principal)]);
+  summaryRows.push(["Paid", money(d.paid)]);
+  summaryRows.push(["Outstanding", money(d.outstanding)]);
+  if (d.owner) summaryRows.push(["Whose", d.owner]);
+  if (d.description) summaryRows.push(["Description", d.description]);
+  if (d.date) summaryRows.push(["Date opened", d.date]);
+
+  autoTable(doc, {
+    startY: 26,
+    head: [["Field", "Value"]],
+    body: summaryRows,
+    theme: "grid",
+    headStyles,
+  });
+  let y = doc.lastAutoTable.finalY + 10;
+
+  if (d.receipts?.length) {
+    doc.setFontSize(11);
+    doc.text(
+      `How this debt built up (${money(d.received)} in ${d.receipts.length} item${d.receipts.length === 1 ? "" : "s"})`,
+      14,
+      y,
+    );
+    autoTable(doc, {
+      startY: y + 4,
+      head: [["Date", "Description", "Amount"]],
+      body: d.receipts.map((r) => [r.date, r.description || "", money(r.amount)]),
+      theme: "grid",
+      headStyles,
+    });
+    y = doc.lastAutoTable.finalY + 10;
+  }
+
+  if (d.payments?.length) {
+    doc.setFontSize(11);
+    doc.text("Payment history", 14, y);
+    autoTable(doc, {
+      startY: y + 4,
+      head: [["Date", "Description", "Amount"]],
+      body: d.payments.map((p) => [p.date, p.description || "", money(p.amount)]),
+      theme: "grid",
+      headStyles,
+    });
+  }
+
+  // Strip characters a filesystem might choke on (the counterparty is
+  // free-text the person typed into the Add-debt form) rather than
+  // asserting on them - "Family (event gifts)" becoming "Family event
+  // gifts" is a fine filename, refusing to export at all over it is not.
+  const safeName =
+    d.counterparty.replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "-") ||
+    "debt";
+  doc.save(`${safeName}-debt-export.pdf`);
+}
+
 function debtSummary(debts) {
   // Only a "Debt" row is its own agreement/card. "Payment" and "Receipt" rows
   // are both children (via parentId) of an agreement, never cards on their own.
@@ -2427,6 +2528,17 @@ function wireDebtHandlers() {
   view
     .querySelectorAll("[data-pay]")
     .forEach((b) => (b.onclick = () => paymentDialog(Number(b.dataset.pay))));
+
+  view.querySelectorAll("[data-pdfdebt]").forEach(
+    (b) =>
+      (b.onclick = async () => {
+        const d = debtSummary(state.debts || []).find(
+          (x) => Number(x.id) === Number(b.dataset.pdfdebt),
+        );
+        if (!d) return;
+        await withBusy("Building PDF", () => exportDebtPdf(d));
+      }),
+  );
 
   // Repair path for the sequential-import bug: a debt whose payments sum to
   // less than what its own notes/description implies is very likely a partial
@@ -2902,6 +3014,7 @@ function renderDebtSection(scopeOwner) {
       <div class="debt-actions">
         <button class="btn ghost debt-pay" data-pay="${d.id}">Record payment</button>
         <button class="btn ghost" data-editdebt="${d.id}">Edit</button>
+        <button class="btn ghost" data-pdfdebt="${d.id}">Export PDF</button>
         <button class="rowbtn" data-deldebt="${d.id}" title="Delete this agreement and its payments">\u2715</button>
       </div>
     </div>`;
