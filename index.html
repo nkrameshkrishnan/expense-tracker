@@ -48,6 +48,20 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="./assets/styles.css" />
+    <!-- Page-specific stylesheets, split out of one 2,267-line styles.css for
+     maintainability. Separate <link> tags rather than @import inside
+     styles.css itself - @import blocks the page waiting on each file to
+     resolve in series; parallel <link> tags let the browser fetch all of
+     them at once, same as splitting the JS into per-page modules. auth.css
+     covers the sign-in gate and boot overlay, both visible before any tab
+     is chosen, so it loads unconditionally alongside the base stylesheet
+     rather than only when a specific page needs it. -->
+    <link rel="stylesheet" href="./assets/auth.css" />
+    <link rel="stylesheet" href="./assets/pages/dashboard.css" />
+    <link rel="stylesheet" href="./assets/pages/add.css" />
+    <link rel="stylesheet" href="./assets/pages/transactions.css" />
+    <link rel="stylesheet" href="./assets/pages/budget.css" />
+    <link rel="stylesheet" href="./assets/pages/networth.css" />
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script
       src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"

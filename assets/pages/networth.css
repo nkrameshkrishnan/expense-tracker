@@ -1,0 +1,352 @@
+/* Net worth page: accounts/balances and the debt-card list. */
+
+/* --------------------------------------------------------------- net worth */
+.nw-asat {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  border: 1px solid var(--rule-2);
+  border-left: 3px solid var(--amber);
+  background: #fff;
+  padding: 11px 15px;
+  margin-bottom: 16px;
+}
+.nw-asat-label {
+  font-size: 10.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.nw-asat-date {
+  font-family: var(--disp);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.nw-asat-note {
+  font-size: 11.5px;
+  color: var(--ink-3);
+  margin-left: auto;
+}
+
+.nw-warn {
+  border: 1px solid var(--rule-2);
+  border-left: 3px solid var(--amber);
+  background: #fffdf3;
+  padding: 10px 15px;
+  margin-bottom: 14px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.nw-blank td {
+  opacity: 0.5;
+}
+.tag-liab {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+/* balance entry form */
+.nw-form-bar {
+  display: flex;
+  gap: 14px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  border: 1px solid var(--rule-2);
+  background: #fff;
+  padding: 14px 16px;
+  margin-bottom: 6px;
+}
+.nw-running {
+  text-align: right;
+}
+.nw-running-label {
+  display: block;
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.nw-running-val {
+  display: block;
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 2px 0;
+}
+.nw-running-sub {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.nw-input-wrap {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--rule-2);
+  background: #fff;
+  width: 170px;
+  margin-left: auto;
+}
+.nw-input-wrap:focus-within {
+  outline: 2px solid var(--ink);
+  outline-offset: -1px;
+}
+.nw-currency {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink-3);
+  padding: 0 2px 0 9px;
+}
+.nw-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font-family: var(--mono);
+  font-size: 14px;
+  text-align: right;
+  padding: 7px 9px 7px 2px;
+  color: var(--ink);
+}
+@media (max-width: 700px) {
+  .nw-form-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .nw-running {
+    text-align: left;
+  }
+  .nw-input-wrap {
+    width: 100%;
+  }
+}
+
+/* Currency fields should not carry number spinners. The tiny up/down arrows
+   are useless for a balance (nobody nudges $3,844.83 by 1) and they crowd the
+   right edge exactly where the digits sit. Keeping type=number for the mobile
+   numeric keypad and browser validation, but hiding the control. */
+.nw-input::-webkit-outer-spin-button,
+.nw-input::-webkit-inner-spin-button,
+.add-amount::-webkit-outer-spin-button,
+.add-amount::-webkit-inner-spin-button,
+.bmonth-input::-webkit-outer-spin-button,
+.bmonth-input::-webkit-inner-spin-button,
+.bcard-flat-input::-webkit-outer-spin-button,
+.bcard-flat-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.nw-input,
+.add-amount,
+.bmonth-input,
+.bcard-flat-input {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.nw-import-btn {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+.nw-add-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.nw-add-row .btn {
+  white-space: nowrap;
+}
+.nw-del-acct {
+  opacity: 0;
+  transition: opacity 0.12s;
+  font-size: 11px;
+}
+tr:hover .nw-del-acct {
+  opacity: 1;
+}
+@media (max-width: 640px) {
+  .nw-add-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .nw-del-acct {
+    opacity: 1;
+  }
+}
+
+/* ---------------------------------------------------------- debts and loans */
+.debt-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border: 1px solid var(--rule-2);
+  background: #fff;
+  margin-bottom: 14px;
+}
+.debt-summary > div {
+  padding: 12px 16px;
+  border-right: 1px solid var(--rule);
+}
+.debt-summary > div:last-child {
+  border-right: 0;
+}
+.debt-sum-label {
+  display: block;
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.debt-sum-val {
+  font-family: var(--mono);
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.debt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.debt-card {
+  border: 1px solid var(--rule-2);
+  background: #fff;
+  padding: 14px 16px;
+}
+.debt-card.settled {
+  opacity: 0.62;
+}
+.debt-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+.debt-name {
+  font-weight: 700;
+  font-size: 14px;
+  margin-right: 8px;
+}
+.debt-desc {
+  font-size: 12px;
+  color: var(--ink-3);
+  margin-top: 4px;
+}
+.debt-amounts {
+  text-align: right;
+  flex-shrink: 0;
+}
+.debt-outstanding {
+  display: block;
+  font-family: var(--mono);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.debt-sub {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.debt-settled-tag {
+  border-color: var(--teal);
+  color: var(--teal);
+}
+
+.debt-bar-track {
+  height: 4px;
+  background: var(--rule);
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+.debt-bar-fill {
+  height: 100%;
+  background: var(--ink-2);
+  transition: width 0.3s;
+}
+.debt-bar-fill.done {
+  background: var(--teal);
+}
+.debt-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11.5px;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.debt-warn {
+  border-left: 3px solid var(--amber);
+  background: #fffdf3;
+  padding: 8px 12px;
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.debt-history {
+  margin-top: 10px;
+}
+.debt-history summary {
+  font-size: 12px;
+  color: var(--ink-3);
+  cursor: pointer;
+  padding: 5px 0;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.debt-history summary::-webkit-details-marker {
+  display: none;
+}
+.debt-history summary::before {
+  content: "▸";
+  font-size: 10px;
+  transition: transform 0.2s;
+}
+.debt-history[open] summary::before {
+  transform: rotate(90deg);
+}
+.debt-history summary:hover {
+  color: var(--ink);
+}
+.debt-table {
+  border: 1px solid var(--rule);
+  margin-top: 4px;
+}
+.debt-table td {
+  font-size: 12px;
+  padding: 5px 9px;
+}
+.debt-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+.debt-actions .btn {
+  padding: 5px 12px;
+  font-size: 12px;
+}
+@media (max-width: 640px) {
+  .debt-summary {
+    grid-template-columns: 1fr;
+  }
+  .debt-summary > div {
+    border-right: 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .debt-head {
+    flex-direction: column;
+  }
+  .debt-amounts {
+    text-align: left;
+  }
+}
