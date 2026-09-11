@@ -2536,7 +2536,11 @@ function wireDebtHandlers() {
           (x) => Number(x.id) === Number(b.dataset.pdfdebt),
         );
         if (!d) return;
-        await withBusy("Building PDF", () => exportDebtPdf(d));
+        if (
+          await withBusy("Building PDF", () => exportDebtPdf(d))
+        ) {
+          notice(`Exported ${d.counterparty}.`, "ok");
+        }
       }),
   );
 
