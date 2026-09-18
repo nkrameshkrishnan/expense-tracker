@@ -1,10 +1,24 @@
 /* Net worth page: asset/liability accounts, balances, and the debt-card
    list (debt-specific logic itself lives in debts.js). */
-import { PEOPLE, UNASSIGNED, CUSTOM_KEY, NET_WORTH_ACCOUNTS } from "../store.js";
+import {
+  PEOPLE,
+  UNASSIGNED,
+  CUSTOM_KEY,
+  NET_WORTH_ACCOUNTS,
+} from "../store.js";
 import { money } from "../xlsxio.js";
 import { loadCustom } from "../categories.js";
 import * as charts from "../charts.js";
-import { $, view, esc, state, personLabel, kpi, notice, withBusy } from "../core.js";
+import {
+  $,
+  view,
+  esc,
+  state,
+  personLabel,
+  kpi,
+  notice,
+  withBusy,
+} from "../core.js";
 import { go } from "../router.js";
 import { backendLabel, isRemoteStore } from "../auth.js";
 import { debtNetWorth, renderDebtSection, wireDebtHandlers } from "./debts.js";
@@ -292,7 +306,6 @@ export function renderNetWorth() {
     );
   }
 }
-
 
 function renderBalanceForm(copyFrom) {
   const today = new Date().toISOString().slice(0, 10);

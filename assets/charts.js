@@ -296,7 +296,12 @@ function hashColor(label) {
   return `hsl(${hue} 55% 45%)`;
 }
 
-export function categoryByMonth(series, months, filterMonth = 0, orientation = "horizontal") {
+export function categoryByMonth(
+  series,
+  months,
+  filterMonth = 0,
+  orientation = "horizontal",
+) {
   // Sankey needs flat {from, to, flow} triples rather than the per-category
   // monthly-array shape the rest of the dashboard uses, and skips exact
   // zeros (a zero-flow link still draws as a visible sliver in this plugin).

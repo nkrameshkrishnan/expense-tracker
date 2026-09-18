@@ -2,7 +2,17 @@
 import { TYPES, MONTHS, UNASSIGNED } from "../store.js";
 import { money, monthOf } from "../xlsxio.js";
 import { listFor } from "../categories.js";
-import { $, view, esc, state, scoped, personLabel, notice, withBusy, refresh } from "../core.js";
+import {
+  $,
+  view,
+  esc,
+  state,
+  scoped,
+  personLabel,
+  notice,
+  withBusy,
+  refresh,
+} from "../core.js";
 import { go } from "../router.js";
 
 const txCollapsed = new Set();

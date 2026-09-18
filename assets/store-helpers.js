@@ -16,7 +16,6 @@ export function currentYear() {
   return new Date().getFullYear();
 }
 
-
 export function emptyBudget() {
   const b = {};
   for (const c of CAT_NAMES) {
@@ -25,7 +24,6 @@ export function emptyBudget() {
   }
   return b;
 }
-
 
 export function normalise(r) {
   const amount = Math.abs(Number(r.amount) || 0);
@@ -150,7 +148,6 @@ export async function selectAllRows(buildQuery) {
   }
   return { data: rows, error: null };
 }
-
 
 export function budgetRowsToShape(rows) {
   const full = emptyBudget();

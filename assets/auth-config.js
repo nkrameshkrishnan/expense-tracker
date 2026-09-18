@@ -17,7 +17,9 @@ import { GOOGLE_CLIENT_ID, SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js";
 // the app's own try/catch already handles it.
 export function isJwtExpired(token) {
   try {
-    const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    const payload = JSON.parse(
+      atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")),
+    );
     // 30s grace period, not exact-second precision - a token that expires
     // between "this check" and "the request Supabase makes with it" a
     // moment later should still be treated as expired now rather than

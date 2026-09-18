@@ -10,7 +10,17 @@ import {
   categorySeries,
 } from "../xlsxio.js";
 import * as charts from "../charts.js";
-import { $, view, esc, state, scoped, personLabel, kpi, notice, YEAR_KEY } from "../core.js";
+import {
+  $,
+  view,
+  esc,
+  state,
+  scoped,
+  personLabel,
+  kpi,
+  notice,
+  YEAR_KEY,
+} from "../core.js";
 import { go } from "../router.js";
 
 function availableYears() {

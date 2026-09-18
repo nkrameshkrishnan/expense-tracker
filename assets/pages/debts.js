@@ -69,7 +69,11 @@ async function exportDebtPdf(d) {
     autoTable(doc, {
       startY: y + 4,
       head: [["Date", "Description", "Amount"]],
-      body: d.receipts.map((r) => [r.date, r.description || "", money(r.amount)]),
+      body: d.receipts.map((r) => [
+        r.date,
+        r.description || "",
+        money(r.amount),
+      ]),
       theme: "grid",
       headStyles,
     });
@@ -82,7 +86,11 @@ async function exportDebtPdf(d) {
     autoTable(doc, {
       startY: y + 4,
       head: [["Date", "Description", "Amount"]],
-      body: d.payments.map((p) => [p.date, p.description || "", money(p.amount)]),
+      body: d.payments.map((p) => [
+        p.date,
+        p.description || "",
+        money(p.amount),
+      ]),
       theme: "grid",
       headStyles,
     });
@@ -93,8 +101,10 @@ async function exportDebtPdf(d) {
   // asserting on them - "Family (event gifts)" becoming "Family event
   // gifts" is a fine filename, refusing to export at all over it is not.
   const safeName =
-    d.counterparty.replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "-") ||
-    "debt";
+    d.counterparty
+      .replace(/[^\w\- ]+/g, "")
+      .trim()
+      .replace(/\s+/g, "-") || "debt";
   doc.save(`${safeName}-debt-export.pdf`);
 }
 
@@ -162,7 +172,6 @@ export function relatedTransactions(counterparty) {
       .includes(needle),
   );
 }
-
 
 export function wireDebtHandlers() {
   const reload = async () => {
@@ -308,9 +317,7 @@ export function wireDebtHandlers() {
           (x) => Number(x.id) === Number(b.dataset.pdfdebt),
         );
         if (!d) return;
-        if (
-          await withBusy("Building PDF", () => exportDebtPdf(d))
-        ) {
+        if (await withBusy("Building PDF", () => exportDebtPdf(d))) {
           notice(`Exported ${d.counterparty}.`, "ok");
         }
       }),

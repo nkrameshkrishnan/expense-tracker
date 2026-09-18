@@ -2,7 +2,16 @@
 import { TYPES, MONTHS, currentYear, PEOPLE } from "../store.js";
 import { money, monthOf } from "../xlsxio.js";
 import { listFor, selectWithNew, wireNewOption } from "../categories.js";
-import { $, view, esc, state, scoped, notice, withBusy, refresh } from "../core.js";
+import {
+  $,
+  view,
+  esc,
+  state,
+  scoped,
+  notice,
+  withBusy,
+  refresh,
+} from "../core.js";
 import { go } from "../router.js";
 
 export function renderAdd() {

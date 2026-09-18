@@ -22,7 +22,12 @@ export { MemoryStore } from "./stores/memory-store.js";
 import { SupabaseStore } from "./stores/supabase-store.js";
 import { LocalStore } from "./stores/local-store.js";
 import { MemoryStore } from "./stores/memory-store.js";
-import { isJwtExpired, getSupabaseUrl, getSupabaseAnonKey, getIdToken } from "./auth-config.js";
+import {
+  isJwtExpired,
+  getSupabaseUrl,
+  getSupabaseAnonKey,
+  getIdToken,
+} from "./auth-config.js";
 
 export async function openStore(onNotice) {
   // Supabase is the only real backend now. Falls through to Local/Memory on
