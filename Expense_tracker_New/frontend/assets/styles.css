@@ -3,16 +3,16 @@
 :root {
   --ink: #14151a;
   --ink-2: #4b4d57;
-  --ink-3: #6f7280;
+  --ink-3: #585b66;
   --paper: #f6f7f9;
   --paper-2: #eef0f3;
   --rule: #e7e8ed;
   --rule-2: #d7d9e0;
-  --teal: #00a389;
-  --amber: #ff6b4a;
-  --red: #e5484d;
-  --blue: #3b82f6;
-  --purple: #a855f7;
+  --teal: #006959;
+  --amber: #b24a33;
+  --red: #b7393d;
+  --blue: #2f68c4;
+  --purple: #7e3fb9;
   --mono: "Inter", ui-monospace, SFMono-Regular, Menlo, monospace;
   --disp: "Sora", system-ui, -apple-system, Segoe UI, sans-serif;
   /* ---- elevation & motion (added for the card/motion revamp) ---- */
@@ -28,18 +28,18 @@
   --motion-base: 250ms;
   --motion-slow: 600ms;
   --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --cat-color-0: #3b82f6;
-  --cat-color-1: #a855f7;
-  --cat-color-2: #ec4899;
-  --cat-color-3: #f59e0b;
-  --cat-color-4: #10b981;
-  --cat-color-5: #06b6d4;
-  --cat-color-6: #f97316;
-  --cat-color-7: #8b5cf6;
-  --cat-color-8: #ef4444;
-  --cat-color-9: #14b8a6;
-  --cat-color-10: #eab308;
-  --cat-color-11: #84cc16;
+  --cat-color-0: #3372d8;
+  --cat-color-1: #984de0;
+  --cat-color-2: #ca3d83;
+  --cat-color-3: #a16807;
+  --cat-color-4: #0b855c;
+  --cat-color-5: #047f94;
+  --cat-color-6: #bd5710;
+  --cat-color-7: #8457e9;
+  --cat-color-8: #d43c3c;
+  --cat-color-9: #0e8275;
+  --cat-color-10: #937005;
+  --cat-color-11: #53800d;
 }
 * {
   box-sizing: border-box;
