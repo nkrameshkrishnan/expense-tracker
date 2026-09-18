@@ -33,7 +33,7 @@
 .nw-warn {
   border: 1px solid var(--rule-2);
   border-left: 3px solid var(--amber);
-  background: #fffdf3;
+  background: #fff0ed;
   padding: 10px 15px;
   margin-bottom: 14px;
   font-size: 12.5px;
@@ -282,7 +282,7 @@ tr:hover .nw-del-acct {
 
 .debt-warn {
   border-left: 3px solid var(--amber);
-  background: #fffdf3;
+  background: #fff0ed;
   padding: 8px 12px;
   margin-top: 10px;
   font-size: 12px;

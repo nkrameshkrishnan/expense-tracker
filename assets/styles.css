@@ -3,22 +3,48 @@
    the person-colour system (swatches/chips used across every page and
    chart), and the inline "+ New" dropdown entry. Loaded on every page. */
 
-/* Ledger — an accounting-ledger aesthetic: hairline rules, no rounded corners,
-   tabular numerals, a hard left gutter. Deliberately not a card-and-shadow dashboard. */
+/* Monarch-style palette (ported from Expense_tracker_New): cards get
+   elevation/radius, but tables, forms, tags and banners stay flat/hairline -
+   see that app's assets/styles.css for the source of truth on this split. */
 :root {
-  --ink: #12161c;
-  --ink-2: #3c4653;
-  --ink-3: #606a76;
-  --paper: #faf7f2;
-  --paper-2: #f2eee6;
-  --rule: #ddd5c8;
-  --rule-2: #c6bcab;
-  --teal: #0f766e;
-  --amber: #ab4e08;
-  --red: #b3261e;
-  --blue: #1d4ed8;
-  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  --disp: "Space Grotesk", system-ui, -apple-system, Segoe UI, sans-serif;
+  --ink: #14151a;
+  --ink-2: #4b4d57;
+  --ink-3: #585b66;
+  --paper: #f6f7f9;
+  --paper-2: #eef0f3;
+  --rule: #e7e8ed;
+  --rule-2: #d7d9e0;
+  --teal: #006959;
+  --amber: #b24a33;
+  --red: #b7393d;
+  --blue: #2f68c4;
+  --purple: #7e3fb9;
+  --mono: "Inter", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --disp: "Sora", system-ui, -apple-system, Segoe UI, sans-serif;
+  --radius-sm: 10px;
+  --radius-md: 18px;
+  --card-bg: #ffffff;
+  --shadow-card:
+    0 2px 8px rgba(20, 21, 26, 0.06), 0 12px 32px -8px rgba(20, 21, 26, 0.14);
+  --shadow-card-hover:
+    0 4px 12px rgba(20, 21, 26, 0.08), 0 20px 48px -12px rgba(20, 21, 26, 0.2);
+  --shadow-focus: 0 0 0 3px rgba(0, 163, 137, 0.35);
+  --motion-fast: 150ms;
+  --motion-base: 250ms;
+  --motion-slow: 600ms;
+  --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --cat-color-0: #3372d8;
+  --cat-color-1: #984de0;
+  --cat-color-2: #ca3d83;
+  --cat-color-3: #a16807;
+  --cat-color-4: #0b855c;
+  --cat-color-5: #047f94;
+  --cat-color-6: #bd5710;
+  --cat-color-7: #8457e9;
+  --cat-color-8: #d43c3c;
+  --cat-color-9: #0e8275;
+  --cat-color-10: #937005;
+  --cat-color-11: #53800d;
 }
 * {
   box-sizing: border-box;
@@ -216,7 +242,7 @@ button.btn.danger {
   border-color: var(--red);
 }
 button.btn.danger:hover {
-  background: #fdf1f0;
+  background: #fceded;
 }
 button.btn:disabled {
   opacity: 0.45;
@@ -254,24 +280,13 @@ label.f > textarea {
      (Budget page, 4 items) already matched this via an inline override;
      this just makes it the shared default instead of a one-off. */
   grid-template-columns: repeat(4, 1fr);
-  border: 1px solid var(--rule-2);
-  background: #fff;
+  gap: 12px;
 }
 .kpi {
   padding: 13px 14px;
-  border-right: 1px solid var(--rule);
-  border-bottom: 1px solid var(--rule);
-}
-/* Right border only makes sense on non-rightmost columns; :last-child alone
-   missed every row-end except the true final card once there was more than
-   one row. :nth-child(4n) catches the rightmost card in every row instead. */
-.kpi:nth-child(4n) {
-  border-right: 0;
-}
-/* Bottom border separates rows, but the actual last row (whichever position
-   it lands in) shouldn't have a trailing border against the panel edge. */
-.kpi:nth-last-child(-n + 4) {
-  border-bottom: 0;
+  background: var(--card-bg);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
 }
 .kpi .k {
   font-size: 10.5px;
@@ -302,18 +317,6 @@ label.f > textarea {
   .kpis {
     grid-template-columns: repeat(2, 1fr);
   }
-  .kpi:nth-child(4n) {
-    border-right: 1px solid var(--rule);
-  }
-  .kpi:nth-child(2n) {
-    border-right: 0;
-  }
-  .kpi:nth-last-child(-n + 4) {
-    border-bottom: 1px solid var(--rule);
-  }
-  .kpi:nth-last-child(-n + 2) {
-    border-bottom: 0;
-  }
 }
 @media (max-width: 620px) {
   .kpis {
@@ -333,8 +336,9 @@ label.f > textarea {
   }
 }
 .panel {
-  border: 1px solid var(--rule-2);
-  background: #fff;
+  background: var(--card-bg);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
   padding: 14px;
 }
 .panel.wide {
@@ -418,10 +422,10 @@ th.n {
   text-align: right;
 }
 tbody tr:nth-child(even) {
-  background: #fdfcfa;
+  background: var(--paper-2);
 }
 tbody tr:hover {
-  background: #fff8e8;
+  background: var(--rule);
 }
 .gutter {
   width: 44px;
@@ -528,16 +532,19 @@ tbody tr:hover {
   padding: 9px 20px;
   font-size: 12.5px;
   border-bottom: 1px solid var(--rule);
-  background: #fff8e1;
-  color: #5c4300;
+  /* Light tints derived from --amber/--teal/--red rather than the old
+     mustard-yellow warning scheme, which was tuned for the old brownish
+     --amber and no longer matches this palette. */
+  background: #fff0ed;
+  color: #733021;
 }
 .banner.ok {
-  background: #e7f5ef;
-  color: #0f5132;
+  background: #e6f6f3;
+  color: #006a59;
 }
 .banner.bad {
-  background: #fdecea;
-  color: #7f1d1d;
+  background: #fceded;
+  color: #952f32;
 }
 
 /* ---------- footer ---------- */
@@ -650,22 +657,20 @@ code {
   gap: 12px;
 }
 .person-card {
-  border: 1px solid var(--rule-2);
-  background: #fff;
+  background: var(--card-bg);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
   padding: 13px 15px;
   cursor: pointer;
-  transition:
-    border-color 0.15s,
-    background 0.15s;
+  transition: box-shadow var(--motion-fast) var(--motion-ease);
 }
 .person-card:hover {
-  border-color: var(--ink-2);
-  background: #fffdf7;
+  box-shadow: var(--shadow-card-hover);
 }
 .person-card.on {
-  border-color: var(--ink);
-  border-width: 2px;
-  padding: 12px 14px;
+  box-shadow:
+    var(--shadow-card-hover),
+    0 0 0 2px var(--ink);
 }
 .person-card-head {
   display: flex;
