@@ -17,3 +17,5 @@ Expense*.xlsx
 .claude/agents/code-reviewer.md
 .claude/commands/fix-issue.md
 .claude/commands/review.md
+
+.worktrees/
