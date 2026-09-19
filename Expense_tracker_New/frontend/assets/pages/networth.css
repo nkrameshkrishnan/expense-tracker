@@ -1,0 +1,180 @@
+/* Net Worth page (account balances, dividends-adjacent net worth chart). Debts and loans, though rendered inline on this page (see pages/debts.js), keep their own stylesheet - see pages/debts.css. */
+
+/* --------------------------------------------------------------- net worth */
+.nw-asat {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  border: 1px solid var(--rule-2);
+  border-left: 3px solid var(--amber);
+  background: #fff;
+  padding: 11px 15px;
+  margin-bottom: 16px;
+}
+.nw-asat-label {
+  font-size: 10.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.nw-asat-date {
+  font-family: var(--disp);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.nw-asat-note {
+  font-size: 11.5px;
+  color: var(--ink-3);
+  margin-left: auto;
+}
+
+.nw-warn {
+  border: 1px solid var(--rule-2);
+  border-left: 3px solid var(--amber);
+  background: #fff0ed;
+  padding: 10px 15px;
+  margin-bottom: 14px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.nw-blank td {
+  opacity: 0.5;
+}
+.tag-liab {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+/* balance entry form */
+.nw-form-bar {
+  display: flex;
+  gap: 14px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  border: 1px solid var(--rule-2);
+  background: #fff;
+  padding: 14px 16px;
+  margin-bottom: 6px;
+}
+.nw-running {
+  text-align: right;
+}
+.nw-running-label {
+  display: block;
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.nw-running-val {
+  display: block;
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 2px 0;
+}
+.nw-running-sub {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.nw-input-wrap {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--rule-2);
+  background: #fff;
+  width: 170px;
+  margin-left: auto;
+}
+.nw-input-wrap:focus-within {
+  outline: 2px solid var(--ink);
+  outline-offset: -1px;
+}
+.nw-currency {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink-3);
+  padding: 0 2px 0 9px;
+}
+.nw-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font-family: var(--mono);
+  font-size: 14px;
+  text-align: right;
+  padding: 7px 9px 7px 2px;
+  color: var(--ink);
+}
+@media (max-width: 700px) {
+  .nw-form-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .nw-running {
+    text-align: left;
+  }
+  .nw-input-wrap {
+    width: 100%;
+  }
+}
+
+/* Currency fields should not carry number spinners. The tiny up/down arrows
+   are useless for a balance (nobody nudges $3,844.83 by 1) and they crowd the
+   right edge exactly where the digits sit. Keeping type=number for the mobile
+   numeric keypad and browser validation, but hiding the control. */
+.nw-input::-webkit-outer-spin-button,
+.nw-input::-webkit-inner-spin-button,
+.add-amount::-webkit-outer-spin-button,
+.add-amount::-webkit-inner-spin-button,
+.bmonth-input::-webkit-outer-spin-button,
+.bmonth-input::-webkit-inner-spin-button,
+.bcard-flat-input::-webkit-outer-spin-button,
+.bcard-flat-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.nw-input,
+.add-amount,
+.bmonth-input,
+.bcard-flat-input {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.nw-import-btn {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+.nw-add-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.nw-add-row .btn {
+  white-space: nowrap;
+}
+.nw-del-acct {
+  opacity: 0;
+  transition: opacity 0.12s;
+  font-size: 11px;
+}
+tr:hover .nw-del-acct {
+  opacity: 1;
+}
+@media (max-width: 640px) {
+  .nw-add-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .nw-del-acct {
+    opacity: 1;
+  }
+}

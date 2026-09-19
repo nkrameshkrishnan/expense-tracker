@@ -41,6 +41,30 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="./assets/styles.css" />
+    <!-- Page-specific stylesheets, split out of one 2,660-line styles.css for
+     maintainability. Separate <link> tags rather than @import inside
+     styles.css itself - @import blocks the page waiting on each file to
+     resolve in series; parallel <link> tags let the browser fetch all of
+     them at once, same as splitting the JS into per-page modules. auth.css
+     covers the sign-in gate and boot overlay, both visible before any tab
+     is chosen, so it loads unconditionally alongside the base stylesheet
+     rather than only when a specific page needs it. Ordered to match
+     router.js's VIEWS, plus debts.css/plan-gate.css at the end since
+     neither has its own VIEWS tab (debts renders inline on Net Worth;
+     the plan gate shows before any tab is reachable at all). -->
+    <link rel="stylesheet" href="./assets/auth.css" />
+    <link rel="stylesheet" href="./assets/pages/dashboard.css" />
+    <link rel="stylesheet" href="./assets/pages/cashflow.css" />
+    <link rel="stylesheet" href="./assets/pages/spending.css" />
+    <link rel="stylesheet" href="./assets/pages/add.css" />
+    <link rel="stylesheet" href="./assets/pages/transactions.css" />
+    <link rel="stylesheet" href="./assets/pages/budget.css" />
+    <link rel="stylesheet" href="./assets/pages/networth.css" />
+    <link rel="stylesheet" href="./assets/pages/data.css" />
+    <link rel="stylesheet" href="./assets/pages/billing.css" />
+    <link rel="stylesheet" href="./assets/pages/profile.css" />
+    <link rel="stylesheet" href="./assets/pages/debts.css" />
+    <link rel="stylesheet" href="./assets/pages/plan-gate.css" />
     <!-- No Google Identity Services script here: Cognito's Hosted UI federates to
      Google itself (see assets/app.js's showGate/cognitoAuthorizeUrl), so sign-in
      is a full-page redirect rather than an embedded widget. -->

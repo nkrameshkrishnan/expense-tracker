@@ -1,0 +1,115 @@
+/* Sign-in gate and boot-loading overlay - the auth.js flow (plus the header rail's sign-out link, grouped here as an auth-adjacent affordance rather than in styles.css). */
+
+/* ---------------------------------------------------------------- sign-in gate */
+#gate {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: var(--paper);
+}
+/* #gate{display:flex} is an ID selector; the browser's built-in [hidden]{display:none}
+   is only an attribute selector, so on specificity alone #gate ALWAYS won regardless
+   of the hidden attribute — confirmed by rendering this in real Chromium: gate.hidden
+   was true, computed display was still "flex". #gate[hidden] has one more attribute
+   selector than plain #gate, so it outranks it and actually takes effect. */
+#gate[hidden] {
+  display: none;
+}
+.gate-card {
+  max-width: 400px;
+  width: 100%;
+  text-align: center;
+  border: 1px solid var(--rule-2);
+  background: #fff;
+  padding: 36px 30px;
+}
+.gate-mark {
+  color: var(--amber);
+  font-size: 28px;
+  line-height: 1;
+  margin-bottom: 10px;
+}
+.gate-title {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  margin: 0 0 8px;
+}
+.gate-sub {
+  font-size: 13px;
+  color: var(--ink-2);
+  margin: 0 0 22px;
+  line-height: 1.5;
+}
+#gsi-button {
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
+}
+.gate-note {
+  font-size: 11px;
+  color: var(--ink-3);
+  margin: 20px 0 0;
+  line-height: 1.5;
+}
+.gate-error {
+  font-size: 12px;
+  color: var(--red);
+  margin: 0;
+  line-height: 1.5;
+  text-align: left;
+}
+.signout-btn {
+  background: none;
+  border: 0;
+  color: var(--ink-3);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 10px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  padding: 0 0 0 6px;
+}
+.signout-btn:hover {
+  color: var(--paper);
+}
+/* -------------------------------------------------------------- boot loading */
+#boot-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 600;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: var(--paper);
+}
+/* Same specificity fix as #gate: [hidden] loses to an ID selector's own
+   `display` unless given an attribute selector of its own to win with. */
+#boot-loading[hidden] {
+  display: none;
+}
+.boot-mark {
+  color: var(--amber);
+  font-size: 32px;
+  line-height: 1;
+  opacity: 0.9;
+}
+.boot-spin {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--rule-2);
+  border-top-color: var(--amber);
+  animation: boot-spin 0.7s linear infinite;
+}
+@keyframes boot-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

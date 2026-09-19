@@ -1,0 +1,1 @@
+/* Data page: no page-specific rules - everything it renders (panel, eyebrow, head/sub, stack, btn/ghost/danger, note, the AI-review-table classes, which carry no visual rule of their own) is shared and lives in ../styles.css. Kept as its own file for structural symmetry with the other pages/*.css files, not because it has unique styling. */
