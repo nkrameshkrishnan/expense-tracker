@@ -26,7 +26,11 @@ import {
   getIdToken,
   setIdToken,
   setCurrency as setCurrentCurrency,
+  personColorIndex,
+  categoryColorIndex,
+  MONTHS,
 } from "./store.js";
+import { byPersonFilter } from "./xlsxio.js";
 import {
   getStoredActiveTenant,
   setStoredActiveTenant,
@@ -284,4 +288,69 @@ export async function switchActiveTenant(tenantId) {
   // Whatever the failed attempt did or did not manage to load is not the
   // tenant being rolled back to - make the next request fetch afresh.
   state.store.resetCache?.();
+}
+
+/** Colour class for a person swatch/chip/card-fill, derived from a stable
+    hash of their name (store.js's personColorIndex) rather than a lookup
+    table of specific names - the same reason BUILTIN.person is empty
+    above. "Unassigned"/blank is its own neutral case, not hashed into the
+    palette, so it never collides with a real person's colour. */
+export const personColorClass = (p) =>
+  p && p !== UNASSIGNED
+    ? `person-color-${personColorIndex(p)}`
+    : "person-color-none";
+
+/** Colour class for a category chip, derived the same way as
+    personColorClass — a stable hash of the category name, not a lookup
+    table, so a new category just works without a matching edit here. */
+export const categoryColorClass = (cat) =>
+  `category-color-${categoryColorIndex(cat)}`;
+
+/** Rows for whoever is currently selected. Every page reads through this. */
+export const scoped = () => byPersonFilter(state.rows, state.person);
+export const personLabel = () => state.person || "Family";
+
+/** Shared KPI-card markup. Used by Dashboard, Cash Flow, Spending, and Net
+    worth. */
+export const kpi = (k, v, m = "", cls = "", key = "") =>
+  `<div class="kpi ${cls}"${key ? ` id="kpi-${key}"` : ""}><div class="k">${k}</div><div class="v"${key ? ` id="kpi-${key}-v"` : ""}>${v}</div><div class="m"${key ? ` id="kpi-${key}-m"` : ""}>${esc(m)}</div></div>`;
+
+/** Years to offer: every year actually present in the data, plus the real
+    current year even if it has nothing yet (so Jan 1 of a new year isn't
+    stuck picking a year with zero transactions to select from). Shared by
+    Dashboard, Cash Flow, and Spending's period selectors. */
+export function availableYears() {
+  // ApiStore's cache carries allTxYears straight from the server - every
+  // year that actually EXISTS in the database, independent of which years
+  // have had their data fetched yet. Scanning state.rows alone would only show
+  // years already loaded, which is wrong the moment a year is fetched lazily
+  // rather than eagerly. DisconnectedStore has no cache and always returns
+  // empty rows, so falling through to scanning state.rows for it is still
+  // correct - just always empty until a real connection exists.
+  const serverYears = state.store?.cache?.allTxYears;
+  const fromData = new Set(
+    serverYears?.length
+      ? serverYears
+      : state.rows
+          .map((r) => Number(String(r.date).slice(0, 4)))
+          .filter(Boolean),
+  );
+  fromData.add(currentYear());
+  return [...fromData].sort((a, b) => b - a);
+}
+
+export function periodSelect(value, year) {
+  return `
+  <label class="f"><span>Year</span><select id="y-sel">
+    ${availableYears()
+      .map(
+        (y) =>
+          `<option value="${y}"${y === year ? " selected" : ""}>${y}</option>`,
+      )
+      .join("")}
+  </select></label>
+  <label class="f"><span>Period</span><select id="m-sel">
+    <option value="0"${value === 0 ? " selected" : ""}>Full year</option>
+    ${MONTHS.map((m, i) => `<option value="${i + 1}"${value === i + 1 ? " selected" : ""}>${m}</option>`).join("")}
+  </select></label>`;
 }
