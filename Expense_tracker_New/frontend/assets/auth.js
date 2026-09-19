@@ -2,9 +2,22 @@
    UI helpers (loading messages, revealing the app once ready). isRemoteStore
    distinguishes the real API backend from the offline DisconnectedStore.
    boot() itself lives here too, added by a follow-up commit. */
-import { getCognitoConfig, getIdToken, setIdToken } from "./store.js";
-import { $, esc } from "./core.js";
-import { setPendingInviteToken, PLAN_GATE_SEEN_KEY } from "./tenant.js";
+import {
+  getCognitoConfig,
+  getIdToken,
+  setIdToken,
+  openStore,
+} from "./store.js";
+import { $, esc, state, notice, withBusy, refresh } from "./core.js";
+import {
+  setPendingInviteToken,
+  PLAN_GATE_SEEN_KEY,
+  getPendingInviteToken,
+  planGateSeen,
+} from "./tenant.js";
+import { go, VIEWS } from "./router.js";
+import { renderPlanGate } from "./pages/plan-gate.js";
+import { renderDashboard } from "./pages/dashboard.js";
 
 /* ------------------------------------------------------------ Google sign-in
    The ID token lives in sessionStorage, so closing the tab signs you out.
@@ -161,3 +174,155 @@ export function revealApp() {
 // True only when actually talking to the API. False for DisconnectedStore
 // (see store.js) - there is no other kind of store in this build.
 export const isRemoteStore = (s) => s.kind === "api";
+
+export async function boot() {
+  startBootMessages();
+  state.store = await openStore(notice);
+  await refresh();
+  // An already-signed-in user clicking an invite link: showGate()'s own
+  // inviteMatch handles the NOT-signed-in case (it feeds the token through
+  // Cognito's client_metadata so postConfirmation.js can redeem it on
+  // signup) - this covers the other case, where boot() runs directly and
+  // that gate is never shown at all. Same hash-based #invite=<token> link
+  // createInvite's "Copy link" button already produces (see the
+  // data-copy-invite handler below) - reusing that format rather than
+  // introducing a second, differently-shaped invite param.
+  //
+  // The sessionStorage fallback covers the signed-OUT case: showGate()
+  // parks the token there before handing off to Cognito, because the
+  // redirect back consumes and clears the whole fragment (including
+  // #invite=) before this ever runs, and client_metadata only reaches
+  // PostConfirmation, which does not fire for an existing user signing in
+  // again. Redeeming a token that user's own signup already burned is not
+  // an error: redeemInvite treats a spent token whose tenant you are
+  // already a member of as a no-op success.
+  const inviteMatch = location.hash.match(/invite=([\w-]+)/);
+  const inviteToken = inviteMatch?.[1] || getPendingInviteToken();
+  if (inviteToken && isRemoteStore(state.store)) {
+    const joined = await withBusy("Joining household", async () => {
+      await state.store.joinTenant(inviteToken);
+    });
+    // Consumed either way - a failed token must not be retried on every
+    // subsequent load of this tab.
+    setPendingInviteToken("");
+    if (joined) {
+      state.tenants = (await state.store.getMyTenants?.()) || [];
+      notice(
+        "You've joined the household. Switch to it from the Household panel whenever you're ready.",
+        "ok",
+      );
+    }
+    // No else: withBusy has already shown the REAL failure ("Joining
+    // household failed: <server message>"). Overwriting it with a fixed
+    // "invalid or has expired" hid genuinely different causes - a seat-cap
+    // rejection, or a lost membership - behind a wrong explanation.
+    //
+    // Strip the hash so a reload/refresh doesn't try to re-join. Only when
+    // the token actually came from the hash: otherwise this would throw
+    // away a perfectly good #transactions-style deep link.
+    if (inviteMatch)
+      history.replaceState(null, "", location.pathname + location.search);
+  }
+  // A brand-new household's owner, who has never chosen a plan: gated the
+  // same way showDowngradeBanner tells "new" apart from "downgraded" - plan
+  // is free AND no Stripe customer has ever been created for this tenant.
+  // An owner who cancelled after a failed payment (hasStripeCustomer: true)
+  // is back on Free too, but must never see the "new signup" gate again.
+  const showPlanGate =
+    state.role === "owner" &&
+    state.tenant?.plan === "free" &&
+    !state.tenant?.hasStripeCustomer &&
+    !planGateSeen();
+  // Deferred until the plan gate has had its chance to decide: revealing the
+  // header now would let a bare, unstyled Dashboard flash behind the gate
+  // for a moment before it renders (see renderPlanGate's own comment).
+  if (!showPlanGate) revealApp();
+  if (state.tenant?.status === "past_due") {
+    notice(
+      "Your payment failed — update your card to keep full access.",
+      "bad",
+      {
+        label: "Manage billing →",
+        // Same withBusy + notice shape as the #manage-billing handler in
+        // renderBilling(). Without it, a failed createPortalSession (expired
+        // token, API down, a non-owner reaching the banner) rejected into
+        // nothing: the click looked like it did nothing at all.
+        onClick: async () => {
+          const returnUrl = location.origin + location.pathname;
+          const done = await withBusy("Opening billing portal", async () => {
+            const { url } = await state.store.createPortalSession(returnUrl);
+            location.href = url;
+          });
+          if (!done) notice("Could not open billing portal.", "bad");
+        },
+      },
+    );
+  }
+  // There is no local/offline fallback in this build (see store.js) - a
+  // DisconnectedStore here means every read comes back empty and every
+  // write will throw until this is resolved, whether that's because no API
+  // endpoint is configured at all or a configured one just failed to
+  // answer. Either way it's the one state worth a persistent, actionable
+  // banner rather than letting the empty dashboard speak for itself. The
+  // retry window in store.js now covers several seconds of genuine cold
+  // starts, but no window is infinite, and this is also the manual recovery
+  // path once it exhausts.
+  if (!isRemoteStore(state.store)) {
+    notice(
+      "Not connected to your Ledger account — nothing will load or save until you reconnect.",
+      "bad",
+      {
+        label: "Retry connecting",
+        onClick: async () => {
+          const done = await withBusy("Reconnecting", async () => {
+            state.store = await openStore(notice);
+            if (!isRemoteStore(state.store))
+              throw new Error("still could not reach your Ledger account");
+            await refresh();
+            await state.store.ensureAllYearsLoaded?.(); // same reasoning as Connect & test: a rare, manual action, worth the accurate total
+            state.rows = await state.store.list();
+          });
+          if (done) {
+            notice(`Connected — ${state.rows.length} rows loaded.`, "ok");
+            (VIEWS[state.tab] || renderDashboard)();
+          }
+        },
+      },
+    );
+  }
+  // Was: `(location.hash || '#dashboard').slice(1) in VIEWS ? location.hash.slice(1) : 'dashboard'`
+  // - the '#dashboard' fallback was only used for the membership CHECK, then
+  // the true branch re-read the original (still-empty) location.hash a
+  // second time, producing startTab = '' whenever there was no hash at all.
+  // The dashboard still rendered (VIEWS[''] falls back to renderDashboard
+  // elsewhere), so this was invisible by luck - but the URL bar itself never
+  // actually got '#dashboard' written into it. Compute the effective tab
+  // once and reuse it, rather than deriving it twice from two different
+  // values.
+  const hashTab = (location.hash || "#dashboard").slice(1);
+  const startTab = hashTab in VIEWS ? hashTab : "dashboard";
+  if (showPlanGate) {
+    renderPlanGate(() => {
+      revealApp();
+      go(startTab);
+    });
+  } else {
+    go(startTab);
+  }
+
+  // Fire-and-forget: brings in every other year's transactions silently in
+  // the background, so by the time anyone actually reaches for a different
+  // year or searches Transactions, it is usually already there - without
+  // making the FIRST paint wait on however much history has accumulated.
+  // Only re-renders on Dashboard/Transactions, where more data arriving
+  // actually changes what is on screen; skipped entirely on Add (would wipe
+  // in-progress form input) and elsewhere it would just be pointless churn.
+  state.store
+    .ensureAllYearsLoaded?.()
+    .then(async () => {
+      state.rows = await state.store.list();
+      if (state.tab === "dashboard" || state.tab === "transactions")
+        (VIEWS[state.tab] || renderDashboard)();
+    })
+    .catch(() => {}); // best-effort - a failure here just means years stay lazy-loaded on demand
+}
