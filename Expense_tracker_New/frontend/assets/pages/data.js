@@ -15,6 +15,21 @@ import { ensurePlans } from "../tenant.js";
 import { isRemoteStore } from "../auth.js";
 import { go } from "../router.js";
 
+// A tenant that downgraded to Free still HAS its older transactions on the
+// server - the Free plan's 12-month window only hides them from what the
+// API returns (see backend/src/plans.js's FEATURES.historyMonths). The
+// destructive flows below, though, clear the table server-side with no date
+// filter at all, so they delete those hidden rows too, and neither the
+// "Delete all N transactions" count nor the import's "Replace everything
+// first" wording would otherwise account for them. Only a tenant that has
+// been through checkout (hasStripeCustomer) can have rows outside the
+// window, so the warning is scoped to exactly that case rather than shown
+// to every Free user.
+const hiddenHistoryWarning = () =>
+  state.tenant?.plan === "free" && state.tenant?.hasStripeCustomer
+    ? "\n\nWARNING: your account is on the Free plan, which only shows the last 12 months. Older transactions that are currently hidden from you will ALSO be permanently deleted, and they are not in the counts above or in an export taken now."
+    : "";
+
 export function renderData() {
   // Derived here, at render time, rather than once in refresh() - state.plans
   // only populates lazily via ensurePlans() (see below), which resolves

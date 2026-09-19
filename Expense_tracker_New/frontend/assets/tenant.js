@@ -1,5 +1,27 @@
 /* Multi-tenant plan metadata and active-tenant/invite-token storage — New-only, no root Ledger equivalent (root is single-household). */
 
+/* ------------------------------------------------------------------ plans
+   Pure display copy, keyed by plan id - label and blurb are the only
+   per-plan facts that can't come from the backend, since they're
+   marketing text, not business logic. Everything that determines what a
+   plan actually DOES or COSTS (seat cap, features, price) comes from
+   state.plans (getPlans(), see ensurePlans below) - this app keeps no
+   independent list of which tiers exist, so a tier added or removed on
+   the server just works here without a matching edit. Personal-finance
+   app, not a team tool - Family is deliberately the top tier; there is no
+   unlimited-seat "Business" plan. A plan id with no entry here (a new
+   tier added server-side before its copy is written) still renders, with
+   a generic fallback label/blurb - see planCopy() below. The signup gate
+   (renderPlanGate, pages/plan-gate.js) and the Billing tab (renderBilling,
+   pages/billing.js) deliberately do not share markup/CSS: the gate is a
+   one-time, full-viewport decision (bigger cards, its own visual weight),
+   while Billing is a page you return to, sitting alongside this app's
+   other panels - collapsing them into one component would make whichever
+   one changes next drag the other along with it. They DO share the small
+   data helpers below (planCopy/planFeatureList/planSeatsLabel/
+   formatPlanAmount/formatPlanPeriod) - those are pure derivation, not
+   markup, so sharing them carries none of that risk. */
+
 import { state } from "./core.js";
 
 const PLAN_COPY = {
