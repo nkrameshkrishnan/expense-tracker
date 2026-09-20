@@ -58,17 +58,25 @@ was worked out in the brainstorming conversation that produced this scaffold
 
 ## Layout
 
-- `frontend/` — the static site. `charts.js`, `xlsxio.js`, `styles.css` are
-  copied unchanged from the original project. `store.js`, `config.js`, and
-  `app.js` were adapted: `store.js` keeps `LocalStore`/`MemoryStore` as
-  offline fallbacks and adds `ApiStore`, which speaks the same `{action,
-...}` POST contract the original `SheetsStore` used against `Code.gs`, plus
+- `frontend/` — the static site, structured like the root app's own
+  `assets/` split (see root `CLAUDE.md`'s Architecture section), adapted for
+  multi-tenant SaaS: `charts.js`, `xlsxio.js`, `motion.js` are copied
+  unchanged from the original project; `config.js` holds build-time config
+  (Cognito/API Gateway ids, overwritten on deploy); `app.js` is a thin entry
+  point that boots `auth.js`. `core.js` holds shared UI state and rendering
+  helpers, `auth.js` the Cognito sign-in gate, `tenant.js` plan metadata and
+  active-tenant storage, `categories.js` category helpers, and `router.js`
+  the tab-navigation `VIEWS` map — each tab's view lives in its own
+  `pages/*.js` file, with matching `pages/*.css`. `store.js` re-exports the
+  storage adapters from `stores/`: `LocalStore`/`MemoryStore` (offline
+  fallbacks) and `ApiStore`, which speaks the same `{action, ...}` POST
+  contract the original `SheetsStore` used against `Code.gs`, plus
   `getMembers`/`getInvites`/`getRole`/`createInvite`/`revokeInvite` for the
   household/membership panel. The sign-in gate uses Cognito's Hosted UI
   redirect flow (implicit grant — `template.yaml`'s `AllowedOAuthFlows` must
-  match `app.js`'s `cognitoAuthorizeUrl()`, or Cognito rejects every sign-in).
-  `app.js`'s Data tab has a "Household" panel: lists members, lets an
-  owner/admin send/copy/revoke invites.
+  match `auth.js`'s `cognitoAuthorizeUrl()`, or Cognito rejects every
+  sign-in). `pages/data.js`'s Data tab has a "Household" panel: lists
+  members, lets an owner/admin send/copy/revoke invites.
 - `backend/src/` — one Lambda (`handler.js`) behind API Gateway, routed
   internally by `action`. `routes/*.js` hold the actual SQL per resource
   (`transactions`, `budget`, `balances`, `debts`, `tenants` — the last for
@@ -162,7 +170,7 @@ was worked out in the brainstorming conversation that produced this scaffold
    their own instead of the household that invited them) rather than
    erroring, so verify them deliberately, not by waiting for a bug report.
    - **Does Hosted UI forward `client_metadata` from `/oauth2/authorize`
-     into the Lambda trigger event?** `frontend/assets/app.js`'s
+     into the Lambda trigger event?** `frontend/assets/auth.js`'s
      `cognitoAuthorizeUrl()` puts the invite token in a `client_metadata`
      query param, and `backend/src/postConfirmation.js` reads it from
      `event.request.clientMetadata`. `client_metadata` is documented for
