@@ -1,5 +1,0 @@
-node_modules
-test
-.aws-sam
-*.md
-.env

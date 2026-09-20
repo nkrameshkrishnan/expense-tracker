@@ -1,1 +1,0 @@
-/* Cash Flow page: no page-specific rules - everything it renders (panel, eyebrow, head/sub, kpis, chartbox) is shared and lives in ../styles.css. Kept as its own file for structural symmetry with the other pages/*.css files, not because it has unique styling. */
