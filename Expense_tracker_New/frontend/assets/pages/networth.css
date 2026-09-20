@@ -54,7 +54,8 @@
   gap: 14px;
   align-items: flex-end;
   flex-wrap: wrap;
-  border: 1px solid var(--rule-2);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
   background: #fff;
   padding: 14px 16px;
   margin-bottom: 6px;

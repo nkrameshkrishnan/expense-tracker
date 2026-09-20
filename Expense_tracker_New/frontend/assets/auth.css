@@ -23,7 +23,8 @@
   max-width: 400px;
   width: 100%;
   text-align: center;
-  border: 1px solid var(--rule-2);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
   background: #fff;
   padding: 36px 30px;
 }

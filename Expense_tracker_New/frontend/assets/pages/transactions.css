@@ -5,7 +5,8 @@
 .tx-summary {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  border: 1px solid var(--rule-2);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
   background: #fff;
   margin-bottom: 16px;
 }

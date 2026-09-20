@@ -4,7 +4,8 @@
 .b-summary {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  border: 1px solid var(--rule-2);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
   background: #fff;
   margin-bottom: 24px;
 }
@@ -60,15 +61,16 @@
 
 .bcard {
   background: #fff;
-  border: 1px solid var(--rule-2);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
   padding: 14px 16px 12px;
   display: flex;
   flex-direction: column;
   gap: 0;
-  transition: border-color 0.15s;
+  transition: box-shadow 0.15s;
 }
 .bcard:focus-within {
-  border-color: var(--ink);
+  box-shadow: var(--shadow-focus);
 }
 
 .bcard-head {
