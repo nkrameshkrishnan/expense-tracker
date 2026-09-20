@@ -7,7 +7,8 @@
   display: grid;
   grid-template-columns: 220px 1fr;
   gap: 20px;
-  border: 1px solid var(--rule-2);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
   background: #fff;
   padding: 16px;
   margin-bottom: 8px;

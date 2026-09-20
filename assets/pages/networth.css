@@ -54,7 +54,8 @@
   gap: 14px;
   align-items: flex-end;
   flex-wrap: wrap;
-  border: 1px solid var(--rule-2);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
   background: #fff;
   padding: 14px 16px;
   margin-bottom: 6px;
@@ -183,7 +184,8 @@ tr:hover .nw-del-acct {
 .debt-summary {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  border: 1px solid var(--rule-2);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
   background: #fff;
   margin-bottom: 14px;
 }
@@ -214,7 +216,8 @@ tr:hover .nw-del-acct {
   gap: 12px;
 }
 .debt-card {
-  border: 1px solid var(--rule-2);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
   background: #fff;
   padding: 14px 16px;
 }
