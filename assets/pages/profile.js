@@ -2,12 +2,45 @@
    household access. Reached via the profile popover's "View profile" item
    in core.js's renderProfileMenu(), not a .tabs nav button - so it has no
    data-tab entry and go("profile") never highlights anything in the nav. */
-import { getIdTokenEmail } from "../store.js";
+import { getIdTokenEmail, getIdTokenClaims } from "../store.js";
 import { $, view, esc, state, notice, withBusy } from "../core.js";
-import { backendLabel, isRemoteStore, signOut } from "../auth.js";
+import { isRemoteStore, signOut } from "../auth.js";
+
+// Best-effort only: Google's locale claim is a language/region preference
+// the account has set, not a verified country - shown as a courtesy, not a
+// fact to build any logic on.
+function countryFromLocale(locale) {
+  const region = locale?.split(/[-_]/)[1];
+  if (!region) return "";
+  try {
+    return new Intl.DisplayNames(["en"], { type: "region" }).of(
+      region.toUpperCase(),
+    );
+  } catch {
+    return region.toUpperCase();
+  }
+}
+
+// list/add/removeAllowedEmail surface raw Postgres/PostgREST error text
+// (e.g. "Could not find the function public.list_allowed_emails ... in the
+// schema cache" when supabase/schema.sql's RPCs haven't been applied yet) -
+// not something a household member should have to interpret. Every call
+// into them goes through this so what reaches the screen is always
+// something a person can actually act on.
+async function accessCall(fn) {
+  try {
+    return await fn();
+  } catch {
+    throw new Error(
+      "Couldn't load household access right now — the Supabase project may be missing its latest database setup.",
+    );
+  }
+}
 
 export function renderProfile() {
   const email = getIdTokenEmail();
+  const claims = getIdTokenClaims();
+  const country = countryFromLocale(claims.locale);
   const remote = isRemoteStore(state.store);
 
   view.innerHTML = `
@@ -21,9 +54,13 @@ export function renderProfile() {
   <div class="eyebrow">Your account</div>
   <div class="tablewrap"><table><tbody>
     <tr><td>Email</td><td>${email ? esc(email) : "—"}</td></tr>
+    <tr><td>First name</td><td>${claims.given_name ? esc(claims.given_name) : "—"}</td></tr>
+    <tr><td>Last name</td><td>${claims.family_name ? esc(claims.family_name) : "—"}</td></tr>
+    <tr><td>Country</td><td>${country ? esc(country) : "Not shared by Google Sign-In"}</td></tr>
     <tr><td>Signed in with</td><td>Google</td></tr>
-    <tr><td>Data storage</td><td>${esc(backendLabel(state.store))}</td></tr>
   </tbody></table></div>
+  <p class="note">See <a href="terms.html" target="_blank" rel="noopener">Terms &amp; Privacy</a>
+    for what Google profile information this app collects and why.</p>
 
   <div class="eyebrow">Household access</div>
   ${
@@ -41,7 +78,7 @@ export function renderProfile() {
 async function loadAccessPanel(myEmail) {
   const panel = $("#access-panel");
   try {
-    const emails = await state.store.listAllowedEmails();
+    const emails = await accessCall(() => state.store.listAllowedEmails());
     panel.innerHTML = `
       <table><tbody>
         ${emails
@@ -72,7 +109,7 @@ async function loadAccessPanel(myEmail) {
           )
             return;
           const done = await withBusy(`Removing ${target}`, async () => {
-            await state.store.removeAllowedEmail(target);
+            await accessCall(() => state.store.removeAllowedEmail(target));
           });
           if (done) {
             notice(`Removed ${target}.`, "ok");
@@ -86,7 +123,7 @@ async function loadAccessPanel(myEmail) {
       if (!value || !/^\S+@\S+\.\S+$/.test(value))
         return notice("Enter a valid email address.", "bad");
       const done = await withBusy(`Adding ${value}`, async () => {
-        await state.store.addAllowedEmail(value);
+        await accessCall(() => state.store.addAllowedEmail(value));
       });
       if (done) {
         notice(`Added ${value}.`, "ok");

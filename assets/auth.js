@@ -64,6 +64,8 @@ export function showGate(message) {
       <div id="gsi-button"></div>
       <p class="gate-note">Access is verified by Supabase Row Level Security against an allow-list.
         Signing in here does not grant access on its own.</p>
+      <p class="gate-note"><a href="terms.html" target="_blank" rel="noopener">Terms &amp; Privacy</a>
+        &mdash; what Google profile information this app collects and why.</p>
     </div>`;
 
   const cid = getClientId();

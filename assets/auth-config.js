@@ -43,6 +43,13 @@ export function isJwtExpired(token) {
 export const getIdTokenEmail = () =>
   decodeJwtPayload(getIdToken())?.email || "";
 
+// Same token, the rest of its claims - given_name/family_name/locale come
+// from Google's default OpenID Connect scopes (openid, email, profile), no
+// extra consent screen needed beyond the sign-in the app already requires.
+// locale (e.g. "en-US") is a language/region preference the account has set,
+// not a verified country - the Profile page treats it as best-effort only.
+export const getIdTokenClaims = () => decodeJwtPayload(getIdToken()) || {};
+
 export const ID_TOKEN_KEY = "ledger.googleIdToken";
 export const NONCE_KEY = "ledger.googleNonce";
 
