@@ -315,7 +315,7 @@ label.f > textarea {
 }
 @media (max-width: 1100px) {
   .kpis {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(3, 1fr);
   }
 }
 @media (max-width: 620px) {
@@ -818,4 +818,23 @@ code {
 }
 .banner-action:hover {
   background: rgba(0, 0, 0, 0.06);
+}
+
+/* ---------- card hover-lift (added for the card/motion revamp) ---------- */
+.card-hoverable {
+  transition:
+    box-shadow var(--motion-fast) var(--motion-ease),
+    transform var(--motion-fast) var(--motion-ease);
+}
+.card-hoverable:hover {
+  box-shadow: var(--shadow-card-hover);
+  transform: translateY(-2px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .card-hoverable {
+    transition: none;
+  }
+  .card-hoverable:hover {
+    transform: none;
+  }
 }

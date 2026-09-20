@@ -342,7 +342,8 @@ function updateDashboardValues(a, label, people, pSeries, showCompare) {
   setKpi("income", money(a.income), a.income === 0 ? "no income recorded" : "");
   setKpi("expense", money(a.expense), `${a.count} entries`);
   const netEl = $("#kpi-net");
-  if (netEl) netEl.className = `kpi ${a.net < 0 ? "neg" : "pos"}`;
+  if (netEl)
+    netEl.className = `kpi card-hoverable ${a.net < 0 ? "neg" : "pos"}`;
   setKpi("net", money(a.net), a.net < 0 ? "spending exceeds income" : "");
   setKpi(
     "savings",
@@ -350,7 +351,8 @@ function updateDashboardValues(a, label, people, pSeries, showCompare) {
     a.income > 0 ? "" : "needs income data",
   );
   const budEl = $("#kpi-budgetused");
-  if (budEl) budEl.className = `kpi ${a.budgetUsed > 1 ? "neg" : ""}`;
+  if (budEl)
+    budEl.className = `kpi card-hoverable ${a.budgetUsed > 1 ? "neg" : ""}`;
   setKpi(
     "budgetused",
     a.expenseBudget > 0 ? pct(a.budgetUsed) : "\u2014",
