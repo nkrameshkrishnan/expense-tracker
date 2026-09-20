@@ -42,6 +42,11 @@
 .div-chart {
   height: 180px;
   position: relative;
+  /* A grid item's automatic min-width defaults to its content's min-content
+     size - once Chart.js sets an explicit pixel width attribute on the
+     canvas, that becomes this track's floor, so the chart can grow when the
+     window widens but never shrinks back down (e.g. docking DevTools). */
+  min-width: 0;
 }
 @media (max-width: 640px) {
   .div-panel {

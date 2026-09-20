@@ -670,6 +670,26 @@ code {
   color: var(--ink);
   font-weight: 700;
 }
+/* Between roughly 760-1180px (docked DevTools, split-screen, tablet
+   landscape) the header rail was just short of fitting brand+tabs+people+
+   profile on one line, so it wrapped into two rows earlier than it needed
+   to - tighten spacing here to keep it on one row longer. */
+@media (max-width: 1180px) {
+  .rail-in {
+    gap: 14px;
+  }
+  .tabs button {
+    padding: 16px 9px;
+    font-size: 11.5px;
+  }
+  .people {
+    margin-left: 6px;
+  }
+  .person-btn {
+    padding: 5px 8px;
+    font-size: 10.5px;
+  }
+}
 @media (max-width: 760px) {
   /* .rail-in's 24px gap plus each wrapped row's own padding produced a
      bigger visual gap above the people/profile row (~40px) than between
