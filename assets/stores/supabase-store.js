@@ -68,6 +68,26 @@ export class SupabaseStore {
       e.auth = true;
       throw e;
     }
+    // A Google account outside the household allow-list still signs in fine
+    // here - GoTrue only verifies the token, it doesn't know about
+    // allowed_emails. Without this check, that person would land on a fully
+    // rendered but empty dashboard (RLS silently returns zero rows for every
+    // table, not an error), indistinguishable from a legitimate brand-new
+    // user with no data yet. Calling the same is_allowed_household_member()
+    // RLS relies on - exposed as an RPC, callable by any authenticated
+    // session even though the underlying allowed_emails table itself stays
+    // unreadable - catches this right after sign-in instead.
+    const { data: allowed, error: rpcError } = await sb.rpc(
+      "is_allowed_household_member",
+    );
+    if (rpcError || !allowed) {
+      await sb.auth.signOut();
+      const e = new Error(
+        "This Google account isn't on the allow-list for this Ledger. Ask the household owner to add your email, or sign in with a different account.",
+      );
+      e.auth = true;
+      throw e;
+    }
   }
 
   async ping() {

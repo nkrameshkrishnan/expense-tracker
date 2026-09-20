@@ -9,7 +9,6 @@
    not just reasoned about. */
 import {
   openStore,
-  currentYear,
   getSupabaseUrl,
   getSupabaseAnonKey,
   getClientId,
@@ -186,28 +185,6 @@ export function signOut() {
   location.reload();
 }
 
-/** First run only, and only into browser storage. Seeding a live Supabase project
-    behind your back would be the wrong default — do that from Data → Import. */
-async function seedIfEmpty() {
-  if (isRemoteStore(state.store)) return;
-  if (!(await state.store.isEmpty())) return;
-  try {
-    const [rows, budget] = await Promise.all([
-      fetch("./data/seed.json").then((r) => r.json()),
-      fetch("./data/seed-budget.json")
-        .then((r) => r.json())
-        .catch(() => null),
-    ]);
-    await state.store.bulkAdd(rows);
-    if (budget) await state.store.setBudget(budget, currentYear());
-    notice(
-      `Loaded ${rows.length} rows from your Expense.xlsx into browser storage. Connect Supabase under Data to make it the source of truth.`,
-    );
-  } catch {
-    notice('No seed data loaded — add your first entry under "Add".');
-  }
-}
-
 /* Staged, time-based messages for the boot-loading overlay. A cold sign-in
    plus the first Supabase query can take a few seconds, and a silent
    unlabeled spinner for that whole window is indistinguishable from a
@@ -268,7 +245,6 @@ export const backendLabel = (s) =>
 export async function boot() {
   startBootMessages();
   state.store = await openStore(notice);
-  await seedIfEmpty();
   await refresh();
   revealApp();
   // A configured Supabase project that still failed to connect (as opposed
