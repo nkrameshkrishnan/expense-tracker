@@ -139,14 +139,39 @@ th.n {
   color: var(--paper);
   border-bottom-color: var(--amber);
 }
-.conn {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: #8d97a5;
-  white-space: nowrap;
+.profile-wrap {
+  position: relative;
 }
-.conn.remote {
-  color: #5eead4;
+.profile-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid #3a3d47;
+  background: var(--paper-2);
+  color: var(--ink);
+  font-family: var(--disp);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.profile-btn:hover {
+  border-color: var(--amber);
+}
+.profile-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  min-width: 200px;
+  background: var(--card-bg);
+  color: var(--ink);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  padding: 14px;
+  z-index: 50;
 }
 
 /* ---------- layout ---------- */

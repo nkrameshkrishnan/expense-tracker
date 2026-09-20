@@ -19,10 +19,12 @@ import {
   getIdToken,
   setIdToken,
   setNonce,
+  getClientId,
+  getIdTokenEmail,
 } from "./store.js";
 import { byPersonFilter } from "./xlsxio.js";
 import { go } from "./router.js";
-import { showGate, signOut, isRemoteStore } from "./auth.js";
+import { showGate, signOut } from "./auth.js";
 
 export const $ = (s) => document.querySelector(s);
 export const view = $("#view");
@@ -150,27 +152,50 @@ export async function refresh() {
   state.debts = (await state.store.getDebts?.()) || [];
   $("#foot-count").textContent = `${state.rows.length} transactions stored`;
   renderPeopleSwitch();
-  const c = $("#conn");
-  const label = {
-    supabase: "\u25cf supabase",
-    local: "\u25cf browser only",
-    memory: "\u25cf session only",
+  renderProfileMenu();
+}
+
+// Bound once, not per-render below - unlike the button/menu content further
+// down (safe to reassign on every refresh()), a document click listener
+// would stack one more copy per navigation instead of replacing the last.
+let profileMenuOutsideClickBound = false;
+
+/** Small account menu in the header rail: a single-letter badge that opens a
+    dropdown with the signed-in email and Sign out. Deliberately says nothing
+    about which storage backend is active (Data already covers that) - this
+    is about who is signed in, not where the data lives. Hidden entirely
+    when this deployment has no Google auth configured at all (see needsAuth
+    in app.js) - there is no identity to show a menu for in that case. */
+function renderProfileMenu() {
+  const wrap = $("#profile-wrap");
+  const btn = $("#profile-btn");
+  const menu = $("#profile-menu");
+  if (!wrap || !btn || !menu) return;
+  if (!getClientId()) {
+    wrap.hidden = true;
+    return;
+  }
+  wrap.hidden = false;
+  const email = getIdTokenEmail();
+  btn.textContent = email ? email[0].toUpperCase() : "?";
+  menu.innerHTML = `
+    <p class="note" style="margin:0 0 10px">${email ? esc(email) : "Not signed in."}</p>
+    <button class="btn ghost" id="profile-signout">Sign out</button>`;
+  btn.onclick = () => {
+    const opening = menu.hidden;
+    menu.hidden = !opening;
+    btn.setAttribute("aria-expanded", String(opening));
   };
-  const who = state.store.user?.email
-    ? ` \u00b7 ${state.store.user.email.split("@")[0]}`
-    : "";
-  c.innerHTML =
-    (label[state.store.kind] || "\u25cf ?") +
-    esc(who) +
-    (getIdToken()
-      ? ' <button class="signout-btn" id="signout">sign out</button>'
-      : "");
-  $("#signout")?.addEventListener("click", signOut);
-  c.title =
-    state.store.kind === "supabase"
-      ? "Reading and writing your Supabase project live"
-      : "Not connected to Supabase — changes stay in this browser";
-  c.className = "conn" + (isRemoteStore(state.store) ? " remote" : "");
+  $("#profile-signout").onclick = signOut;
+  if (!profileMenuOutsideClickBound) {
+    profileMenuOutsideClickBound = true;
+    document.addEventListener("click", (e) => {
+      if (!wrap.contains(e.target)) {
+        menu.hidden = true;
+        btn.setAttribute("aria-expanded", "false");
+      }
+    });
+  }
 }
 
 /** Shared KPI-card markup. Used by both Dashboard and Net worth. */

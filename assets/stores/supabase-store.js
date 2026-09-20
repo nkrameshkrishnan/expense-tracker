@@ -58,7 +58,7 @@ export class SupabaseStore {
     // while signInWithIdToken needs the RAW value to hash and compare
     // against that claim itself.
     const nonce = getNonce();
-    const { error } = await sb.auth.signInWithIdToken({
+    const { data, error } = await sb.auth.signInWithIdToken({
       provider: "google",
       token: idToken,
       ...(nonce ? { nonce } : {}),
@@ -68,6 +68,10 @@ export class SupabaseStore {
       e.auth = true;
       throw e;
     }
+    // Read by core.js's connection indicator and the Profile page - both
+    // display the signed-in email via state.store.user?.email, which stayed
+    // null before this (nothing ever wrote to the field the constructor set).
+    this.user = data.user;
     // A Google account outside the household allow-list still signs in fine
     // here - GoTrue only verifies the token, it doesn't know about
     // allowed_emails. Without this check, that person would land on a fully

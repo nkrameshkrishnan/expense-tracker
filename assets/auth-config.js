@@ -15,25 +15,33 @@ import { GOOGLE_CLIENT_ID, SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js";
 // same recovery path, minus the guaranteed-failing network call and the
 // console entry that comes with any non-2xx response regardless of whether
 // the app's own try/catch already handles it.
-export function isJwtExpired(token) {
+function decodeJwtPayload(token) {
   try {
-    const payload = JSON.parse(
+    return JSON.parse(
       atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")),
     );
-    // 30s grace period, not exact-second precision - a token that expires
-    // between "this check" and "the request Supabase makes with it" a
-    // moment later should still be treated as expired now rather than
-    // trusting a razor-thin margin.
-    return !payload.exp || payload.exp * 1000 < Date.now() + 30_000;
   } catch {
-    // Anything unparseable (truncated, corrupted, not actually a JWT) is
-    // not a token this app minted itself - safest to treat it as expired
-    // and let the normal re-sign-in path handle it, rather than risk
-    // throwing here on a malformed token which is likely stale localStorage
-    // data anyway.
-    return true;
+    return null;
   }
 }
+
+export function isJwtExpired(token) {
+  const payload = decodeJwtPayload(token);
+  // 30s grace period, not exact-second precision - a token that expires
+  // between "this check" and "the request Supabase makes with it" a
+  // moment later should still be treated as expired now rather than
+  // trusting a razor-thin margin. A null payload (truncated, corrupted, not
+  // actually a JWT - not a token this app minted itself) is treated the same
+  // way, letting the normal re-sign-in path handle it.
+  return !payload?.exp || payload.exp * 1000 < Date.now() + 30_000;
+}
+
+// The signed-in email, read straight from the Google ID token's own claim -
+// independent of which store ended up active. Unlike state.store.user
+// (SupabaseStore-only, unset the moment a session falls back to
+// Local/MemoryStore), this stays correct regardless of backend.
+export const getIdTokenEmail = () =>
+  decodeJwtPayload(getIdToken())?.email || "";
 
 export const ID_TOKEN_KEY = "ledger.googleIdToken";
 export const NONCE_KEY = "ledger.googleNonce";
