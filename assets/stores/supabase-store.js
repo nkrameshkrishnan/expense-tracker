@@ -273,6 +273,30 @@ export class SupabaseStore {
     return (await this.list()).length === 0;
   }
 
+  /** Household allow-list management for the Profile page. allowed_emails
+      itself has zero RLS policies (see supabase/schema.sql) - these three
+      go through the security-definer RPCs added there instead, which
+      re-check household membership themselves rather than trusting RLS to
+      have already done it. */
+  async listAllowedEmails() {
+    const sb = await this._client();
+    const { data, error } = await sb.rpc("list_allowed_emails");
+    if (error) throw dbError(error);
+    return data || [];
+  }
+  async addAllowedEmail(email) {
+    const sb = await this._client();
+    const { error } = await sb.rpc("add_allowed_email", { new_email: email });
+    if (error) throw dbError(error);
+  }
+  async removeAllowedEmail(email) {
+    const sb = await this._client();
+    const { error } = await sb.rpc("remove_allowed_email", {
+      target_email: email,
+    });
+    if (error) throw dbError(error);
+  }
+
   async getBudget(year) {
     const cached = await this._ensure();
     if (!year || year === cached.budgetYear) return cached.budget;

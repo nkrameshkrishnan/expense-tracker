@@ -13,6 +13,7 @@ import { renderTransactions } from "./pages/transactions.js";
 import { renderBudget } from "./pages/budget.js";
 import { renderNetWorth } from "./pages/networth.js";
 import { renderData } from "./pages/data.js";
+import { renderProfile } from "./pages/profile.js";
 
 export const VIEWS = {
   dashboard: renderDashboard,
@@ -21,6 +22,12 @@ export const VIEWS = {
   budget: renderBudget,
   networth: renderNetWorth,
   data: renderData,
+  // No .tabs button carries data-tab="profile" on purpose - this page is
+  // reached from the profile popover (core.js's renderProfileMenu()), not
+  // the main nav. go()'s #tabs-highlighting loop only touches buttons that
+  // exist in the DOM, so landing here just leaves every nav button
+  // unhighlighted rather than erroring.
+  profile: renderProfile,
 };
 
 export function go(tab) {

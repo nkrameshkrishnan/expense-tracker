@@ -194,11 +194,17 @@ function renderProfileMenu() {
   btn.textContent = email ? email[0].toUpperCase() : "?";
   menu.innerHTML = `
     <p class="note" style="margin:0 0 10px">${email ? esc(email) : "Not signed in."}</p>
-    <button class="btn ghost" id="profile-signout">Sign out</button>`;
+    <button class="btn ghost" id="profile-view" style="margin-bottom:8px;width:100%">View profile</button>
+    <button class="btn ghost" id="profile-signout" style="width:100%">Sign out</button>`;
   btn.onclick = () => {
     const opening = menu.hidden;
     menu.hidden = !opening;
     btn.setAttribute("aria-expanded", String(opening));
+  };
+  $("#profile-view").onclick = () => {
+    menu.hidden = true;
+    btn.setAttribute("aria-expanded", "false");
+    go("profile");
   };
   $("#profile-signout").onclick = signOut;
   if (!profileMenuOutsideClickBound) {

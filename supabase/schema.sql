@@ -155,6 +155,63 @@ create policy "household can update debts" on debts
 create policy "household can delete debts" on debts
   for delete using (is_allowed_household_member());
 
+-- ============================================================ household access (Profile page)
+-- Lets a signed-in household member see and manage who else is on the
+-- allow-list, without ever granting direct SELECT/INSERT/DELETE on
+-- allowed_emails itself (see the comment on that table above). Each
+-- function re-checks is_allowed_household_member() itself, the same guard
+-- every policy above relies on - a Google account that authenticates but
+-- isn't on the list gets an empty list / a raised exception here, not a
+-- crash, the same "silently see nothing" shape RLS already gives every
+-- other table.
+create or replace function list_allowed_emails()
+returns setof text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select email from allowed_emails
+  where is_allowed_household_member()
+  order by email;
+$$;
+
+create or replace function add_allowed_email(new_email text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not is_allowed_household_member() then
+    raise exception 'Not authorized';
+  end if;
+  insert into allowed_emails (email) values (lower(trim(new_email)))
+  on conflict (email) do nothing;
+end;
+$$;
+
+create or replace function remove_allowed_email(target_email text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not is_allowed_household_member() then
+    raise exception 'Not authorized';
+  end if;
+  -- Guards against locking every household member out at once - the same
+  -- failure mode the allowed_emails RLS comment above warns about, just
+  -- reachable this time through a legitimate management action instead of
+  -- a compromised anon key.
+  if (select count(*) from allowed_emails) <= 1 then
+    raise exception 'Cannot remove the last remaining email — this would lock everyone out.';
+  end if;
+  delete from allowed_emails where email = lower(trim(target_email));
+end;
+$$;
+
 -- ============================================================ verify
 -- After applying, confirm RLS actually blocks an unauthenticated request:
 --   curl "$SUPABASE_URL/rest/v1/transactions?select=*" \
