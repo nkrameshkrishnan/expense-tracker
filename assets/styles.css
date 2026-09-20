@@ -365,6 +365,11 @@ label.f > textarea {
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-card);
   padding: 14px;
+  /* A grid item's automatic min-width defaults to its content's min-content
+     size, not 0 - a table nested inside (even one wrapped in a scrolling
+     .tablewrap) can otherwise force this panel, and the whole .grid2 track,
+     wider than the viewport on narrow screens. */
+  min-width: 0;
 }
 .panel.wide {
   grid-column: 1 / -1;
@@ -764,6 +769,31 @@ code {
   margin-bottom: 18px;
   flex-wrap: wrap;
 }
+.add-person-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  border: 1px solid var(--rule-2);
+  padding: 6px 14px;
+  font-family: var(--disp);
+  font-size: 12.5px;
+  cursor: pointer;
+  color: var(--ink-3);
+}
+.add-person-btn:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.add-person-btn.on {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+.add-person-new {
+  border-style: dashed;
+}
+
 /* ------------------------------------------------- inline "+ New" list entry */
 .newopt {
   display: flex;

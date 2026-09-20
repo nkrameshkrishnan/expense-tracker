@@ -7,6 +7,12 @@
   gap: 24px;
   align-items: start;
 }
+/* Grid tracks default to a content-based min-width, so a wide child (the
+   type-row below, at full 4-button intrinsic width) can blow out the whole
+   layout instead of shrinking on narrow screens - override that. */
+.add-layout > * {
+  min-width: 0;
+}
 @media (max-width: 860px) {
   .add-layout {
     grid-template-columns: 1fr;
@@ -16,9 +22,17 @@
 /* type tabs */
 .add-type-row {
   display: flex;
+  flex-wrap: wrap;
   margin-bottom: 20px;
   border: 1px solid var(--rule-2);
   width: fit-content;
+  max-width: 100%;
+}
+@media (max-width: 480px) {
+  .add-type-btn {
+    padding: 8px 14px;
+    flex: 1 1 auto;
+  }
 }
 .add-type-btn {
   background: #fff;

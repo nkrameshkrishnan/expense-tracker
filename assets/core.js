@@ -67,7 +67,7 @@ export const state = {
 };
 
 export const scoped = () => byPersonFilter(state.rows, state.person);
-export const personLabel = () => state.person || "Family";
+export const personLabel = () => state.person || "All";
 
 /** Segmented control in the header rail. Present on every tab, so the choice
     follows you between Dashboard, Transactions, Add and Budget. */
@@ -84,7 +84,7 @@ export function renderPeopleSwitch() {
   if (present.has(UNASSIGNED)) opts.push(UNASSIGNED);
   el.innerHTML = opts
     .map((p) => {
-      const label = p === "" ? "Family" : p === UNASSIGNED ? "Unassigned" : p;
+      const label = p === "" ? "All" : p === UNASSIGNED ? "Unassigned" : p;
       return `<button class="person-btn${state.person === p ? " on" : ""}" data-person="${esc(p)}">${esc(label)}</button>`;
     })
     .join("");

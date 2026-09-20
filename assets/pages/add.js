@@ -1,7 +1,12 @@
 /* Add/Edit transaction page. */
 import { TYPES, MONTHS, currentYear } from "../store.js";
 import { money, monthOf } from "../xlsxio.js";
-import { listFor, selectWithNew, wireNewOption } from "../categories.js";
+import {
+  listFor,
+  selectWithNew,
+  wireNewOption,
+  addCustom,
+} from "../categories.js";
 import {
   $,
   view,
@@ -13,6 +18,20 @@ import {
   refresh,
 } from "../core.js";
 import { go } from "../router.js";
+
+/** Pill row for the "Whose" field: one button per known person plus a
+    "+ New…" pill, mirroring the type-picker's look rather than a dropdown. */
+function personPillsHtml(people, selected) {
+  return (
+    people
+      .map(
+        (pp) =>
+          `<button type="button" class="add-person-btn${pp === selected ? " on" : ""}" data-person="${esc(pp)}"><span class="person-swatch" data-p="${esc(pp)}"></span>${esc(pp)}</button>`,
+      )
+      .join("") +
+    `<button type="button" class="add-person-btn add-person-new" id="person-new-btn">+ New…</button>`
+  );
+}
 
 export function renderAdd() {
   const e = state.editing;
@@ -79,10 +98,11 @@ export function renderAdd() {
 
       <form id="f" autocomplete="off">
         <input type="hidden" name="type" id="type-hidden" value="${selType}">
+        <input type="hidden" name="person" id="person-hidden" value="${esc(selPerson)}">
 
-        <div class="add-person-row">
+        <div class="add-person-row" id="person-pills">
           <span class="add-label" style="margin-right:4px">Whose</span>
-          ${selectWithNew("f-person", "person", selPerson, { blank: true })}
+          ${personPillsHtml(people, selPerson)}
         </div>
 
         <div class="add-amount-wrap">
@@ -221,7 +241,6 @@ export function renderAdd() {
     ["f-sub", "subcategory"],
     ["f-pay", "payment"],
     ["f-acc", "account"],
-    ["f-person", "person"],
   ].forEach(([id, name]) => {
     const el = $("#" + id);
     if (el) el.name = name;
@@ -230,7 +249,7 @@ export function renderAdd() {
   wireNewOption("f-sub", "subcategory");
   wireNewOption("f-pay", "payment");
   wireNewOption("f-acc", "account");
-  wireNewOption("f-person", "person");
+  wirePersonPills();
 
   view.querySelectorAll(".add-type-btn").forEach((btn) => {
     btn.onclick = () => {
@@ -241,6 +260,64 @@ export function renderAdd() {
       $("#type-hidden").value = btn.dataset.type;
     };
   });
+
+  /* Re-renders the "Whose" pill row (used after adding a new person via the
+     "+ New" pill, since that changes how many options exist). */
+  function renderPersonPills(selected) {
+    const wrap = $("#person-pills");
+    if (!wrap) return;
+    wrap.innerHTML =
+      `<span class="add-label" style="margin-right:4px">Whose</span>` +
+      personPillsHtml(listFor("person"), selected);
+    wirePersonPills();
+  }
+
+  function wirePersonPills() {
+    view.querySelectorAll(".add-person-btn[data-person]").forEach((btn) => {
+      btn.onclick = () => {
+        view
+          .querySelectorAll(".add-person-btn[data-person]")
+          .forEach((b) => b.classList.remove("on"));
+        btn.classList.add("on");
+        $("#person-hidden").value = btn.dataset.person;
+      };
+    });
+    const newBtn = $("#person-new-btn");
+    if (!newBtn) return;
+    newBtn.onclick = () => {
+      const wrap = document.createElement("span");
+      wrap.className = "newopt";
+      wrap.innerHTML = `<input class="newopt-input" placeholder="New person…" autocomplete="off">
+        <button type="button" class="newopt-ok">Add</button>
+        <button type="button" class="newopt-cancel">✕</button>`;
+      newBtn.style.display = "none";
+      newBtn.after(wrap);
+      const input = wrap.querySelector(".newopt-input");
+      input.focus();
+      const close = (value) => {
+        wrap.remove();
+        newBtn.style.display = "";
+        if (value) {
+          addCustom("person", value);
+          $("#person-hidden").value = value;
+          renderPersonPills(value);
+        }
+      };
+      wrap.querySelector(".newopt-ok").onclick = () =>
+        close(input.value.trim());
+      wrap.querySelector(".newopt-cancel").onclick = () => close(null);
+      input.onkeydown = (ev) => {
+        if (ev.key === "Enter") {
+          ev.preventDefault();
+          close(input.value.trim());
+        }
+        if (ev.key === "Escape") {
+          ev.preventDefault();
+          close(null);
+        }
+      };
+    };
+  }
 
   $("#f-date").oninput = (ev) => {
     $("#day-name").textContent = dayName(ev.target.value);
@@ -394,12 +471,17 @@ export function renderAdd() {
         $("#hint").textContent = `${state.rows.length} total`;
         ev.target.reset();
         $("#type-hidden").value = d.type;
+        $("#person-hidden").value = d.person;
         view
           .querySelectorAll(".add-type-btn")
           .forEach((b) => b.classList.toggle("on", b.dataset.type === d.type));
+        view
+          .querySelectorAll(".add-person-btn[data-person]")
+          .forEach((b) =>
+            b.classList.toggle("on", b.dataset.person === d.person),
+          );
         $("#f-date").value = d.date;
         $("#f-cat").value = d.category;
-        $("#f-person").value = d.person;
         setTimeout(() => {
           $("#amount-input").focus();
         }, 50);
