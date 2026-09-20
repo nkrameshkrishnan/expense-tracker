@@ -80,11 +80,11 @@ export function renderPeopleSwitch() {
   const customPresent = [...present]
     .filter((p) => p !== UNASSIGNED && !PEOPLE.includes(p))
     .sort((a, b) => a.localeCompare(b));
-  const opts = ["", ...PEOPLE.filter((p) => present.has(p)), ...customPresent];
+  const opts = [...PEOPLE.filter((p) => present.has(p)), ...customPresent];
   if (present.has(UNASSIGNED)) opts.push(UNASSIGNED);
   el.innerHTML = opts
     .map((p) => {
-      const label = p === "" ? "All" : p === UNASSIGNED ? "Unassigned" : p;
+      const label = p === UNASSIGNED ? "Unassigned" : p;
       return `<button class="person-btn${state.person === p ? " on" : ""}" data-person="${esc(p)}">${esc(label)}</button>`;
     })
     .join("");

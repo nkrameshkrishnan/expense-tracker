@@ -671,6 +671,13 @@ code {
   font-weight: 700;
 }
 @media (max-width: 760px) {
+  /* .rail-in's 24px gap plus each wrapped row's own padding produced a
+     bigger visual gap above the people/profile row (~40px) than between
+     the two internally-wrapped tab rows (~32px, since .tabs has gap:0) -
+     trim the row-gap here so the rhythm matches. */
+  .rail-in {
+    row-gap: 16px;
+  }
   .people {
     margin-left: 0;
     order: 3;

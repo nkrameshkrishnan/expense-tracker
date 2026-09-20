@@ -71,7 +71,7 @@ export const MONTHS = [
    other two — a shared grocery run is Family, it is not half Ramesh and half
    Surya. Rows imported before this feature existed have no person and read
    as Unassigned. */
-export const PEOPLE = ["Ramesh", "Surya", "Family"];
+export const PEOPLE = ["Family", "Ramesh", "Surya"];
 export const UNASSIGNED = "Unassigned";
 export const PERSON_KEY = "ledger.person";
 
