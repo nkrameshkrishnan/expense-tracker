@@ -1,5 +1,5 @@
 /* Add/Edit transaction page. */
-import { TYPES, MONTHS, currentYear, PEOPLE } from "../store.js";
+import { TYPES, MONTHS, currentYear } from "../store.js";
 import { money, monthOf } from "../xlsxio.js";
 import { listFor, selectWithNew, wireNewOption } from "../categories.js";
 import {
@@ -21,8 +21,9 @@ export function renderAdd() {
   const selCat = e?.category || "Groceries";
   // Default to whoever is selected in the header, so a run of Surya's receipts
   // does not need the field touched on every entry.
+  const people = listFor("person");
   const selPerson =
-    e?.person || (PEOPLE.includes(state.person) ? state.person : "Ramesh");
+    e?.person || (people.includes(state.person) ? state.person : "");
 
   const curMonth = new Date().getMonth() + 1;
   const ctxActual = scoped()
@@ -76,14 +77,13 @@ export function renderAdd() {
         ${TYPES.map((t) => `<button type="button" class="add-type-btn${t === selType ? " on" : ""}" data-type="${t}">${t}</button>`).join("")}
       </div>
 
-      <div class="add-person-row">
-        <span class="add-label" style="margin-right:4px">Whose</span>
-        ${PEOPLE.map((pp) => `<button type="button" class="add-person-btn${pp === selPerson ? " on" : ""}" data-person="${pp}"><span class="person-swatch" data-p="${pp}"></span>${pp}</button>`).join("")}
-      </div>
-
       <form id="f" autocomplete="off">
         <input type="hidden" name="type" id="type-hidden" value="${selType}">
-        <input type="hidden" name="person" id="person-hidden" value="${esc(selPerson)}">
+
+        <div class="add-person-row">
+          <span class="add-label" style="margin-right:4px">Whose</span>
+          ${selectWithNew("f-person", "person", selPerson, { blank: true })}
+        </div>
 
         <div class="add-amount-wrap">
           <span class="add-currency">$</span>
@@ -221,6 +221,7 @@ export function renderAdd() {
     ["f-sub", "subcategory"],
     ["f-pay", "payment"],
     ["f-acc", "account"],
+    ["f-person", "person"],
   ].forEach(([id, name]) => {
     const el = $("#" + id);
     if (el) el.name = name;
@@ -229,6 +230,7 @@ export function renderAdd() {
   wireNewOption("f-sub", "subcategory");
   wireNewOption("f-pay", "payment");
   wireNewOption("f-acc", "account");
+  wireNewOption("f-person", "person");
 
   view.querySelectorAll(".add-type-btn").forEach((btn) => {
     btn.onclick = () => {
@@ -237,16 +239,6 @@ export function renderAdd() {
         .forEach((b) => b.classList.remove("on"));
       btn.classList.add("on");
       $("#type-hidden").value = btn.dataset.type;
-    };
-  });
-
-  view.querySelectorAll(".add-person-btn").forEach((btn) => {
-    btn.onclick = () => {
-      view
-        .querySelectorAll(".add-person-btn")
-        .forEach((b) => b.classList.remove("on"));
-      btn.classList.add("on");
-      $("#person-hidden").value = btn.dataset.person;
     };
   });
 
@@ -402,17 +394,12 @@ export function renderAdd() {
         $("#hint").textContent = `${state.rows.length} total`;
         ev.target.reset();
         $("#type-hidden").value = d.type;
-        $("#person-hidden").value = d.person;
         view
           .querySelectorAll(".add-type-btn")
           .forEach((b) => b.classList.toggle("on", b.dataset.type === d.type));
-        view
-          .querySelectorAll(".add-person-btn")
-          .forEach((b) =>
-            b.classList.toggle("on", b.dataset.person === d.person),
-          );
         $("#f-date").value = d.date;
         $("#f-cat").value = d.category;
+        $("#f-person").value = d.person;
         setTimeout(() => {
           $("#amount-input").focus();
         }, 50);

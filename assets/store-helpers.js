@@ -1,7 +1,7 @@
 /* Shared plumbing used by all three store backends (Supabase/Local/Memory):
    row normalisation, budget shaping, the lazy Supabase SDK loader, and a
    small sleep/retry/error-tagging toolkit. */
-import { CAT_NAMES, PEOPLE, TYPES } from "./constants.js";
+import { CAT_NAMES, TYPES } from "./constants.js";
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -55,7 +55,10 @@ export function normalise(r) {
     account: r.account || "",
     recurring: r.recurring === "Yes" || r.recur === "Yes" ? "Yes" : "No",
     notes: r.notes || r.note || "",
-    person: PEOPLE.includes(r.person) ? r.person : "",
+    // Any non-empty string is allowed, same as category above: users can add
+    // their own people from the Add page, and silently dropping unknown
+    // names here would erase a value the UI just accepted.
+    person: String(r.person || "").trim(),
   };
 }
 

@@ -764,28 +764,6 @@ code {
   margin-bottom: 18px;
   flex-wrap: wrap;
 }
-.add-person-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: #fff;
-  border: 1px solid var(--rule-2);
-  padding: 6px 14px;
-  font-family: var(--disp);
-  font-size: 12.5px;
-  cursor: pointer;
-  color: var(--ink-3);
-}
-.add-person-btn:hover {
-  background: var(--paper-2);
-  color: var(--ink);
-}
-.add-person-btn.on {
-  background: var(--ink);
-  color: var(--paper);
-  border-color: var(--ink);
-}
-
 /* ------------------------------------------------- inline "+ New" list entry */
 .newopt {
   display: flex;

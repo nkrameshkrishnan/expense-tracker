@@ -75,7 +75,12 @@ export function renderPeopleSwitch() {
   const el = $("#people");
   if (!el) return;
   const present = new Set(state.rows.map((r) => r.person || UNASSIGNED));
-  const opts = ["", ...PEOPLE.filter((p) => present.has(p))];
+  // Rows can carry a person value added via the Add page's "+ New" option,
+  // which isn't in the built-in PEOPLE list - still needs its own button here.
+  const customPresent = [...present]
+    .filter((p) => p !== UNASSIGNED && !PEOPLE.includes(p))
+    .sort((a, b) => a.localeCompare(b));
+  const opts = ["", ...PEOPLE.filter((p) => present.has(p)), ...customPresent];
   if (present.has(UNASSIGNED)) opts.push(UNASSIGNED);
   el.innerHTML = opts
     .map((p) => {

@@ -1,7 +1,7 @@
 /* Custom category/payment/account/subcategory options - the "+ New..."
    escape hatch on every dropdown that isn't a fixed list. Used by Add,
    Transactions, Budget, and Net worth. */
-import { CAT_NAMES, PAYMENTS, ACCOUNTS, CUSTOM_KEY } from "./store.js";
+import { CAT_NAMES, PAYMENTS, ACCOUNTS, PEOPLE, CUSTOM_KEY } from "./store.js";
 import { $, esc, state } from "./core.js";
 
 export function loadCustom() {
@@ -28,6 +28,7 @@ const BUILTIN = {
   category: CAT_NAMES,
   payment: PAYMENTS,
   account: ACCOUNTS,
+  person: PEOPLE,
   subcategory: [],
 };
 
