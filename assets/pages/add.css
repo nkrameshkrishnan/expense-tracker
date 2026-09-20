@@ -29,9 +29,25 @@
   max-width: 100%;
 }
 @media (max-width: 480px) {
+  /* flex-wrap alone left the 4th button (whichever wraps to its own line)
+     stretched full-width next to three unevenly-sized siblings, with a
+     stray border where the wrapped row met the row above - a plain 2x2
+     grid reads much cleaner at this width. */
+  .add-type-row {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    width: 100%;
+  }
   .add-type-btn {
     padding: 8px 14px;
-    flex: 1 1 auto;
+    border-right: 1px solid var(--rule-2);
+    border-bottom: 1px solid var(--rule-2);
+  }
+  .add-type-btn:nth-child(2n) {
+    border-right: 0;
+  }
+  .add-type-btn:nth-last-child(-n + 2) {
+    border-bottom: 0;
   }
 }
 .add-type-btn {

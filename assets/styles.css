@@ -679,6 +679,14 @@ code {
     padding: 4px 9px;
     font-size: 10px;
   }
+  /* .profile-wrap has no explicit order, so at this width it sits ahead of
+     .people (order: 3) and lands near the left edge of the header instead
+     of the right - a menu still anchored with right:0 then opens mostly
+     off the left side of the screen. Anchor from the left here instead. */
+  .profile-menu {
+    left: 0;
+    right: auto;
+  }
 }
 
 /* dashboard person cards */

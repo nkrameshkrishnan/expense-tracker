@@ -189,7 +189,7 @@ export function renderNetWorth() {
     }</span>
   </div>
 
-  <div class="kpis" style="grid-template-columns:repeat(4,1fr)">
+  <div class="kpis">
     ${kpi("Assets", money(assets), `${at(latest).filter((b) => b.kind === "Asset" && (!scopeOwner || b.owner === scopeOwner)).length} accounts`)}
     ${kpi("Liabilities", money(liabs), liabs > 0 ? "owed" : "nothing owed")}
     ${kpi("Net worth", money(net), "", net < 0 ? "neg" : "pos")}
