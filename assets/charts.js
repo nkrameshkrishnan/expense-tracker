@@ -228,7 +228,7 @@ export function paymentSplit(byPayment) {
 const PERSON_COLORS = {
   Ramesh: TEAL,
   Surya: BLUE,
-  Joint: AMBER,
+  Family: AMBER,
   Unassigned: SAND,
 };
 const colorFor = (p) => PERSON_COLORS[p] || SAND;

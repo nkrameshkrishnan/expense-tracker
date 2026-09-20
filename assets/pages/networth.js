@@ -40,7 +40,7 @@ function nwAccounts() {
   return [...seen.values()];
 }
 
-/** Owners that actually have accounts, so a Joint account gets its own group. */
+/** Owners that actually have accounts, so a Family account gets its own group. */
 function nwOwners() {
   const set = new Set(nwAccounts().map((a) => a.owner));
   return [

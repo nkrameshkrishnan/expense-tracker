@@ -624,8 +624,8 @@ code {
 .person-card-fill[data-p="Surya"] {
   background: var(--blue);
 }
-.person-swatch[data-p="Joint"],
-.person-card-fill[data-p="Joint"] {
+.person-swatch[data-p="Family"],
+.person-card-fill[data-p="Family"] {
   background: var(--amber);
 }
 .person-swatch[data-p="Unassigned"],
@@ -751,7 +751,7 @@ code {
   border-color: var(--blue);
   color: var(--blue);
 }
-.person-chip[data-p="Joint"] {
+.person-chip[data-p="Family"] {
   border-color: var(--amber);
   color: var(--amber);
 }

@@ -191,7 +191,7 @@ in `normalise()`, and in `supabase/schema.sql`'s `check` constraint.
 id  date  type  category  subcategory  description  amount  payment  account  recurring  notes  person
 ```
 
-`person` (`Ramesh`, `Surya`, `Joint`, or unassigned) was added after the
+`person` (`Ramesh`, `Surya`, `Family`, or unassigned) was added after the
 initial import; rows without it are treated as `Unassigned` everywhere.
 
 Budget is one row per category/year/month in the `budget` table. **Zero

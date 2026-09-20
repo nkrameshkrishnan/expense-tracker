@@ -67,10 +67,11 @@ export const MONTHS = [
   "Dec",
 ];
 
-/* Who the money belongs to. 'Joint' is a real third bucket, not a sum of the other
-   two — a shared grocery run is Joint, it is not half Ramesh and half Surya.
-   Rows imported before this feature existed have no person and read as Unassigned. */
-export const PEOPLE = ["Ramesh", "Surya", "Joint"];
+/* Who the money belongs to. 'Family' is a real third bucket, not a sum of the
+   other two — a shared grocery run is Family, it is not half Ramesh and half
+   Surya. Rows imported before this feature existed have no person and read
+   as Unassigned. */
+export const PEOPLE = ["Ramesh", "Surya", "Family"];
 export const UNASSIGNED = "Unassigned";
 export const PERSON_KEY = "ledger.person";
 
