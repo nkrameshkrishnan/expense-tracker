@@ -67,10 +67,14 @@ export const state = {
 };
 
 export const scoped = () => byPersonFilter(state.rows, state.person);
-export const personLabel = () => state.person || "All";
+export const personLabel = () => state.person || "Family";
 
 /** Segmented control in the header rail. Present on every tab, so the choice
-    follows you between Dashboard, Transactions, Add and Budget. */
+    follows you between Dashboard, Transactions, Add and Budget.
+    "Family" is the whole-household view - it maps to state.person === "" (no
+    filter, everyone's rows), the same value the old "All" button used, not to
+    rows individually tagged person:"Family". Ramesh/Surya still filter to
+    just their own tagged rows. */
 export function renderPeopleSwitch() {
   const el = $("#people");
   if (!el) return;
@@ -80,12 +84,17 @@ export function renderPeopleSwitch() {
   const customPresent = [...present]
     .filter((p) => p !== UNASSIGNED && !PEOPLE.includes(p))
     .sort((a, b) => a.localeCompare(b));
-  const opts = [...PEOPLE.filter((p) => present.has(p)), ...customPresent];
+  const opts = [
+    "Family",
+    ...PEOPLE.filter((p) => p !== "Family" && present.has(p)),
+    ...customPresent,
+  ];
   if (present.has(UNASSIGNED)) opts.push(UNASSIGNED);
   el.innerHTML = opts
     .map((p) => {
+      const value = p === "Family" ? "" : p;
       const label = p === UNASSIGNED ? "Unassigned" : p;
-      return `<button class="person-btn${state.person === p ? " on" : ""}" data-person="${esc(p)}">${esc(label)}</button>`;
+      return `<button class="person-btn${state.person === value ? " on" : ""}" data-person="${esc(value)}">${esc(label)}</button>`;
     })
     .join("");
   el.querySelectorAll(".person-btn").forEach(
