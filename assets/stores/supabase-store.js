@@ -455,6 +455,18 @@ export class SupabaseStore {
       pricePerGramCad: Number(data[0].price_per_gram_cad) || 0,
     };
   }
+  async getGoldPriceHistory() {
+    const sb = await this._client();
+    const { data, error } = await sb
+      .from("gold_price_history")
+      .select("*")
+      .order("date", { ascending: true });
+    if (error) throw dbError(error);
+    return (data || []).map((r) => ({
+      date: r.date,
+      pricePerGramCad: Number(r.price_per_gram_cad) || 0,
+    }));
+  }
 
   async addDebt(record) {
     const sb = await this._client();
