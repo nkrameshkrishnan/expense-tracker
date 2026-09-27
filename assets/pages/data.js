@@ -5,8 +5,9 @@ import { listFor } from "../categories.js";
 import { $, view, esc, state, notice, withBusy, refresh } from "../core.js";
 import { go } from "../router.js";
 import { backendLabel } from "../auth.js";
-import { extractPdfText } from "../pdfio.js";
+import { extractPdfItems, extractPdfText } from "../pdfio.js";
 import { parseStatementText } from "../statement-parser.js";
+import { parseBankTablePdf } from "../bank-table-parser.js";
 
 /** Rows parsed from a file, waiting for review before anything is written to
     the store - {rows, skipped, reasons, sheet, replaceFirst} or null when
@@ -172,8 +173,21 @@ export function renderData() {
     out.textContent = isPdf ? "Reading PDF\u2026" : "Reading\u2026";
     try {
       if (isPdf) {
-        const text = await extractPdfText(file);
-        const { rows, skipped, reasons } = parseStatementText(text);
+        // Try the column-aware table parser first - it only matches a PDF
+        // that has an actual labelled header row (DATE/TRANSACTIONS/DEBIT/
+        // CREDIT..., or TRANSACTION DATE/DETAILS/AMOUNT - the shape a bank's
+        // own "print this page" export uses), and falls through to the
+        // simpler line-based parser for anything else (a real statement
+        // that puts one transaction on one line, with no such header).
+        const pdfPages = await extractPdfItems(file);
+        const tableResult = parseBankTablePdf(pdfPages);
+        let rows, skipped, reasons;
+        if (tableResult) {
+          ({ rows, skipped, reasons } = tableResult);
+        } else {
+          const text = await extractPdfText(file);
+          ({ rows, skipped, reasons } = parseStatementText(text));
+        }
         if (!rows.length) {
           out.innerHTML = `<b class="over">No date-and-amount rows recognised in "${esc(file.name)}".</b>`;
           return;

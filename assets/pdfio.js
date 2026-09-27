@@ -33,49 +33,75 @@ function loadPdfJs() {
   return pdfjsReady;
 }
 
-/** Reads a File (a PDF) and returns its text with real line breaks
-    reconstructed, one statement row per line.
-
-    pdf.js's getTextContent() hands back individual text runs with no line
-    structure of their own - a naive `items.map(i => i.str).join(" ")` (what
-    this used to do) mashes an entire page into one line, which was fine
-    when an AI model was reading the result but is useless for line-by-line
-    pattern matching. Instead, each item carries its own position via
-    `transform` (a 6-value matrix whose last two entries are its x/y in PDF
-    points, y measured bottom-up) - grouping items whose y is within a
-    couple of points of each other reconstructs the rows a human would see,
-    and sorting each row's items by x puts them back in reading order. */
-export async function extractPdfText(file) {
+/** Reads a File (a PDF) and returns, per page, every text item's own string
+    and position - {str, x, y} for each, y measured bottom-up in PDF points
+    (pdf.js's `item.transform` is a 6-value matrix whose last two entries
+    are its x/y). This is the raw material both extractPdfText() (line
+    reconstruction, for a simple one-line-per-transaction statement) and
+    table-statement-parser.js (column reconstruction, for a statement laid
+    out as a multi-column table) build on - most callers want the former;
+    the latter needs real positions because a table's date/description/
+    amount can each land on different visual sub-lines of the same
+    logical row. */
+export async function extractPdfItems(file) {
   const pdfjsLib = await loadPdfJs();
   const buf = await file.arrayBuffer();
   const doc = await pdfjsLib.getDocument({ data: buf }).promise;
-  const pageTexts = [];
+  const pages = [];
   for (let i = 1; i <= doc.numPages; i++) {
     const page = await doc.getPage(i);
     const content = await page.getTextContent();
-    const rows = [];
-    for (const item of content.items) {
-      if (!item.str || !item.str.trim()) continue;
-      const y = item.transform[5];
-      // Small tolerance for items that are visually on the same line but
-      // differ by a fraction of a point (superscripts, kerning artifacts).
-      let row = rows.find((r) => Math.abs(r.y - y) < 2);
-      if (!row) {
-        row = { y, items: [] };
-        rows.push(row);
-      }
-      row.items.push(item);
-    }
-    rows.sort((a, b) => b.y - a.y); // PDF y grows upward - top of page first
-    const lines = rows.map((row) =>
-      row.items
-        .sort((a, b) => a.transform[4] - b.transform[4]) // left to right
-        .map((it) => it.str)
-        .join(" ")
-        .replace(/\s+/g, " ")
-        .trim(),
+    pages.push(
+      content.items
+        .filter((it) => it.str && it.str.trim())
+        .map((it) => ({ str: it.str, x: it.transform[4], y: it.transform[5] })),
     );
-    pageTexts.push(lines.join("\n"));
   }
+  return pages;
+}
+
+/** Groups a page's items (from extractPdfItems()) into visual lines - every
+    item whose y is within a couple of points of another's counts as the
+    same line (small tolerance for items that are visually aligned but
+    differ by a fraction of a point - superscripts, kerning artifacts).
+    Returns lines top-to-bottom, each an object {y, items} with its items
+    already sorted left-to-right. Shared by extractPdfText() (which just
+    joins each line into a string) and bank-table-parser.js (which needs
+    the line grouping to find a table's header row, but keeps working with
+    individual item positions afterward for the actual columns). */
+export function groupItemsIntoLines(items) {
+  const rows = [];
+  for (const item of items) {
+    let row = rows.find((r) => Math.abs(r.y - item.y) < 2);
+    if (!row) {
+      row = { y: item.y, items: [] };
+      rows.push(row);
+    }
+    row.items.push(item);
+  }
+  rows.sort((a, b) => b.y - a.y); // PDF y grows upward - top of page first
+  for (const row of rows) row.items.sort((a, b) => a.x - b.x);
+  return rows;
+}
+
+/** Reads a File (a PDF) and returns its text with real line breaks
+    reconstructed, one statement row per line - for a statement whose
+    layout puts one transaction on one visual line (date, description, and
+    amount side by side). A naive `items.map(i => i.str).join(" ")` (what
+    this used to do) mashed an entire page into one line, which was fine
+    for an AI to read but useless for line-by-line pattern matching. */
+export async function extractPdfText(file) {
+  const pages = await extractPdfItems(file);
+  const pageTexts = pages.map((items) =>
+    groupItemsIntoLines(items)
+      .map((row) =>
+        row.items
+          .map((it) => it.str)
+          .join(" ")
+          .replace(/\s+/g, " ")
+          .trim(),
+      )
+      .join("\n"),
+  );
   return pageTexts.join("\n\n").trim();
 }

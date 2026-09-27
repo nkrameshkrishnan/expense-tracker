@@ -33,8 +33,13 @@ export function previousMonth() {
 // of its own). Order matters: checked most-specific-first, sign only
 // decides between Refund and Income when no keyword matches.
 const REFUND_WORDS = /\b(refund|return|reversal|cancell?ation|cash back credit)\b/i;
+// "e-transfer" alone (no "sent"/"received" needed - CIBC's own wording is
+// just "Internet Banking E-TRANSFER ..."), and "transfer ... to card" for a
+// bank-to-credit-card payment - both real wordings seen in an actual CIBC
+// export, neither of which the original "e-transfer (sent|received)"-only
+// pattern matched.
 const TRANSFER_WORDS =
-  /\b(payment\s*-?\s*(received\s*-?\s*)?thank you|payment received|autopay|pre-?authorized payment|balance transfer|e-?transfer (sent|received)|internal transfer)\b/i;
+  /payment\s*-?\s*(received\s*-?\s*)?thank you|payment received|autopay|pre-?authorized payment|balance transfer|e-?transfer|internal transfer|\btransfer\b.{0,40}\bto card\b/i;
 const INCOME_WORDS = /\b(payroll|salary|direct deposit)\b/i;
 
 /** Infers a transaction's type from its description and whether its amount
