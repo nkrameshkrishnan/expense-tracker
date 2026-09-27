@@ -204,6 +204,13 @@ double-counted against actual cash flow. Dividends is its own transaction
 `type`, excluded from Income and Savings Rate, shown in its own Dashboard
 section.
 
+Precious metals (`precious_metal_holdings` table — one row per purchase
+lot) are a fourth kind of net-worth asset, valued automatically from a
+daily gold price (`gold_price_history` table, populated by the
+`fetch-gold-price.yml` GitHub Actions workflow — no manual balance entry,
+no Supabase Edge Function involved). This section only appears when
+connected to Supabase.
+
 The app rereads from Supabase on load and on **Data → Reload from
 Supabase**.
 
