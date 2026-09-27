@@ -17,7 +17,7 @@
    review table's existing dropdowns to fill in by hand - the same
    nothing-is-written-until-you-confirm safety net CSV/XLSX imports and the
    old AI path both already went through. */
-import { normalise } from "./store.js";
+import { normalise, inferTypeFromSignAndDescription } from "./store.js";
 
 function pad(n) {
   return String(n).padStart(2, "0");
@@ -60,18 +60,15 @@ const DATE_PATTERNS = [
   },
 ];
 
-// A trailing dollar amount: optional leading "-" or "$", thousands
-// separators, exactly two decimals, and an optional trailing "-"/"CR"/"DR"
-// marker some statements use instead of a leading minus sign for a credit.
-const AMOUNT_RE = /(-)?\$?\s?([\d,]+\.\d{2})\s*(CR|DR|-)?\s*$/i;
+// A trailing dollar amount: optional leading minus (ASCII "-" or the Unicode
+// minus sign U+2212 "−", which is what CIBC's own online-banking pages
+// use for a credit instead of a plain hyphen) or "$", thousands separators,
+// exactly two decimals, and an optional trailing "-"/"CR"/"DR" marker some
+// statements use instead of a leading minus sign for a credit.
+const AMOUNT_RE = /([-−])?\$?\s?([\d,]+\.\d{2})\s*(CR|DR|-)?\s*$/i;
 
 const SKIP_LINE_RE =
   /\b(previous balance|new balance|opening balance|closing balance|minimum payment|statement period|page \d+ of \d+|subtotal|available credit)\b/i;
-
-const REFUND_WORDS = /\b(refund|return|reversal|cancell?ation)\b/i;
-const TRANSFER_WORDS =
-  /\b(payment\s*-?\s*thank you|payment received|autopay|pre-?authorized payment|balance transfer|e-?transfer (sent|received)|internal transfer)\b/i;
-const INCOME_WORDS = /\b(payroll|salary|direct deposit)\b/i;
 
 /** Best-effort year for a date pattern that has none of its own - the first
     explicit 4-digit year (20xx) found anywhere in the statement, falling
@@ -135,12 +132,7 @@ export function parseStatementText(text) {
       continue;
     }
     const isCredit = Boolean(amtMatch[1]) || /CR|-/.test(amtMatch[3] || "");
-
-    let type = "Expense";
-    if (TRANSFER_WORDS.test(description)) type = "Transfer";
-    else if (REFUND_WORDS.test(description)) type = "Refund";
-    else if (INCOME_WORDS.test(description)) type = "Income";
-    else if (isCredit) type = "Refund"; // an unlabelled credit is usually a refund, not income
+    const type = inferTypeFromSignAndDescription(description, isCredit);
 
     rows.push(
       normalise({

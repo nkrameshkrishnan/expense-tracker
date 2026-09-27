@@ -27,6 +27,35 @@ export function previousMonth() {
   return m === 0 ? { year: y - 1, month: 12 } : { year: y, month: m };
 }
 
+// Keyword patterns shared by every "guess the type from a raw description"
+// path (the PDF statement parser, and the spreadsheet importer's fallback
+// for a source - like Amex's own export - that has no explicit Type column
+// of its own). Order matters: checked most-specific-first, sign only
+// decides between Refund and Income when no keyword matches.
+const REFUND_WORDS = /\b(refund|return|reversal|cancell?ation|cash back credit)\b/i;
+const TRANSFER_WORDS =
+  /\b(payment\s*-?\s*(received\s*-?\s*)?thank you|payment received|autopay|pre-?authorized payment|balance transfer|e-?transfer (sent|received)|internal transfer)\b/i;
+const INCOME_WORDS = /\b(payroll|salary|direct deposit)\b/i;
+
+/** Infers a transaction's type from its description and whether its amount
+    is a credit (negative on a card statement, or marked CR/"-"/"−" a
+    statement's own way) - for sources that don't give an explicit type of
+    their own. A positive/debit amount is always an Expense; free-text
+    beats sign, since "PAYMENT - THANK YOU" and "Cash Back Credit Issued"
+    are never something the household bought, whatever the source encodes
+    the number as. An unlabelled credit defaults to Refund rather than
+    Income - most of them are refunds of an earlier purchase, and Refund is
+    also the safer guess for spend totals (it nets back out of the same
+    category rather than being counted as new income). */
+export function inferTypeFromSignAndDescription(description, isCredit) {
+  const d = String(description || "");
+  if (TRANSFER_WORDS.test(d)) return "Transfer";
+  if (REFUND_WORDS.test(d)) return "Refund";
+  if (INCOME_WORDS.test(d)) return "Income";
+  if (isCredit) return "Refund";
+  return "Expense";
+}
+
 export function emptyBudget() {
   const b = {};
   for (const c of CAT_NAMES) {

@@ -10,6 +10,7 @@ import {
   currentYear,
   normalise,
   spendOf,
+  inferTypeFromSignAndDescription,
 } from "./store.js";
 
 /** SheetJS is 930KB - roughly 5x this app's own code - and was previously
@@ -406,6 +407,37 @@ function excelSerialToISO(v) {
   return d.toISOString().slice(0, 10);
 }
 
+const MONTH_INDEX = {
+  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+  jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+};
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+/** Best-effort parse of a date written out as text rather than stored as a
+    real Excel date/serial - e.g. American Express's own exports write
+    "25 Sep 2026", not an ISO string or a serial number. Tried only as a
+    fallback, after the ISO-string case a plain .slice(0,10) already
+    handles; returns "" (not a guess) for anything it doesn't recognise, so
+    the caller's existing "row has no valid date" skip logic still applies
+    rather than silently keeping a wrong date. */
+function parseTextDate(s) {
+  let m = s.match(/^(\d{1,2})\s+([A-Za-z]{3,9})\.?\s+(\d{4})$/); // "25 Sep 2026"
+  if (m) {
+    const mo = MONTH_INDEX[m[2].toLowerCase().slice(0, 3)];
+    return mo ? `${m[3]}-${pad2(mo)}-${pad2(m[1])}` : "";
+  }
+  m = s.match(/^([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})$/); // "Sep 25, 2026" / "Sep 25 2026"
+  if (m) {
+    const mo = MONTH_INDEX[m[1].toLowerCase().slice(0, 3)];
+    return mo ? `${m[3]}-${pad2(mo)}-${pad2(m[2])}` : "";
+  }
+  m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/); // "MM/DD/YYYY" (North American default)
+  if (m) return `${m[3]}-${pad2(m[1])}-${pad2(m[2])}`;
+  return "";
+}
+
 /** Parses a file exported from this app or the tracker workbook.
     Returns {rows, skipped, reasons} — it never silently drops data. */
 export async function importFile(file) {
@@ -452,10 +484,15 @@ export async function importFile(file) {
     let date = get("date");
     if (typeof date === "number") date = excelSerialToISO(date);
     else if (date instanceof Date) date = date.toISOString().slice(0, 10);
-    else
-      date = String(date || "")
-        .trim()
-        .slice(0, 10);
+    else {
+      const str = String(date || "").trim();
+      // An ISO-shaped string ("2026-09-25...") just needs truncating; anything
+      // else (a text date like Amex's own "25 Sep 2026") goes through
+      // parseTextDate() instead of being blindly sliced to 10 characters,
+      // which used to produce "25 Sep 202" - never a valid date, so every
+      // row from a real Amex export was silently skipped.
+      date = /^\d{4}-\d{2}-\d{2}/.test(str) ? str.slice(0, 10) : parseTextDate(str);
+    }
 
     const amount = Number(String(get("amount")).replace(/[$,\s]/g, ""));
     if (
@@ -470,7 +507,14 @@ export async function importFile(file) {
       continue;
     }
     let type = String(get("type") || "").trim();
-    if (!type) type = amount < 0 ? "Expense" : "Expense";
+    // No explicit Type column (Amex's own export is like this): infer one
+    // from the amount's sign and the description instead. This used to be
+    // `amount < 0 ? "Expense" : "Expense"` - a no-op that always said
+    // Expense regardless of sign, so a payment or "Cash Back Credit
+    // Issued" (both negative amounts in Amex's export) got imported as a
+    // purchase.
+    if (!type)
+      type = inferTypeFromSignAndDescription(get("description"), amount < 0);
     rows.push(
       normalise({
         date,
