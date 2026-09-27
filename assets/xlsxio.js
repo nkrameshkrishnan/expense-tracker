@@ -134,7 +134,14 @@ export function categorySeries(rows, year = currentYear()) {
     aggregate() below. Feeds the Dashboard's "Spend by category" table, which
     carries its own year/month filter independent of the page-wide selector
     (the same "separate state" pattern categorySeries' month/year already
-    uses for the category-by-month chart). month = 0 means the whole year. */
+    uses for the category-by-month chart). month = 0 means the whole year.
+    A category can legitimately net negative - a refund landing in a later
+    month than the purchase it refunds (a cancelled trip booked in July,
+    refunded in September) leaves that month's Travel total below zero.
+    Dropping it would silently exclude that swing, so the table's rows would
+    no longer sum to the same net expense the Transactions page shows for
+    the same period - only categories with NO activity at all (exactly 0)
+    are left out, never a negative one. */
 export function categoryTotals(rows, month, year = currentYear()) {
   const inScope = rows.filter(
     (r) =>
@@ -146,7 +153,7 @@ export function categoryTotals(rows, month, year = currentYear()) {
     category: c,
     actual: spend((r) => r.category === c),
   }))
-    .filter((r) => r.actual > 0)
+    .filter((r) => r.actual !== 0)
     .sort((a, b) => b.actual - a.actual);
 }
 

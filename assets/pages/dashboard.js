@@ -501,8 +501,11 @@ function catSpendRows() {
   return (
     rows
       .map(
+        // A negative total (refunds outweighing that category's purchases
+        // this period) gets the same "under" styling catDetailRows uses for
+        // under-budget - it's money back, not overspend.
         (r) =>
-          `<tr><td>${esc(r.category)}</td><td class="n num">${money(r.actual)}</td></tr>`,
+          `<tr><td>${esc(r.category)}</td><td class="n num${r.actual < 0 ? " under" : ""}">${money(r.actual)}</td></tr>`,
       )
       .join("") || '<tr><td colspan="2" class="muted">Nothing recorded yet.</td></tr>'
   );
