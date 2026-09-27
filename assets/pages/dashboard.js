@@ -137,7 +137,6 @@ export function renderDashboard() {
   charts.netByMonth(a.series);
   charts.trend(a.series);
   charts.paymentSplit(a.byPayment);
-  charts.categorySpend(a.catRows);
   charts.actualVsBudget(a.catRows);
   charts.topFive(a.top5);
   charts.categoryByMonth(
@@ -295,8 +294,11 @@ function buildDashboardShell(a, label, people, pSeries, showCompare) {
     <div class="panel"><h3>Payment method split &mdash; <span id="dash-pay-label">${esc(label)}</span></h3><div class="chartbox"><canvas id="c-pay"></canvas>
       ${a.byPayment.length === 0 ? `<p class="note" style="position:absolute;inset:0;display:grid;place-content:center;text-align:center">No payment methods recorded.<br>Fill the Payment field when adding entries.</p>` : ""}</div>
       ${a.unattributed > 0 ? `<p class="note" id="dash-unattr-note">${money(a.unattributed)} has no payment method set, so it is excluded here.</p>` : ""}</div>
-    <div class="panel"><h3>Spend by category &mdash; <span id="dash-catspend-label">${esc(label)}</span></h3><div class="chartbox tall"><canvas id="c-cat-spend"></canvas>
-      ${a.catRows.filter((r) => r.actual > 0).length === 0 ? `<p class="note" style="position:absolute;inset:0;display:grid;place-content:center;text-align:center">No spending recorded for this period.</p>` : ""}</div></div>
+    <div class="panel"><h3>Spend by category &mdash; <span id="dash-catspend-label">${esc(label)}</span></h3>
+      <div class="tablewrap"><table><thead><tr><th>Category</th><th class="n">Spent</th></tr></thead><tbody id="catspend-tbody">
+        ${catSpendRows(a)}
+      </tbody></table></div>
+    </div>
     <div class="panel"><h3>Actual vs budget by category &mdash; <span id="dash-cat-label">${esc(label)}</span></h3><div class="chartbox tall"><canvas id="c-cat"></canvas></div></div>
     <div class="panel"><h3>Top 5 spend categories &mdash; <span id="dash-top-label">${esc(label)}</span></h3><div class="chartbox tall"><canvas id="c-top"></canvas></div></div>
     <div class="panel wide">
@@ -413,6 +415,8 @@ function updateDashboardValues(a, label, people, pSeries, showCompare) {
   });
   const catTb = $("#catdetail-tbody");
   if (catTb) catTb.innerHTML = catDetailRows(a);
+  const catSpendTb = $("#catspend-tbody");
+  if (catSpendTb) catSpendTb.innerHTML = catSpendRows(a);
   const cm = $("#dash-catmonth-label");
   if (cm) cm.textContent = state.catMonthYear;
 }
@@ -443,6 +447,22 @@ function personCards(people) {
       </div>`,
     )
     .join("");
+}
+/** Plain "spend under each category" table for the selected period, sorted
+    highest first - unlike catDetailRows below this ignores budget entirely,
+    so an unbudgeted category with real spend still shows up. */
+function catSpendRows(a) {
+  const rows = a.catRows
+    .filter((r) => r.actual > 0)
+    .sort((x, y) => y.actual - x.actual);
+  return (
+    rows
+      .map(
+        (r) =>
+          `<tr><td>${esc(r.category)}</td><td class="n num">${money(r.actual)}</td></tr>`,
+      )
+      .join("") || '<tr><td colspan="2" class="muted">Nothing recorded yet.</td></tr>'
+  );
 }
 function catDetailRows(a) {
   return (

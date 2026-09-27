@@ -196,40 +196,6 @@ export function topFive(top5) {
   });
 }
 
-/** Total spend under each category for the selected period - a plain
-    breakdown of a.catRows, distinct from actualVsBudget (which only plots
-    categories with a budget set) and topFive (which caps at 5). */
-export function categorySpend(catRows) {
-  const rows = catRows
-    .filter((r) => r.actual > 0)
-    .sort((a, b) => b.actual - a.actual);
-  mount("c-cat-spend", {
-    type: "doughnut",
-    data: {
-      labels: rows.map((r) => r.category),
-      datasets: [
-        {
-          data: rows.map((r) => r.actual),
-          backgroundColor: rows.map((_, i) => PIE[i % PIE.length]),
-          borderColor: "#fff",
-          borderWidth: 2,
-        },
-      ],
-    },
-    options: {
-      maintainAspectRatio: false,
-      responsive: true,
-      cutout: "55%",
-      plugins: {
-        legend: {
-          position: "right",
-          labels: { boxWidth: 10, boxHeight: 10, padding: 8, font: { size: 10 } },
-        },
-      },
-    },
-  });
-}
-
 export function paymentSplit(byPayment) {
   mount("c-pay", {
     type: "doughnut",
