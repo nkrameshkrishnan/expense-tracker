@@ -479,6 +479,10 @@ tbody tr:hover {
   color: var(--ink-2);
   white-space: nowrap;
 }
+.tbl-total td {
+  font-weight: 700;
+  border-top: 2px solid var(--rule-2);
+}
 .over {
   color: var(--red);
   font-weight: 600;

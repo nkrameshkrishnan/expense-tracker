@@ -498,16 +498,24 @@ function catSpendRows() {
     state.catSpendMonth,
     state.catSpendYear,
   );
+  if (rows.length === 0)
+    return '<tr><td colspan="2" class="muted">Nothing recorded yet.</td></tr>';
+  const total = rows.reduce((a, r) => a + r.actual, 0);
+  const body = rows
+    .map(
+      // A negative total (refunds outweighing that category's purchases
+      // this period) gets the same "under" styling catDetailRows uses for
+      // under-budget - it's money back, not overspend.
+      (r) =>
+        `<tr><td>${esc(r.category)}</td><td class="n num${r.actual < 0 ? " under" : ""}">${money(r.actual)}</td></tr>`,
+    )
+    .join("");
+  // Sums to the same net figure the Transactions page shows for this same
+  // period, now that categoryTotals() keeps negative (refund-heavy)
+  // categories instead of dropping them - see the fix that added this check.
   return (
-    rows
-      .map(
-        // A negative total (refunds outweighing that category's purchases
-        // this period) gets the same "under" styling catDetailRows uses for
-        // under-budget - it's money back, not overspend.
-        (r) =>
-          `<tr><td>${esc(r.category)}</td><td class="n num${r.actual < 0 ? " under" : ""}">${money(r.actual)}</td></tr>`,
-      )
-      .join("") || '<tr><td colspan="2" class="muted">Nothing recorded yet.</td></tr>'
+    body +
+    `<tr class="tbl-total"><td>Total</td><td class="n num${total < 0 ? " under" : ""}">${money(total)}</td></tr>`
   );
 }
 function catDetailRows(a) {
