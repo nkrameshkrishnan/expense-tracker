@@ -22,8 +22,13 @@ export function renderTransactions() {
   let rows = scoped();
   if (f.q) {
     const q = f.q.toLowerCase();
+    // Account and type are searchable too: statements say "AMERICAN EXPRESS"
+    // while the account is "Amex", so searching "amex" used to find nothing
+    // but the card's own payments, and "refund" missed Refund-type rows whose
+    // description doesn't contain the word.
     rows = rows.filter((r) =>
-      (r.description + " " + r.subcategory + " " + r.notes + " " + r.category)
+      [r.description, r.subcategory, r.notes, r.category, r.account, r.type]
+        .join(" ")
         .toLowerCase()
         .includes(q),
     );
