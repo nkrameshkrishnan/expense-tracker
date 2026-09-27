@@ -1,9 +1,69 @@
 /* Data page: connection status, export/import, and person assignment. */
-import { PEOPLE } from "../store.js";
-import { exportWorkbook, importFile } from "../xlsxio.js";
+import { PEOPLE, TYPES, UNASSIGNED } from "../store.js";
+import { exportWorkbook, importFile, money } from "../xlsxio.js";
+import { listFor } from "../categories.js";
 import { $, view, esc, state, notice, withBusy, refresh } from "../core.js";
 import { go } from "../router.js";
 import { backendLabel } from "../auth.js";
+
+/** Rows parsed from a file, waiting for review before anything is written to
+    the store - {rows, skipped, reasons, sheet, replaceFirst} or null when
+    there's nothing staged. Module-level (not on `state`) because it's
+    disposable working data for this page only: it isn't meant to survive a
+    real save/reload, and navigating away from Data before confirming should
+    simply drop it, same as closing a form without submitting. */
+let staging = null;
+
+function stagingRowHtml(r, i) {
+  const sel = (list, val) =>
+    list
+      .map(
+        (o) => `<option${o === val ? " selected" : ""}>${esc(o)}</option>`,
+      )
+      .join("");
+  return `
+  <tr data-row="${i}">
+    <td><input type="date" class="stg-in" data-idx="${i}" data-field="date" value="${esc(r.date)}"></td>
+    <td><select class="stg-in" data-idx="${i}" data-field="type">${sel(TYPES, r.type)}</select></td>
+    <td><select class="stg-in" data-idx="${i}" data-field="category">${sel(listFor("category"), r.category)}</select></td>
+    <td><input type="text" class="stg-in" data-idx="${i}" data-field="subcategory" value="${esc(r.subcategory)}"></td>
+    <td><input type="text" class="stg-in stg-wide" data-idx="${i}" data-field="description" value="${esc(r.description)}"></td>
+    <td><input type="number" step="0.01" min="0" class="stg-in num" data-idx="${i}" data-field="amount" value="${r.amount}"></td>
+    <td><select class="stg-in" data-idx="${i}" data-field="payment"><option value=""${r.payment ? "" : " selected"}>—</option>${sel(listFor("payment"), r.payment)}</select></td>
+    <td><select class="stg-in" data-idx="${i}" data-field="account"><option value=""${r.account ? "" : " selected"}>—</option>${sel(listFor("account"), r.account)}</select></td>
+    <td><select class="stg-in" data-idx="${i}" data-field="person"><option value=""${r.person ? "" : " selected"}>${esc(UNASSIGNED)}</option>${sel(listFor("person"), r.person)}</select></td>
+    <td class="n"><input type="checkbox" data-idx="${i}" data-field="recurring" ${r.recurring === "Yes" ? "checked" : ""}></td>
+    <td><button class="rowbtn" data-remove="${i}" title="Remove this row">✕</button></td>
+  </tr>`;
+}
+
+function stagingPanelHtml() {
+  if (!staging) return "";
+  const total = staging.rows.reduce((a, r) => a + (Number(r.amount) || 0), 0);
+  return `
+  <div class="eyebrow">Review import — <span id="stg-count">${staging.rows.length}</span> row${staging.rows.length === 1 ? "" : "s"} from "${esc(staging.sheet)}"</div>
+  <div class="panel stack">
+    ${
+      staging.skipped
+        ? `<p class="note">${staging.skipped} row${staging.skipped === 1 ? "" : "s"} skipped while reading (no valid date or amount)${staging.reasons.length ? ": " + esc(staging.reasons.join(", ")) : ""}.</p>`
+        : ""
+    }
+    <p class="note">Nothing is written yet — fix any row here, remove ones you don't want, then confirm. Amounts are always positive; the Type column carries the sign.</p>
+    <div class="tablewrap" style="max-height:480px"><table><thead><tr>
+      <th>Date</th><th>Type</th><th>Category</th><th>Subcategory</th><th>Description</th>
+      <th class="n">Amount</th><th>Payment</th><th>Account</th><th>Person</th><th class="n">Recurring</th><th></th>
+    </tr></thead><tbody id="stg-tbody">
+      ${staging.rows.map(stagingRowHtml).join("") || `<tr><td colspan="11" class="muted">Every row was removed.</td></tr>`}
+    </tbody></table></div>
+    <div class="actions">
+      <label><input type="checkbox" id="stg-replace" ${staging.replaceFirst ? "checked" : ""}> Replace everything first</label>
+      <span class="spacer"></span>
+      <span class="muted num" id="stg-total">${staging.rows.length} row${staging.rows.length === 1 ? "" : "s"} · ${money(total)} combined amount</span>
+      <button class="btn ghost" id="stg-cancel">Cancel</button>
+      <button class="btn" id="stg-confirm" ${staging.rows.length ? "" : "disabled"}>Confirm import</button>
+    </div>
+  </div>`;
+}
 
 export function renderData() {
   view.innerHTML = `
@@ -24,11 +84,12 @@ export function renderData() {
   <div class="eyebrow">Import</div>
   <div class="panel stack">
     <input type="file" id="file" accept=".xlsx,.xls,.csv">
-    <div class="actions"><label><input type="checkbox" id="replace"> Replace everything first</label></div>
     <div id="imp" class="note"></div>
-    <p class="note">Needs a flat table with at least <code>Date</code> and <code>Amount</code> columns. Rows are
-    written to Supabase in batches of 1000.</p>
+    <p class="note">Needs a flat table with at least <code>Date</code> and <code>Amount</code> columns. Picking a
+    file only reads and previews it below — nothing is written until you confirm.</p>
   </div>
+
+  ${stagingPanelHtml()}
 
   <div class="eyebrow">People</div>
   <div class="panel stack">
@@ -110,29 +171,88 @@ export function renderData() {
         out.innerHTML = `<b class="over">No usable rows found on "${esc(sheet)}".</b>`;
         return;
       }
-      const dest = backendLabel(state.store);
-      if (
-        !confirm(
-          `Import ${rows.length} rows from "${sheet}" into ${dest}?${skipped ? `\n\n${skipped} rows will be skipped (no valid date or amount).` : ""}`,
-        )
-      ) {
-        out.textContent = "Cancelled.";
-        return;
-      }
-      const done = await withBusy(`Writing ${rows.length} rows`, async () => {
-        if ($("#replace").checked) await state.store.clear();
-        await state.store.bulkAdd(rows, (n, total) => {
-          notice(`Writing to the sheet\u2026 ${n} of ${total} rows`);
-        });
-        await refresh();
-      });
-      if (done) {
-        out.innerHTML = `<b class="under">Imported ${rows.length} rows.</b>${skipped ? ` ${skipped} skipped${reasons.length ? " (e.g. " + esc(reasons.join(", ")) + ")" : ""}.` : ""}`;
-        notice(`Imported ${rows.length} transactions.`, "ok");
-      }
+      out.textContent = "";
+      staging = { rows, skipped, reasons, sheet, replaceFirst: false };
+      renderData();
     } catch (err) {
       out.innerHTML = `<b class="over">${esc(err.message)}</b>`;
     }
+  };
+
+  wireStaging();
+}
+
+/** Wires the review table's per-cell inputs, row-remove buttons, and the
+    Confirm/Cancel actions. Called after every renderData() - a no-op when
+    nothing is staged, since none of these elements exist in that markup. */
+function wireStaging() {
+  if (!staging) return;
+
+  view.querySelectorAll("#stg-tbody [data-field]").forEach((el) => {
+    const evt = el.tagName === "SELECT" || el.type === "checkbox" ? "change" : "input";
+    el.addEventListener(evt, () => {
+      const r = staging.rows[Number(el.dataset.idx)];
+      const f = el.dataset.field;
+      if (f === "recurring") r.recurring = el.checked ? "Yes" : "No";
+      else if (f === "amount")
+        r.amount = Math.round((Number(el.value) || 0) * 100) / 100;
+      else r[f] = el.value;
+      const total = $("#stg-total");
+      if (total) {
+        const sum = staging.rows.reduce((a, x) => a + (Number(x.amount) || 0), 0);
+        total.textContent = `${staging.rows.length} row${staging.rows.length === 1 ? "" : "s"} \u00b7 ${money(sum)} combined amount`;
+      }
+    });
+  });
+
+  view.querySelectorAll("[data-remove]").forEach(
+    (b) =>
+      (b.onclick = () => {
+        staging.rows.splice(Number(b.dataset.remove), 1);
+        renderData();
+      }),
+  );
+
+  $("#stg-replace").onchange = (e) => {
+    staging.replaceFirst = e.target.checked;
+  };
+
+  $("#stg-cancel").onclick = () => {
+    staging = null;
+    $("#file").value = "";
+    renderData();
+  };
+
+  $("#stg-confirm").onclick = async () => {
+    if (!staging.rows.length) return;
+    const dest = backendLabel(state.store);
+    const replaceFirst = staging.replaceFirst;
+    if (
+      !confirm(
+        `Import ${staging.rows.length} rows into ${dest}?` +
+          (replaceFirst
+            ? "\n\nThis will first delete every existing row."
+            : ""),
+      )
+    )
+      return;
+    const rowsToWrite = staging.rows;
+    const done = await withBusy(`Writing ${rowsToWrite.length} rows`, async () => {
+      if (replaceFirst) await state.store.clear();
+      await state.store.bulkAdd(rowsToWrite, (n, total) => {
+        notice(`Writing to the sheet\u2026 ${n} of ${total} rows`);
+      });
+      await refresh();
+    });
+    // Only clear the review on success - withBusy already showed an error
+    // notice on failure, and keeping the staged rows means a network hiccup
+    // doesn't cost the edits already made in the review table.
+    if (done) {
+      staging = null;
+      $("#file").value = "";
+      notice(`Imported ${rowsToWrite.length} transactions.`, "ok");
+    }
+    renderData();
   };
 }
 

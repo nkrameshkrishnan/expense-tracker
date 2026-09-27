@@ -483,6 +483,20 @@ tbody tr:hover {
   font-weight: 700;
   border-top: 2px solid var(--rule-2);
 }
+/* Import review table (Data page) - compact inline-editable cells. */
+.stg-in {
+  width: 100%;
+  min-width: 84px;
+  font-size: 12.5px;
+  padding: 3px 5px;
+}
+.stg-in.stg-wide {
+  min-width: 160px;
+}
+.stg-in[type="checkbox"] {
+  width: auto;
+  min-width: 0;
+}
 .over {
   color: var(--red);
   font-weight: 600;
