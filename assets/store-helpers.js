@@ -16,6 +16,17 @@ export function currentYear() {
   return new Date().getFullYear();
 }
 
+/** The calendar month before this one, as { year, month } (month is 1-12).
+    Rolls the year back at the January boundary (Jan 2027 -> Dec 2026). Used
+    to default a "recent activity" filter to last month rather than the
+    current, still-in-progress one. */
+export function previousMonth() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth(); // 0-11, so this is already "last month" (1-12)
+  return m === 0 ? { year: y - 1, month: 12 } : { year: y, month: m };
+}
+
 export function emptyBudget() {
   const b = {};
   for (const c of CAT_NAMES) {

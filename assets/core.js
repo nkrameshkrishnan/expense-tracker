@@ -13,6 +13,7 @@
 import {
   emptyBudget,
   currentYear,
+  previousMonth,
   PERSON_KEY,
   PEOPLE,
   UNASSIGNED,
@@ -66,9 +67,11 @@ export const state = {
   catMonthOrientation: "horizontal",
   // "Spend by category" table has its own year/month filter too, independent
   // of the Dashboard's main period selector, same rationale as catMonthYear
-  // above. 0 = all months.
-  catSpendYear: currentYear(),
-  catSpendMonth: 0,
+  // above. Defaults to last calendar month rather than the current one (the
+  // current month is still in progress, so "full year" or "this month so
+  // far" is a less useful first view than a complete, closed-out month).
+  catSpendYear: previousMonth().year,
+  catSpendMonth: previousMonth().month,
 };
 
 export const scoped = () => byPersonFilter(state.rows, state.person);
