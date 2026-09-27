@@ -5,6 +5,8 @@ import { listFor } from "../categories.js";
 import { $, view, esc, state, notice, withBusy, refresh } from "../core.js";
 import { go } from "../router.js";
 import { backendLabel } from "../auth.js";
+import { extractPdfText } from "../pdfio.js";
+import { aiImportAvailable, transformWithAI } from "../import-ai.js";
 
 /** Rows parsed from a file, waiting for review before anything is written to
     the store - {rows, skipped, reasons, sheet, replaceFirst} or null when
@@ -83,10 +85,13 @@ export function renderData() {
 
   <div class="eyebrow">Import</div>
   <div class="panel stack">
-    <input type="file" id="file" accept=".xlsx,.xls,.csv">
+    <input type="file" id="file" accept="${aiImportAvailable() ? ".xlsx,.xls,.csv,.pdf" : ".xlsx,.xls,.csv"}">
     <div id="imp" class="note"></div>
-    <p class="note">Needs a flat table with at least <code>Date</code> and <code>Amount</code> columns. Picking a
-    file only reads and previews it below — nothing is written until you confirm.</p>
+    <p class="note">Spreadsheets need a flat table with at least <code>Date</code> and <code>Amount</code> columns.${
+      aiImportAvailable()
+        ? " A PDF statement is read and transformed with AI into the same shape — it can take several seconds."
+        : ""
+    } Picking a file only reads and previews it below — nothing is written until you confirm.</p>
   </div>
 
   ${stagingPanelHtml()}
@@ -164,15 +169,23 @@ export function renderData() {
     const file = e.target.files[0];
     if (!file) return;
     const out = $("#imp");
-    out.textContent = "Reading\u2026";
+    const isPdf = /\.pdf$/i.test(file.name);
+    out.textContent = isPdf ? "Reading PDF and transforming with AI\u2026" : "Reading\u2026";
     try {
-      const { rows, skipped, reasons, sheet } = await importFile(file);
-      if (!rows.length) {
-        out.innerHTML = `<b class="over">No usable rows found on "${esc(sheet)}".</b>`;
-        return;
+      if (isPdf) {
+        const text = await extractPdfText(file);
+        const rows = await transformWithAI(text);
+        out.textContent = "";
+        staging = { rows, skipped: 0, reasons: [], sheet: file.name, replaceFirst: false };
+      } else {
+        const { rows, skipped, reasons, sheet } = await importFile(file);
+        if (!rows.length) {
+          out.innerHTML = `<b class="over">No usable rows found on "${esc(sheet)}".</b>`;
+          return;
+        }
+        out.textContent = "";
+        staging = { rows, skipped, reasons, sheet, replaceFirst: false };
       }
-      out.textContent = "";
-      staging = { rows, skipped, reasons, sheet, replaceFirst: false };
       renderData();
     } catch (err) {
       out.innerHTML = `<b class="over">${esc(err.message)}</b>`;

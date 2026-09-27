@@ -273,6 +273,33 @@ export class SupabaseStore {
     return (await this.list()).length === 0;
   }
 
+  /** Invokes a Supabase Edge Function by name (e.g. "import-transform"),
+      forwarding the signed-in session's Authorization header automatically -
+      that's what lets the function's own is_allowed_household_member() check
+      work without this code ever touching a token directly. Edge Function
+      errors don't reject with the function's own JSON body by default (the
+      SDK wraps a non-2xx response in a generic FunctionsHttpError), so this
+      reaches into error.context - the raw Response - to surface the actual
+      { error: "..." } message the function returned, rather than a bare
+      "Edge Function returned a non-2xx status code". */
+  async callFunction(name, body) {
+    const sb = await this._client();
+    const { data, error } = await sb.functions.invoke(name, { body });
+    if (error) {
+      let message = error.message;
+      if (error.context && typeof error.context.json === "function") {
+        try {
+          const detail = await error.context.json();
+          if (detail?.error) message = detail.error;
+        } catch {
+          /* response body wasn't JSON - fall back to error.message */
+        }
+      }
+      throw dbError({ message });
+    }
+    return data;
+  }
+
   /** Household allow-list management for the Profile page. allowed_emails
       itself has zero RLS policies (see supabase/schema.sql) - these three
       go through the security-definer RPCs added there instead, which
