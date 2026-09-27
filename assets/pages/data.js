@@ -6,7 +6,7 @@ import { $, view, esc, state, notice, withBusy, refresh } from "../core.js";
 import { go } from "../router.js";
 import { backendLabel } from "../auth.js";
 import { extractPdfText } from "../pdfio.js";
-import { aiImportAvailable, transformWithAI } from "../import-ai.js";
+import { parseStatementText } from "../statement-parser.js";
 
 /** Rows parsed from a file, waiting for review before anything is written to
     the store - {rows, skipped, reasons, sheet, replaceFirst} or null when
@@ -85,13 +85,12 @@ export function renderData() {
 
   <div class="eyebrow">Import</div>
   <div class="panel stack">
-    <input type="file" id="file" accept="${aiImportAvailable() ? ".xlsx,.xls,.csv,.pdf" : ".xlsx,.xls,.csv"}">
+    <input type="file" id="file" accept=".xlsx,.xls,.csv,.pdf">
     <div id="imp" class="note"></div>
-    <p class="note">Spreadsheets need a flat table with at least <code>Date</code> and <code>Amount</code> columns.${
-      aiImportAvailable()
-        ? " A PDF statement is read and transformed with AI into the same shape — it can take several seconds."
-        : ""
-    } Picking a file only reads and previews it below — nothing is written until you confirm.</p>
+    <p class="note">Spreadsheets need a flat table with at least <code>Date</code> and <code>Amount</code> columns.
+    A PDF statement is scanned line by line for a date-then-amount pattern — no AI, nothing leaves your browser —
+    so Category, Payment, Account, and Person come back blank for you to fill in below. Picking a file only reads
+    and previews it below — nothing is written until you confirm.</p>
   </div>
 
   ${stagingPanelHtml()}
@@ -170,13 +169,17 @@ export function renderData() {
     if (!file) return;
     const out = $("#imp");
     const isPdf = /\.pdf$/i.test(file.name);
-    out.textContent = isPdf ? "Reading PDF and transforming with AI\u2026" : "Reading\u2026";
+    out.textContent = isPdf ? "Reading PDF\u2026" : "Reading\u2026";
     try {
       if (isPdf) {
         const text = await extractPdfText(file);
-        const rows = await transformWithAI(text);
+        const { rows, skipped, reasons } = parseStatementText(text);
+        if (!rows.length) {
+          out.innerHTML = `<b class="over">No date-and-amount rows recognised in "${esc(file.name)}".</b>`;
+          return;
+        }
         out.textContent = "";
-        staging = { rows, skipped: 0, reasons: [], sheet: file.name, replaceFirst: false };
+        staging = { rows, skipped, reasons, sheet: file.name, replaceFirst: false };
       } else {
         const { rows, skipped, reasons, sheet } = await importFile(file);
         if (!rows.length) {
