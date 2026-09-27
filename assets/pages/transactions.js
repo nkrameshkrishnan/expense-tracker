@@ -87,6 +87,10 @@ export function renderTransactions() {
         : t === "Refund"
           ? "tx-refund"
           : "";
+  // Per-row type badge: every TYPES value gets its own colour (typeClass above
+  // leaves Expense/Dividends unstyled, which is fine for the icon/amount but
+  // not for a label meant to visually distinguish all five types at a glance).
+  const typeBadgeClass = (t) => "tx-type-badge-" + t.toLowerCase();
 
   const txRow = (r) => `
     <div class="tx-row ${typeClass(r.type)}" data-id="${r.id}">
@@ -98,6 +102,7 @@ export function renderTransactions() {
         </div>
         <div class="tx-meta">
           ${!state.person ? `<span class="person-chip" data-p="${esc(r.person || UNASSIGNED)}">${esc(r.person || UNASSIGNED)}</span>` : ""}
+          <span class="tx-type-badge ${typeBadgeClass(r.type)}">${esc(r.type)}</span>
           <span class="tx-cat">${esc(r.category)}${r.subcategory ? " · " + esc(r.subcategory) : ""}</span>
           ${r.payment ? `<span class="tx-sep">·</span><span class="tx-pay">${esc(r.payment)}</span>` : ""}
         </div>

@@ -343,6 +343,41 @@
 .tx-pay {
   color: var(--ink-3);
 }
+/* Per-row transaction-type label - one distinct colour per TYPES value so the
+   five types read apart at a glance, independent of the row/icon/amount
+   tinting above (which only distinguishes Income/Transfer/Refund). */
+.tx-type-badge {
+  display: inline-block;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+.tx-type-badge-expense {
+  color: var(--amber);
+  background: rgba(178, 74, 51, 0.12);
+}
+.tx-type-badge-income {
+  color: var(--teal);
+  background: rgba(0, 105, 89, 0.12);
+}
+.tx-type-badge-transfer {
+  color: var(--ink-3);
+  background: rgba(20, 21, 26, 0.08);
+}
+.tx-type-badge-refund {
+  color: var(--blue);
+  background: rgba(47, 104, 196, 0.12);
+}
+.tx-type-badge-dividends {
+  color: var(--purple);
+  background: rgba(126, 63, 185, 0.12);
+}
+
 .tx-badge {
   display: inline-block;
   font-size: 9.5px;
