@@ -1,5 +1,4 @@
-/* Data page: connection status, export/import, and destructive actions
-   (wipe, reset). */
+/* Data page: connection status, export/import, and person assignment. */
 import { PEOPLE } from "../store.js";
 import { exportWorkbook, importFile } from "../xlsxio.js";
 import { $, view, esc, state, notice, withBusy, refresh } from "../core.js";
@@ -7,8 +6,6 @@ import { go } from "../router.js";
 import { backendLabel } from "../auth.js";
 
 export function renderData() {
-  const live = state.store.kind === "supabase";
-
   view.innerHTML = `
   <div class="head"><div><h1>Data</h1><p class="sub">Where your data lives, and how to get it in and out.</p></div></div>
 
@@ -50,13 +47,7 @@ export function renderData() {
     <p class="note">This rewrites every unassigned row in Supabase. You can still change individual entries afterwards from Transactions → edit.</p>`
         : ""
     }
-  </div>
-
-  <div class="eyebrow">Danger zone</div>
-  <div class="panel"><div class="actions">
-    <button class="btn danger" id="wipe">Delete every row${live ? " from Supabase" : ""}</button>
-    <span class="muted">Export first — this cannot be undone.</span>
-  </div></div>`;
+  </div>`;
 
   view.querySelectorAll("[data-assign]").forEach(
     (b) =>
@@ -142,23 +133,6 @@ export function renderData() {
     } catch (err) {
       out.innerHTML = `<b class="over">${esc(err.message)}</b>`;
     }
-  };
-
-  $("#wipe").onclick = async () => {
-    const where = backendLabel(state.store);
-    if (
-      !confirm(
-        `Delete all ${state.rows.length} transactions from ${where}?\n\nThis cannot be undone.`,
-      )
-    )
-      return;
-    if (!confirm("Really sure? Export a backup first if you have not.")) return;
-    const done = await withBusy("Clearing the sheet", async () => {
-      await state.store.clear();
-      await refresh();
-    });
-    renderData();
-    if (done) notice("All rows deleted.", "ok");
   };
 }
 
