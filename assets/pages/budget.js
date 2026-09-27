@@ -1,5 +1,5 @@
 /* Budget page - per-category monthly targets and actual-vs-budget view. */
-import { CAT_NAMES, EXPENSE_CATS, CAT_TYPE, MONTHS } from "../store.js";
+import { CAT_NAMES, EXPENSE_CATS, CAT_TYPE, MONTHS, spendOf } from "../store.js";
 import { money, pct, monthOf } from "../xlsxio.js";
 import { listFor } from "../categories.js";
 import { $, view, esc, state, notice, withBusy, refresh } from "../core.js";
@@ -14,19 +14,19 @@ export function renderBudget() {
     actuals[c] = {};
     for (let m = 1; m <= 12; m++) {
       actuals[c][m] = state.rows
-        // type === 'Expense' is essential, not cosmetic. Without it a credit-card
-        // payment, a CIBC->Wealthsimple move, or a transfer between Ramesh and
-        // Surya all counted as spending. That inflated "spent so far" from
-        // $69,317 to $480,533 - it was adding $411,216 of money that only ever
-        // moved between the household's own accounts.
+        // spendOf() (Expense minus Refund, everything else 0) is essential, not
+        // cosmetic. Summing every row's amount made a credit-card payment, a
+        // CIBC->Wealthsimple move, or a transfer between Ramesh and Surya all
+        // count as spending. That inflated "spent so far" from $69,317 to
+        // $480,533 - it was adding $411,216 of money that only ever moved
+        // between the household's own accounts.
         .filter(
           (r) =>
-            r.type === "Expense" &&
             r.category === c &&
             monthOf(r) === m &&
             Number(String(r.date).slice(0, 4)) === state.year,
         )
-        .reduce((a, r) => a + r.amount, 0);
+        .reduce((a, r) => a + spendOf(r), 0);
     }
   }
 

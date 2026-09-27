@@ -1,5 +1,5 @@
 /* Transactions list page - search/filter, inline edit, delete. */
-import { TYPES, MONTHS, UNASSIGNED } from "../store.js";
+import { TYPES, MONTHS, UNASSIGNED, spendOf } from "../store.js";
 import { money, monthOf } from "../xlsxio.js";
 import { listFor } from "../categories.js";
 import {
@@ -35,9 +35,8 @@ export function renderTransactions() {
   const income = rows
     .filter((r) => r.type === "Income")
     .reduce((a, r) => a + r.amount, 0);
-  const expense = rows
-    .filter((r) => r.type === "Expense")
-    .reduce((a, r) => a + r.amount, 0);
+  // Expenses minus refunds (spendOf) - a refund is money back on a purchase.
+  const expense = rows.reduce((a, r) => a + spendOf(r), 0);
   const net = income - expense;
   const hasFilters = f.q || f.cat || f.month || f.type;
 
@@ -59,9 +58,7 @@ export function renderTransactions() {
     g.income = g.rows
       .filter((r) => r.type === "Income")
       .reduce((a, r) => a + r.amount, 0);
-    g.expense = g.rows
-      .filter((r) => r.type === "Expense")
-      .reduce((a, r) => a + r.amount, 0);
+    g.expense = g.rows.reduce((a, r) => a + spendOf(r), 0);
   }
 
   // First time we see these groups (e.g. first load, or a filter just narrowed
@@ -75,9 +72,16 @@ export function renderTransactions() {
     }
   });
 
-  const typeIcon = (t) => (t === "Income" ? "↑" : t === "Transfer" ? "⇄" : "↓");
+  const typeIcon = (t) =>
+    t === "Income" ? "↑" : t === "Transfer" ? "⇄" : t === "Refund" ? "↩" : "↓";
   const typeClass = (t) =>
-    t === "Income" ? "tx-income" : t === "Transfer" ? "tx-transfer" : "";
+    t === "Income"
+      ? "tx-income"
+      : t === "Transfer"
+        ? "tx-transfer"
+        : t === "Refund"
+          ? "tx-refund"
+          : "";
 
   const txRow = (r) => `
     <div class="tx-row ${typeClass(r.type)}" data-id="${r.id}">
@@ -93,7 +97,7 @@ export function renderTransactions() {
           ${r.payment ? `<span class="tx-sep">·</span><span class="tx-pay">${esc(r.payment)}</span>` : ""}
         </div>
       </div>
-      <div class="tx-amount num ${typeClass(r.type)}">${r.type === "Income" ? "+" : ""}${money(r.amount)}</div>
+      <div class="tx-amount num ${typeClass(r.type)}">${r.type === "Income" || r.type === "Refund" ? "+" : ""}${money(r.amount)}</div>
       <div class="tx-actions">
         <button class="txbtn edit" data-edit="${r.id}" title="Edit">✎</button>
         <button class="txbtn del" data-del="${r.id}" title="Delete">✕</button>

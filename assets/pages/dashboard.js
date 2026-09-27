@@ -23,6 +23,13 @@ import {
 } from "../core.js";
 import { go } from "../router.js";
 
+/** Expense card subtitle. Expense is already net of refunds (spendOf), so
+    say so whenever refunds were subtracted - otherwise the figure would
+    silently disagree with the sum of the purchases listed in Transactions. */
+const expenseMeta = (a) =>
+  `${a.count} entries` +
+  (a.refunds > 0 ? ` \u00b7 ${money(a.refunds)} refunds deducted` : "");
+
 function availableYears() {
   // A backend whose cache exposes allTxYears (every year that actually
   // exists, independent of which years have had their data fetched yet)
@@ -219,7 +226,7 @@ function buildDashboardShell(a, label, people, pSeries, showCompare) {
 
   <div class="kpis">
     ${kpi("Income", money(a.income), a.income === 0 ? "no income recorded" : "", "", "income")}
-    ${kpi("Expense", money(a.expense), `${a.count} entries`, "", "expense")}
+    ${kpi("Expense", money(a.expense), expenseMeta(a), "", "expense")}
     ${kpi("Net", money(a.net), a.net < 0 ? "spending exceeds income" : "", a.net < 0 ? "neg" : "pos", "net")}
     ${kpi("Savings rate", a.income > 0 ? pct(a.savingsRate) : "\u2014", a.income > 0 ? "" : "needs income data", "", "savings")}
     ${kpi(
@@ -340,7 +347,7 @@ function updateDashboardValues(a, label, people, pSeries, showCompare) {
     if (mEl) mEl.textContent = m;
   };
   setKpi("income", money(a.income), a.income === 0 ? "no income recorded" : "");
-  setKpi("expense", money(a.expense), `${a.count} entries`);
+  setKpi("expense", money(a.expense), expenseMeta(a));
   const netEl = $("#kpi-net");
   if (netEl)
     netEl.className = `kpi card-hoverable ${a.net < 0 ? "neg" : "pos"}`;

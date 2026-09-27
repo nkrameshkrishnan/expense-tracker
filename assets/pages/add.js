@@ -1,5 +1,5 @@
 /* Add/Edit transaction page. */
-import { TYPES, MONTHS, currentYear } from "../store.js";
+import { TYPES, MONTHS, currentYear, spendOf } from "../store.js";
 import { money, monthOf } from "../xlsxio.js";
 import {
   listFor,
@@ -46,15 +46,15 @@ export function renderAdd() {
 
   const curMonth = new Date().getMonth() + 1;
   const ctxActual = scoped()
-    // Expense only - a transfer into this category is not spending against budget
+    // Expense minus Refund - a transfer into this category is not spending
+    // against budget, and a refund in it gives budget back.
     .filter(
       (r) =>
-        r.type === "Expense" &&
         r.category === selCat &&
         monthOf(r) === curMonth &&
         Number(String(r.date).slice(0, 4)) === currentYear(),
     )
-    .reduce((a, r) => a + r.amount, 0);
+    .reduce((a, r) => a + spendOf(r), 0);
   const ctxBudget = Number(state.budget[selCat]?.[curMonth]) || 0;
   const ctxOver = ctxBudget > 0 && ctxActual > ctxBudget;
   const recent = scoped()
@@ -360,12 +360,11 @@ export function renderAdd() {
     const act = scoped()
       .filter(
         (r) =>
-          r.type === "Expense" &&
           r.category === cat &&
           monthOf(r) === curMonth &&
           Number(String(r.date).slice(0, 4)) === currentYear(),
       )
-      .reduce((a, r) => a + r.amount, 0);
+      .reduce((a, r) => a + spendOf(r), 0);
     const bud = Number(state.budget[cat]?.[curMonth]) || 0;
     const over = bud > 0 && act > bud;
     const hint = $("#cat-hint");

@@ -67,7 +67,7 @@ if (!filePath || !dbUrl) {
   process.exit(1);
 }
 
-const TYPES = ["Expense", "Income", "Transfer", "Dividends"];
+const TYPES = ["Expense", "Income", "Transfer", "Dividends", "Refund"];
 const MONTHS = [
   "Jan",
   "Feb",

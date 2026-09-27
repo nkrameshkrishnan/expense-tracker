@@ -54,7 +54,7 @@ $$;
 create table if not exists transactions (
   id bigint generated always as identity primary key,
   date date not null,
-  type text not null check (type in ('Expense', 'Income', 'Transfer', 'Dividends')),
+  type text not null check (type in ('Expense', 'Income', 'Transfer', 'Dividends', 'Refund')),
   category text not null default 'Miscellaneous',
   subcategory text not null default '',
   description text not null default '',
@@ -68,6 +68,14 @@ create table if not exists transactions (
   notes text not null default '',
   person text not null default ''
 );
+
+-- 'Refund' was added to the allowed types after the table first shipped.
+-- `create table if not exists` above never touches an existing table, so
+-- re-running this file on an older database would keep the old 4-type check
+-- and reject Refund rows - replace the constraint explicitly instead.
+alter table transactions drop constraint if exists transactions_type_check;
+alter table transactions add constraint transactions_type_check
+  check (type in ('Expense', 'Income', 'Transfer', 'Dividends', 'Refund'));
 
 alter table transactions enable row level security;
 

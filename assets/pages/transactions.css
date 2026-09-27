@@ -43,6 +43,11 @@
 .tx-transfer {
   color: var(--ink-3);
 }
+/* Refund: money back on a purchase - same teal as income, lighter row tint
+   so it reads as "reduces spending" rather than "new income". */
+.tx-refund {
+  color: var(--teal);
+}
 @media (max-width: 560px) {
   .tx-summary {
     grid-template-columns: 1fr 1fr;
@@ -282,6 +287,13 @@
 .tx-row.tx-transfer {
   opacity: 0.7;
 }
+.tx-row.tx-refund {
+  background: #f1faf8;
+}
+.tx-row.tx-refund:hover {
+  background: #e6f6f3;
+  box-shadow: var(--shadow-card);
+}
 
 .tx-date {
   font-family: var(--mono);
@@ -301,6 +313,9 @@
 }
 .tx-type-icon.tx-transfer {
   color: var(--ink-3);
+}
+.tx-type-icon.tx-refund {
+  color: var(--teal);
 }
 
 .tx-body {
@@ -353,6 +368,9 @@
 .tx-amount.tx-transfer {
   color: var(--ink-3);
   font-weight: 400;
+}
+.tx-amount.tx-refund {
+  color: var(--teal);
 }
 
 .tx-actions {

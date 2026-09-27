@@ -31,7 +31,19 @@ export const EXPENSE_CATS = CATEGORIES.filter((c) => c[1] === "Expense").map(
 );
 export const CAT_TYPE = Object.fromEntries(CATEGORIES);
 
-export const TYPES = ["Expense", "Income", "Transfer", "Dividends"];
+export const TYPES = ["Expense", "Income", "Transfer", "Dividends", "Refund"];
+
+/** How much a row adds to spending. A Refund is money back on an earlier
+    purchase: it keeps that purchase's category (a returned item under
+    Shopping, points applied to a flight under Travel) and is subtracted from
+    it, so category and total spend show what was actually paid. Amounts are
+    always stored positive - the type carries the sign. Every other type
+    (Income, Transfer, Dividends) is not spending and contributes 0.
+    A booking cancelled in full is NOT a Refund: the charge and the refund
+    are both recorded as Transfers so neither month is inflated or driven
+    negative. */
+export const spendOf = (r) =>
+  r.type === "Expense" ? r.amount : r.type === "Refund" ? -r.amount : 0;
 export const PAYMENTS = [
   "Credit Card",
   "Debit Card",

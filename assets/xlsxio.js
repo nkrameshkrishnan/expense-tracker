@@ -9,6 +9,7 @@ import {
   UNASSIGNED,
   currentYear,
   normalise,
+  spendOf,
 } from "./store.js";
 
 /** SheetJS is 930KB - roughly 5x this app's own code - and was previously
@@ -70,9 +71,8 @@ export function personBreakdown(rows, month, year = currentYear()) {
           : inScope.filter((r) => r.person === p);
       return {
         person: p,
-        expense: mine
-          .filter((r) => r.type === "Expense")
-          .reduce((a, r) => a + r.amount, 0),
+        // Expenses minus Refunds - see spendOf() in constants.js.
+        expense: mine.reduce((a, r) => a + spendOf(r), 0),
         income: mine
           .filter((r) => r.type === "Income")
           .reduce((a, r) => a + r.amount, 0),
@@ -98,10 +98,9 @@ export function personSeries(rows, year = currentYear()) {
             (r) =>
               Number(String(r.date).slice(0, 4)) === year &&
               monthOf(r) === m &&
-              r.type === "Expense" &&
               (p === UNASSIGNED ? !r.person : r.person === p),
           )
-          .reduce((a, r) => a + r.amount, 0);
+          .reduce((a, r) => a + spendOf(r), 0);
       }),
     }))
     .filter((s) => s.data.some((v) => v > 0));
@@ -122,10 +121,11 @@ export function categorySeries(rows, year = currentYear()) {
           (r) =>
             Number(String(r.date).slice(0, 4)) === year &&
             monthOf(r) === m &&
-            r.type === "Expense" &&
             r.category === c,
         )
-        .reduce((a, r) => a + r.amount, 0);
+        // Net of refunds; a month where refunds exceed purchases goes
+        // negative here and is simply skipped by the Sankey (flows > 0 only).
+        .reduce((a, r) => a + spendOf(r), 0);
     }),
   })).filter((s) => s.data.some((v) => v > 0));
 }
@@ -138,9 +138,12 @@ export function aggregate(rows, budget, month, year = currentYear()) {
       (month === 0 || monthOf(r) === month),
   );
   const sum = (f) => inScope.filter(f).reduce((a, r) => a + r.amount, 0);
+  // Spending is Expense minus Refund (spendOf), never a plain sum of amounts.
+  const spend = (f) => inScope.filter(f).reduce((a, r) => a + spendOf(r), 0);
 
   const income = sum((r) => r.type === "Income");
-  const expense = sum((r) => r.type === "Expense");
+  const expense = spend(() => true);
+  const refunds = sum((r) => r.type === "Refund");
   // Its own accounting bucket, not Income and not a Transfer: dividends are
   // tracked and totalled, but deliberately excluded from Income, Savings Rate
   // and every Income-derived figure. That exclusion is automatic here - every
@@ -149,11 +152,10 @@ export function aggregate(rows, budget, month, year = currentYear()) {
   const dividends = sum((r) => r.type === "Dividends");
 
   const byCat = {};
-  // Expense only. `!== 'Transfer'` would also let Income rows into an expense
-  // category's total — harmless today because refunds land in Other Income, but
-  // it inflates the bars the moment a refund keeps its original category.
-  for (const c of CAT_NAMES)
-    byCat[c] = sum((r) => r.type === "Expense" && r.category === c);
+  // Expense minus Refund only. `!== 'Transfer'` would also let Income rows
+  // into an expense category's total; a Refund keeps its purchase's category
+  // on purpose, and is subtracted from it rather than added.
+  for (const c of CAT_NAMES) byCat[c] = spend((r) => r.category === c);
 
   const budgetFor = (c) => {
     if (!budget[c]) return 0;
@@ -177,13 +179,9 @@ export function aggregate(rows, budget, month, year = currentYear()) {
 
   const byPayment = PAYMENTS.map((p) => ({
     method: p,
-    amount: inScope
-      .filter((r) => r.type === "Expense" && r.payment === p)
-      .reduce((a, r) => a + r.amount, 0),
+    amount: spend((r) => r.payment === p),
   }));
-  const unattributed = inScope
-    .filter((r) => r.type === "Expense" && !r.payment)
-    .reduce((a, r) => a + r.amount, 0);
+  const unattributed = spend((r) => !r.payment);
 
   const series = MONTHS.map((_, i) => {
     const m = i + 1;
@@ -193,9 +191,7 @@ export function aggregate(rows, budget, month, year = currentYear()) {
     const inc = inM
       .filter((r) => r.type === "Income")
       .reduce((a, r) => a + r.amount, 0);
-    const exp = inM
-      .filter((r) => r.type === "Expense")
-      .reduce((a, r) => a + r.amount, 0);
+    const exp = inM.reduce((a, r) => a + spendOf(r), 0);
     const div = inM
       .filter((r) => r.type === "Dividends")
       .reduce((a, r) => a + r.amount, 0);
@@ -225,6 +221,7 @@ export function aggregate(rows, budget, month, year = currentYear()) {
     count: inScope.length,
     income,
     expense,
+    refunds,
     dividends,
     net: income - expense,
     savingsRate: income > 0 ? (income - expense) / income : 0,
