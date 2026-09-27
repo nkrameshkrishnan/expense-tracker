@@ -12,6 +12,7 @@ import {
   spendOf,
   inferTypeFromSignAndDescription,
 } from "./store.js";
+import { looksLikeWealthsimpleCsv, parseWealthsimpleCsv } from "./wealthsimple-csv.js";
 
 /** SheetJS is 930KB - roughly 5x this app's own code - and was previously
     loaded unconditionally via a <script> tag in index.html, blocking every
@@ -443,7 +444,39 @@ function parseTextDate(s) {
 export async function importFile(file) {
   await loadXLSX();
   const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { cellDates: false });
+  // A .csv has no container format of its own to declare its encoding (an
+  // .xlsx/.xls does - they're zip/binary containers SheetJS reads directly
+  // from the raw bytes). Handed a plain ArrayBuffer with no byte-order mark,
+  // SheetJS's CSV reader guesses codepage 1252 rather than UTF-8, so any
+  // multi-byte UTF-8 character - Wealthsimple's own export uses "®" for
+  // "Interac e-Transfer®" - gets decoded one byte at a time into mojibake
+  // ("Â®"). Decoding the bytes ourselves as UTF-8 text first and handing
+  // SheetJS a string sidesteps its codepage guessing entirely; this can't
+  // be done for .xlsx/.xls, whose bytes are a real zip archive, not text.
+  const isCsv = /\.csv$/i.test(file.name);
+  const wb = isCsv
+    ? XLSX.read(new TextDecoder("utf-8").decode(buf), {
+        type: "string",
+        cellDates: false,
+      })
+    : XLSX.read(buf, { cellDates: false });
+
+  // Wealthsimple's own "activities export" CSV has a completely different
+  // header shape from this app's own transaction table - checked first,
+  // against every sheet's first row, so it's routed to its own parser
+  // instead of falling through to "No sheet had both a Date and an Amount
+  // column" (Wealthsimple's date/amount columns are named effective_date/
+  // net_cash_amount, neither of which HEADER_ALIASES below recognises).
+  for (const name of wb.SheetNames) {
+    const aoa = XLSX.utils.sheet_to_json(wb.Sheets[name], {
+      header: 1,
+      blankrows: false,
+    });
+    if (aoa.length && looksLikeWealthsimpleCsv(aoa[0])) {
+      const { rows, skipped, reasons } = parseWealthsimpleCsv(aoa, normalise);
+      return { rows, skipped, reasons, sheet: name };
+    }
+  }
 
   let best = null;
   for (const name of wb.SheetNames) {
