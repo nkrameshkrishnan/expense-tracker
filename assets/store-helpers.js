@@ -32,7 +32,8 @@ export function previousMonth() {
 // for a source - like Amex's own export - that has no explicit Type column
 // of its own). Order matters: checked most-specific-first, sign only
 // decides between Refund and Income when no keyword matches.
-const REFUND_WORDS = /\b(refund|return|reversal|cancell?ation|cash back credit)\b/i;
+const REFUND_WORDS =
+  /\b(refund|return|reversal|cancell?ation|cash back credit)\b/i;
 // "e-transfer" alone (no "sent"/"received" needed - CIBC's own wording is
 // just "Internet Banking E-TRANSFER ..."), and "transfer ... to card" for a
 // bank-to-credit-card payment - both real wordings seen in an actual CIBC

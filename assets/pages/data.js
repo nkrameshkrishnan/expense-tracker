@@ -20,9 +20,7 @@ let staging = null;
 function stagingRowHtml(r, i) {
   const sel = (list, val) =>
     list
-      .map(
-        (o) => `<option${o === val ? " selected" : ""}>${esc(o)}</option>`,
-      )
+      .map((o) => `<option${o === val ? " selected" : ""}>${esc(o)}</option>`)
       .join("");
   return `
   <tr data-row="${i}">
@@ -193,7 +191,13 @@ export function renderData() {
           return;
         }
         out.textContent = "";
-        staging = { rows, skipped, reasons, sheet: file.name, replaceFirst: false };
+        staging = {
+          rows,
+          skipped,
+          reasons,
+          sheet: file.name,
+          replaceFirst: false,
+        };
       } else {
         const { rows, skipped, reasons, sheet } = await importFile(file);
         if (!rows.length) {
@@ -219,7 +223,8 @@ function wireStaging() {
   if (!staging) return;
 
   view.querySelectorAll("#stg-tbody [data-field]").forEach((el) => {
-    const evt = el.tagName === "SELECT" || el.type === "checkbox" ? "change" : "input";
+    const evt =
+      el.tagName === "SELECT" || el.type === "checkbox" ? "change" : "input";
     el.addEventListener(evt, () => {
       const r = staging.rows[Number(el.dataset.idx)];
       const f = el.dataset.field;
@@ -229,7 +234,10 @@ function wireStaging() {
       else r[f] = el.value;
       const total = $("#stg-total");
       if (total) {
-        const sum = staging.rows.reduce((a, x) => a + (Number(x.amount) || 0), 0);
+        const sum = staging.rows.reduce(
+          (a, x) => a + (Number(x.amount) || 0),
+          0,
+        );
         total.textContent = `${staging.rows.length} row${staging.rows.length === 1 ? "" : "s"} \u00b7 ${money(sum)} combined amount`;
       }
     });
@@ -267,13 +275,16 @@ function wireStaging() {
     )
       return;
     const rowsToWrite = staging.rows;
-    const done = await withBusy(`Writing ${rowsToWrite.length} rows`, async () => {
-      if (replaceFirst) await state.store.clear();
-      await state.store.bulkAdd(rowsToWrite, (n, total) => {
-        notice(`Writing to the sheet\u2026 ${n} of ${total} rows`);
-      });
-      await refresh();
-    });
+    const done = await withBusy(
+      `Writing ${rowsToWrite.length} rows`,
+      async () => {
+        if (replaceFirst) await state.store.clear();
+        await state.store.bulkAdd(rowsToWrite, (n, total) => {
+          notice(`Writing to the sheet\u2026 ${n} of ${total} rows`);
+        });
+        await refresh();
+      },
+    );
     // Only clear the review on success - withBusy already showed an error
     // notice on failure, and keeping the staged rows means a network hiccup
     // doesn't cost the edits already made in the review table.

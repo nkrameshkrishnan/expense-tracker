@@ -41,8 +41,18 @@ const BALANCE_KEYWORDS = ["balance"]; // matched via .includes(), e.g. "running 
 const MONEY_RE = /^[-−]?\$[\d,]+\.\d{2}$/;
 
 const MONTH_INDEX = {
-  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
-  jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+  jan: 1,
+  feb: 2,
+  mar: 3,
+  apr: 4,
+  may: 5,
+  jun: 6,
+  jul: 7,
+  aug: 8,
+  sep: 9,
+  oct: 10,
+  nov: 11,
+  dec: 12,
 };
 function pad(n) {
   return String(n).padStart(2, "0");
@@ -93,16 +103,26 @@ function findHeader(lines) {
     const found = {};
     for (const it of line.items) {
       const t = it.str.trim().toLowerCase();
-      if (DATE_KEYWORDS.includes(t) && found.date === undefined) found.date = it.x;
-      else if (DESC_KEYWORDS.includes(t) && found.desc === undefined) found.desc = it.x;
-      else if (DEBIT_KEYWORDS.includes(t) && found.debit === undefined) found.debit = it.x;
-      else if (CREDIT_KEYWORDS.includes(t) && found.credit === undefined) found.credit = it.x;
-      else if (AMOUNT_KEYWORDS.includes(t) && found.amount === undefined) found.amount = it.x;
-      else if (found.balance === undefined && BALANCE_KEYWORDS.some((k) => t.includes(k)))
+      if (DATE_KEYWORDS.includes(t) && found.date === undefined)
+        found.date = it.x;
+      else if (DESC_KEYWORDS.includes(t) && found.desc === undefined)
+        found.desc = it.x;
+      else if (DEBIT_KEYWORDS.includes(t) && found.debit === undefined)
+        found.debit = it.x;
+      else if (CREDIT_KEYWORDS.includes(t) && found.credit === undefined)
+        found.credit = it.x;
+      else if (AMOUNT_KEYWORDS.includes(t) && found.amount === undefined)
+        found.amount = it.x;
+      else if (
+        found.balance === undefined &&
+        BALANCE_KEYWORDS.some((k) => t.includes(k))
+      )
         found.balance = it.x;
     }
     const hasAmountCol =
-      found.debit !== undefined || found.credit !== undefined || found.amount !== undefined;
+      found.debit !== undefined ||
+      found.credit !== undefined ||
+      found.amount !== undefined;
     if (found.date !== undefined && found.desc !== undefined && hasAmountCol)
       return { y: line.y, ...found };
   }
@@ -137,7 +157,8 @@ const RECORD_EDGE_MARGIN = 30;
     page) - in which case the first record's upper bound is capped by
     RECORD_EDGE_MARGIN rather than a real header boundary. */
 function parsePage(items, cols, headerY) {
-  const inTable = (y) => (headerY === null || y < headerY - 1) && y > FOOTER_CUTOFF_Y;
+  const inTable = (y) =>
+    (headerY === null || y < headerY - 1) && y > FOOTER_CUTOFF_Y;
 
   // Every dollar-shaped item is a candidate anchor - one per real
   // transaction row - EXCEPT one that's actually the running-balance
@@ -218,7 +239,8 @@ function parsePage(items, cols, headerY) {
       skipped++;
       continue;
     }
-    const isCredit = rec.anchor.kind === "credit" || /^[-−]/.test(rec.anchor.str);
+    const isCredit =
+      rec.anchor.kind === "credit" || /^[-−]/.test(rec.anchor.str);
     rows.push(
       normalise({
         date: iso,

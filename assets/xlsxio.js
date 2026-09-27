@@ -12,7 +12,10 @@ import {
   spendOf,
   inferTypeFromSignAndDescription,
 } from "./store.js";
-import { looksLikeWealthsimpleCsv, parseWealthsimpleCsv } from "./wealthsimple-csv.js";
+import {
+  looksLikeWealthsimpleCsv,
+  parseWealthsimpleCsv,
+} from "./wealthsimple-csv.js";
 
 /** SheetJS is 930KB - roughly 5x this app's own code - and was previously
     loaded unconditionally via a <script> tag in index.html, blocking every
@@ -118,16 +121,18 @@ export function categorySeries(rows, year = currentYear()) {
     category: c,
     data: MONTHS.map((_, i) => {
       const m = i + 1;
-      return rows
-        .filter(
-          (r) =>
-            Number(String(r.date).slice(0, 4)) === year &&
-            monthOf(r) === m &&
-            r.category === c,
-        )
-        // Net of refunds; a month where refunds exceed purchases goes
-        // negative here and is simply skipped by the Sankey (flows > 0 only).
-        .reduce((a, r) => a + spendOf(r), 0);
+      return (
+        rows
+          .filter(
+            (r) =>
+              Number(String(r.date).slice(0, 4)) === year &&
+              monthOf(r) === m &&
+              r.category === c,
+          )
+          // Net of refunds; a month where refunds exceed purchases goes
+          // negative here and is simply skipped by the Sankey (flows > 0 only).
+          .reduce((a, r) => a + spendOf(r), 0)
+      );
     }),
   })).filter((s) => s.data.some((v) => v > 0));
 }
@@ -409,8 +414,18 @@ function excelSerialToISO(v) {
 }
 
 const MONTH_INDEX = {
-  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
-  jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+  jan: 1,
+  feb: 2,
+  mar: 3,
+  apr: 4,
+  may: 5,
+  jun: 6,
+  jul: 7,
+  aug: 8,
+  sep: 9,
+  oct: 10,
+  nov: 11,
+  dec: 12,
 };
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -524,7 +539,9 @@ export async function importFile(file) {
       // parseTextDate() instead of being blindly sliced to 10 characters,
       // which used to produce "25 Sep 202" - never a valid date, so every
       // row from a real Amex export was silently skipped.
-      date = /^\d{4}-\d{2}-\d{2}/.test(str) ? str.slice(0, 10) : parseTextDate(str);
+      date = /^\d{4}-\d{2}-\d{2}/.test(str)
+        ? str.slice(0, 10)
+        : parseTextDate(str);
     }
 
     const amount = Number(String(get("amount")).replace(/[$,\s]/g, ""));

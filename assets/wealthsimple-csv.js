@@ -27,9 +27,17 @@ const SKIPPED_KINDS = new Set(["Trade", "Tax"]);
     so a Wealthsimple file is routed here instead of failing with "No sheet
     had both a Date and an Amount column." */
 export function looksLikeWealthsimpleCsv(headerRow) {
-  const h = new Set((headerRow || []).map((c) => String(c ?? "").trim().toLowerCase()));
+  const h = new Set(
+    (headerRow || []).map((c) =>
+      String(c ?? "")
+        .trim()
+        .toLowerCase(),
+    ),
+  );
   return (
-    h.has("effective_date") && h.has("activity_type") && h.has("net_cash_amount")
+    h.has("effective_date") &&
+    h.has("activity_type") &&
+    h.has("net_cash_amount")
   );
 }
 
@@ -56,7 +64,11 @@ function typeFor(activityType) {
     {rows, skipped, reasons} shape every other importer in this app returns,
     ready to feed straight into the staged-review table. */
 export function parseWealthsimpleCsv(aoa, normalise) {
-  const header = (aoa[0] || []).map((c) => String(c ?? "").trim().toLowerCase());
+  const header = (aoa[0] || []).map((c) =>
+    String(c ?? "")
+      .trim()
+      .toLowerCase(),
+  );
   const idx = {};
   header.forEach((h, i) => (idx[h] = i));
   const get = (raw, key) => (idx[key] === undefined ? "" : raw[idx[key]]);
@@ -79,9 +91,15 @@ export function parseWealthsimpleCsv(aoa, normalise) {
     const date =
       typeof rawDate === "number"
         ? excelSerialToISO(rawDate)
-        : String(rawDate || "").trim().slice(0, 10);
+        : String(rawDate || "")
+            .trim()
+            .slice(0, 10);
     const amount = Number(get(raw, "net_cash_amount"));
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !isFinite(amount) || amount === 0) {
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+      !isFinite(amount) ||
+      amount === 0
+    ) {
       skipped++;
       continue;
     }
@@ -94,7 +112,8 @@ export function parseWealthsimpleCsv(aoa, normalise) {
         date,
         type: typeFor(activityType),
         category: "",
-        subcategory: activityType === "Dividend" ? String(get(raw, "symbol") || "") : "",
+        subcategory:
+          activityType === "Dividend" ? String(get(raw, "symbol") || "") : "",
         description: description || activityType,
         amount,
         payment: "",

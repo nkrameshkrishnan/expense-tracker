@@ -1,5 +1,11 @@
 /* Budget page - per-category monthly targets and actual-vs-budget view. */
-import { CAT_NAMES, EXPENSE_CATS, CAT_TYPE, MONTHS, spendOf } from "../store.js";
+import {
+  CAT_NAMES,
+  EXPENSE_CATS,
+  CAT_TYPE,
+  MONTHS,
+  spendOf,
+} from "../store.js";
 import { money, pct, monthOf } from "../xlsxio.js";
 import { listFor } from "../categories.js";
 import { $, view, esc, state, notice, withBusy, refresh } from "../core.js";
