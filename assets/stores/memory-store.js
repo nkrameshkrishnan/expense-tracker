@@ -113,6 +113,9 @@ export class MemoryStore {
   async deleteBalanceDate(date) {
     this.balances = (this.balances || []).filter((b) => b.date !== date);
   }
+  async deleteBalanceAccount(account) {
+    this.balances = (this.balances || []).filter((b) => b.account !== account);
+  }
   async isEmpty() {
     return this.rows.length === 0;
   }

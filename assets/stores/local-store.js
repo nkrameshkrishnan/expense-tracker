@@ -181,6 +181,10 @@ export class LocalStore {
     const all = (await this.getBalances()).filter((b) => b.date !== date);
     await this._wrap(this._tx("meta", "readwrite").put(all, "balances"));
   }
+  async deleteBalanceAccount(account) {
+    const all = (await this.getBalances()).filter((b) => b.account !== account);
+    await this._wrap(this._tx("meta", "readwrite").put(all, "balances"));
+  }
   async setBudget(b, year) {
     const y = year || currentYear();
     const all =

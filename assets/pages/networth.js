@@ -25,6 +25,14 @@ import { debtNetWorth, renderDebtSection, wireDebtHandlers } from "./debts.js";
 
 function nwAccounts() {
   const custom = loadCustom().nwAccount || [];
+  // Accounts the person deleted. A custom account is simply dropped from
+  // its own list (below), but a built-in NET_WORTH_ACCOUNTS entry has
+  // nowhere else to record "deleted" - it's a hardcoded array in
+  // constants.js, not this browser's storage - so it's hidden here
+  // instead. Same for an account that only exists because an old snapshot
+  // still references it; without this it would keep reappearing the
+  // moment its balances were re-fetched.
+  const hidden = new Set(loadCustom().nwAccountHidden || []);
   const seen = new Map();
   for (const a of NET_WORTH_ACCOUNTS) seen.set(a.account, a);
   for (const b of state.balances || []) {
@@ -36,7 +44,8 @@ function nwAccounts() {
       });
     }
   }
-  for (const c of custom) if (!seen.has(c.account)) seen.set(c.account, c);
+  for (const c of custom) seen.set(c.account, c);
+  for (const name of hidden) seen.delete(name);
   return [...seen.values()];
 }
 
@@ -56,19 +65,25 @@ function addNwAccount(account, owner, kind) {
     return false;
   const c = loadCustom();
   c.nwAccount = [...(c.nwAccount || []), { account: name, owner, kind }];
+  // Un-hide: adding an account under a name that was previously deleted
+  // (a built-in one, most likely) should bring it back rather than have
+  // nwAccounts() immediately hide the very entry just created.
+  c.nwAccountHidden = (c.nwAccountHidden || []).filter((a) => a !== name);
   localStorage.setItem(CUSTOM_KEY, JSON.stringify(c));
   return true;
 }
 
+/** Removes an account from the picklist - a custom one is dropped outright,
+    while a built-in NET_WORTH_ACCOUNTS entry (which lives in constants.js,
+    not in this browser's storage) is instead added to a hide-list so
+    nwAccounts() stops offering it. Either way this only touches the
+    picklist; call deleteAccountBalances() first if the account has any
+    recorded balances to clear out too. */
 function removeNwAccount(account) {
   const c = loadCustom();
   c.nwAccount = (c.nwAccount || []).filter((a) => a.account !== account);
+  c.nwAccountHidden = [...new Set([...(c.nwAccountHidden || []), account])];
   localStorage.setItem(CUSTOM_KEY, JSON.stringify(c));
-}
-
-/** Only custom accounts can be removed, and only while they hold no balances. */
-function isCustomNwAccount(account) {
-  return (loadCustom().nwAccount || []).some((a) => a.account === account);
 }
 
 /* ---------------------------------------------------------- debts and loans
@@ -325,12 +340,8 @@ function renderBalanceForm(copyFrom) {
         (a) => `
     <tr>
       <td>${esc(a.account)}
-        ${
-          isCustomNwAccount(a.account)
-            ? `<button class="rowbtn nw-del-acct" data-delacct="${esc(a.account)}"
-               title="Remove this account">\u2715</button>`
-            : ""
-        }</td>
+        <button class="rowbtn nw-del-acct" data-delacct="${esc(a.account)}"
+           title="Delete this account">\u2715</button></td>
       <td><span class="tag ${a.kind === "Liability" ? "tag-liab" : ""}">${a.kind}</span></td>
       <td class="n">
         <div class="nw-input-wrap">
@@ -460,20 +471,25 @@ function renderBalanceForm(copyFrom) {
 
   view.querySelectorAll("[data-delacct]").forEach(
     (b) =>
-      (b.onclick = () => {
+      (b.onclick = async () => {
         const name = b.dataset.delacct;
         const used = (state.balances || []).filter((x) => x.account === name);
-        if (used.length) {
-          return notice(
-            `"${name}" appears in ${used.length} saved snapshot${used.length > 1 ? "s" : ""}. ` +
-              `Delete those snapshots first, or leave the account in place.`,
-            "bad",
-          );
+        const warning = used.length
+          ? ` This deletes ${used.length} recorded balance${used.length > 1 ? "s" : ""} for it across ${new Set(used.map((x) => x.date)).size} snapshot${new Set(used.map((x) => x.date)).size > 1 ? "s" : ""}.`
+          : "";
+        if (!confirm(`Delete "${name}" from the account list?${warning}`))
+          return;
+        const done = await withBusy(`Deleting "${name}"`, async () => {
+          if (used.length) {
+            await state.store.deleteBalanceAccount(name);
+            state.balances = await state.store.getBalances();
+          }
+          removeNwAccount(name);
+        });
+        if (done) {
+          renderBalanceForm(copyFrom);
+          notice(`Deleted "${name}".`, "ok");
         }
-        if (!confirm(`Remove "${name}" from the account list?`)) return;
-        removeNwAccount(name);
-        renderBalanceForm(copyFrom);
-        notice(`Removed "${name}".`, "ok");
       }),
   );
 
