@@ -22,6 +22,11 @@ import {
 import { go } from "../router.js";
 import { backendLabel, isRemoteStore } from "../auth.js";
 import { debtNetWorth, renderDebtSection, wireDebtHandlers } from "./debts.js";
+import {
+  metalsSummary,
+  renderMetalsSection,
+  wireMetalsHandlers,
+} from "./metals.js";
 
 function nwAccounts() {
   const custom = loadCustom().nwAccount || [];
@@ -111,7 +116,15 @@ export function renderNetWorth() {
   // Outstanding debts and loans are part of net worth, computed from their
   // payment history rather than needing a balance snapshot of their own.
   const dnw = debtNetWorth(state.debts || [], scopeOwner);
-  const assets = (latest ? sumOf(latest, "Asset") : 0) + dnw.receivable;
+  const metalHoldings = (state.metalHoldings || []).filter(
+    (h) => !scopeOwner || h.owner === scopeOwner,
+  );
+  const metalsValue = metalsSummary(
+    metalHoldings,
+    state.goldPrice || null,
+  ).value;
+  const assets =
+    (latest ? sumOf(latest, "Asset") : 0) + dnw.receivable + metalsValue;
   const liabs = (latest ? sumOf(latest, "Liability") : 0) + dnw.liability;
   const net = assets - liabs;
   const prevNet = prev ? sumOf(prev, "Asset") - sumOf(prev, "Liability") : null;
@@ -176,7 +189,8 @@ export function renderNetWorth() {
     !latest
       ? `<div class="empty">No balances recorded yet. Click <b>Record balances</b> to enter what each
      account is worth today &mdash; separate from your transactions, and never affects income or expense.</div>
-     ${renderDebtSection(scopeOwner)}`
+     ${renderDebtSection(scopeOwner)}
+     ${renderMetalsSection(scopeOwner)}`
       : `
 
   <div class="nw-asat">
@@ -259,6 +273,7 @@ export function renderNetWorth() {
   }
 
   ${renderDebtSection(scopeOwner)}
+  ${renderMetalsSection(scopeOwner)}
 
   <div class="eyebrow">Snapshots</div>
   <div class="tablewrap"><table><thead><tr><th>Date</th><th class="n">Accounts</th><th class="n">Assets</th><th class="n">Liabilities</th><th class="n">Net worth</th><th></th></tr></thead><tbody>
@@ -281,6 +296,7 @@ export function renderNetWorth() {
 
   $("#nw-record").onclick = () => renderBalanceForm(latest);
   wireDebtHandlers();
+  wireMetalsHandlers();
   view.querySelectorAll("[data-delsnap]").forEach(
     (b) =>
       (b.onclick = async () => {
