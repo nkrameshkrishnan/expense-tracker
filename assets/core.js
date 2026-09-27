@@ -64,6 +64,11 @@ export const state = {
   // one month is something you opt into from the dropdown.
   catMonthHighlight: 0,
   catMonthOrientation: "horizontal",
+  // "Spend by category" table has its own year/month filter too, independent
+  // of the Dashboard's main period selector, same rationale as catMonthYear
+  // above. 0 = all months.
+  catSpendYear: currentYear(),
+  catSpendMonth: 0,
 };
 
 export const scoped = () => byPersonFilter(state.rows, state.person);

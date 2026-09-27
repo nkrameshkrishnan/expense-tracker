@@ -8,6 +8,7 @@ import {
   personBreakdown,
   personSeries,
   categorySeries,
+  categoryTotals,
 } from "../xlsxio.js";
 import * as charts from "../charts.js";
 import {
@@ -204,6 +205,23 @@ function wireDashboard(showCompare) {
     refreshCategoryMonthChart();
   };
 
+  // "Spend by category" table's own year/month filter - same independence
+  // rationale as the "Category spend by month" controls above.
+  const refreshCatSpendTable = () => {
+    const tb = $("#catspend-tbody");
+    if (tb) tb.innerHTML = catSpendRows();
+  };
+  $("#cs-y-sel").onchange = async (e) => {
+    state.catSpendYear = Number(e.target.value);
+    await state.store.ensureYearLoaded?.(state.catSpendYear);
+    state.rows = await state.store.list();
+    refreshCatSpendTable();
+  };
+  $("#cs-m-sel").onchange = (e) => {
+    state.catSpendMonth = Number(e.target.value);
+    refreshCatSpendTable();
+  };
+
   view.querySelectorAll("[data-jump]").forEach(
     (el) =>
       (el.onclick = () => {
@@ -294,9 +312,29 @@ function buildDashboardShell(a, label, people, pSeries, showCompare) {
     <div class="panel"><h3>Payment method split &mdash; <span id="dash-pay-label">${esc(label)}</span></h3><div class="chartbox"><canvas id="c-pay"></canvas>
       ${a.byPayment.length === 0 ? `<p class="note" style="position:absolute;inset:0;display:grid;place-content:center;text-align:center">No payment methods recorded.<br>Fill the Payment field when adding entries.</p>` : ""}</div>
       ${a.unattributed > 0 ? `<p class="note" id="dash-unattr-note">${money(a.unattributed)} has no payment method set, so it is excluded here.</p>` : ""}</div>
-    <div class="panel"><h3>Spend by category &mdash; <span id="dash-catspend-label">${esc(label)}</span></h3>
+    <div class="panel">
+      <div class="panel-head">
+        <h3>Spend by category</h3>
+        <div class="panel-controls">
+          <select id="cs-y-sel" title="Year">
+            ${availableYears()
+              .map(
+                (y) =>
+                  `<option value="${y}"${y === state.catSpendYear ? " selected" : ""}>${y}</option>`,
+              )
+              .join("")}
+          </select>
+          <select id="cs-m-sel" title="Month">
+            <option value="0"${state.catSpendMonth === 0 ? " selected" : ""}>Full year</option>
+            ${MONTHS.map(
+              (m, i) =>
+                `<option value="${i + 1}"${state.catSpendMonth === i + 1 ? " selected" : ""}>${m}</option>`,
+            ).join("")}
+          </select>
+        </div>
+      </div>
       <div class="tablewrap"><table><thead><tr><th>Category</th><th class="n">Spent</th></tr></thead><tbody id="catspend-tbody">
-        ${catSpendRows(a)}
+        ${catSpendRows()}
       </tbody></table></div>
     </div>
     <div class="panel"><h3>Actual vs budget by category &mdash; <span id="dash-cat-label">${esc(label)}</span></h3><div class="chartbox tall"><canvas id="c-cat"></canvas></div></div>
@@ -405,7 +443,6 @@ function updateDashboardValues(a, label, people, pSeries, showCompare) {
   }
   [
     "dash-pay-label",
-    "dash-catspend-label",
     "dash-cat-label",
     "dash-top-label",
     "dash-catdetail-label",
@@ -415,8 +452,10 @@ function updateDashboardValues(a, label, people, pSeries, showCompare) {
   });
   const catTb = $("#catdetail-tbody");
   if (catTb) catTb.innerHTML = catDetailRows(a);
-  const catSpendTb = $("#catspend-tbody");
-  if (catSpendTb) catSpendTb.innerHTML = catSpendRows(a);
+  // "Spend by category" table is NOT refreshed here - it has its own
+  // year/month filter (state.catSpendYear/catSpendMonth) independent of the
+  // page-wide period this function is reacting to; only its own selectors
+  // (wired in wireDashboard) or a full rebuild touch it.
   const cm = $("#dash-catmonth-label");
   if (cm) cm.textContent = state.catMonthYear;
 }
@@ -448,13 +487,17 @@ function personCards(people) {
     )
     .join("");
 }
-/** Plain "spend under each category" table for the selected period, sorted
-    highest first - unlike catDetailRows below this ignores budget entirely,
-    so an unbudgeted category with real spend still shows up. */
-function catSpendRows(a) {
-  const rows = a.catRows
-    .filter((r) => r.actual > 0)
-    .sort((x, y) => y.actual - x.actual);
+/** Plain "spend under each category" table, sorted highest first, for the
+    panel's own year/month filter (state.catSpendYear/catSpendMonth) rather
+    than the page-wide period - unlike catDetailRows below this ignores
+    budget entirely, so an unbudgeted category with real spend still shows
+    up. Still respects the person filter, same as every other panel. */
+function catSpendRows() {
+  const rows = categoryTotals(
+    scoped(),
+    state.catSpendMonth,
+    state.catSpendYear,
+  );
   return (
     rows
       .map(

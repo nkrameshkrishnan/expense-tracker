@@ -130,6 +130,26 @@ export function categorySeries(rows, year = currentYear()) {
   })).filter((s) => s.data.some((v) => v > 0));
 }
 
+/** Plain category totals for one period - no budget involved, unlike
+    aggregate() below. Feeds the Dashboard's "Spend by category" table, which
+    carries its own year/month filter independent of the page-wide selector
+    (the same "separate state" pattern categorySeries' month/year already
+    uses for the category-by-month chart). month = 0 means the whole year. */
+export function categoryTotals(rows, month, year = currentYear()) {
+  const inScope = rows.filter(
+    (r) =>
+      Number(String(r.date).slice(0, 4)) === year &&
+      (month === 0 || monthOf(r) === month),
+  );
+  const spend = (f) => inScope.filter(f).reduce((a, r) => a + spendOf(r), 0);
+  return CAT_NAMES.map((c) => ({
+    category: c,
+    actual: spend((r) => r.category === c),
+  }))
+    .filter((r) => r.actual > 0)
+    .sort((a, b) => b.actual - a.actual);
+}
+
 /** All dashboard numbers come from here. month = 0 means the whole year. */
 export function aggregate(rows, budget, month, year = currentYear()) {
   const inScope = rows.filter(
