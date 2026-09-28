@@ -497,6 +497,46 @@ tbody tr:hover {
   width: auto;
   min-width: 0;
 }
+/* Duplicate flags in the import review table. A skipped row stays editable
+   (ticking it back in is one click) but reads as out of the import. */
+#stg-tbody tr.stg-skip td {
+  opacity: 0.45;
+}
+#stg-tbody tr.stg-skip td.stg-flagcell {
+  opacity: 1;
+}
+.stg-flag {
+  display: inline-block;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+.stg-flag-exact {
+  color: var(--red);
+  background: rgba(183, 57, 61, 0.1);
+}
+.stg-flag-likely {
+  color: var(--amber);
+  background: rgba(178, 74, 51, 0.1);
+}
+.stg-flag-file {
+  color: var(--blue);
+  background: rgba(47, 104, 196, 0.1);
+}
+.stg-match {
+  display: block;
+  font-size: 11px;
+  color: var(--ink-3);
+  margin-top: 2px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .over {
   color: var(--red);
   font-weight: 600;

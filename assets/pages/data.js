@@ -8,6 +8,7 @@ import { backendLabel } from "../auth.js";
 import { extractPdfItems, extractPdfText } from "../pdfio.js";
 import { parseStatementText } from "../statement-parser.js";
 import { parseBankTablePdf } from "../bank-table-parser.js";
+import { findDuplicates } from "../dedupe.js";
 
 /** Rows parsed from a file, waiting for review before anything is written to
     the store - {rows, skipped, reasons, sheet, replaceFirst} or null when
@@ -17,13 +18,88 @@ import { parseBankTablePdf } from "../bank-table-parser.js";
     simply drop it, same as closing a form without submitting. */
 let staging = null;
 
+/* ------------------------------------------------------ duplicate flags
+   Each staged row carries two private fields, both dropped by normalise()
+   before anything is written:
+     _dup   the findDuplicates() verdict for this row, or null
+     _skip  true = leave this row out of the import
+   plus _pinned once the person ticks/unticks a row by hand, so recomputing
+   the flags after an edit never overrides a choice they made. */
+
+/** Default for an unpinned row: skip only a row that is exactly already
+    stored. "Likely" matches and repeats inside the file stay included -
+    those are often real purchases, and silently dropping money is worse
+    than a visible flag the person can act on. */
+const defaultSkip = (d) => !!d && d.kind === "exact" && d.source === "stored";
+
+function markDuplicates() {
+  if (!staging) return;
+  const flags = findDuplicates(staging.rows, state.rows);
+  staging.rows.forEach((r, i) => {
+    r._dup = flags[i];
+    if (!r._pinned) r._skip = defaultSkip(flags[i]);
+  });
+}
+
+/** Rows that will actually be written. "Replace everything first" wipes the
+    store, so comparing against it is meaningless - every row goes in. */
+const rowsToImport = () =>
+  staging.replaceFirst ? staging.rows : staging.rows.filter((r) => !r._skip);
+
+function flagHtml(r) {
+  const d = r._dup;
+  if (!d || staging.replaceFirst) return "";
+  const m = d.match;
+  const label =
+    d.source === "file"
+      ? `<span class="stg-flag stg-flag-file">Repeated in file</span>`
+      : d.kind === "exact"
+        ? `<span class="stg-flag stg-flag-exact">Already in Ledger</span>`
+        : `<span class="stg-flag stg-flag-likely">Possible duplicate</span>`;
+  const where =
+    d.source === "file"
+      ? `Same as row ${d.index + 1} above`
+      : `${m.date} · ${m.type} · ${m.description || "(no description)"} · ${money(m.amount)}${m.person ? " · " + m.person : ""}`;
+  return `${label}<span class="stg-match" title="${esc(where)}">${esc(where)}</span>`;
+}
+
+function dupSummaryHtml() {
+  if (staging.replaceFirst) return "";
+  const rows = staging.rows;
+  const exact = rows.filter((r) => r._dup?.kind === "exact").length;
+  const likely = rows.filter(
+    (r) => r._dup?.kind === "likely" && r._dup.source === "stored",
+  ).length;
+  const repeats = rows.filter((r) => r._dup?.source === "file").length;
+  if (!exact && !likely && !repeats)
+    return `<p class="note">No duplicates found — none of these rows are already in Ledger.</p>`;
+  const parts = [];
+  if (exact)
+    parts.push(
+      `<b>${exact} already in Ledger</b> (same date, amount and description) — unticked, so they won't be imported again`,
+    );
+  if (likely)
+    parts.push(
+      `<b>${likely} possible duplicate${likely === 1 ? "" : "s"}</b> (same amount within 3 days) — still ticked; untick any that are the same transaction`,
+    );
+  if (repeats)
+    parts.push(
+      `<b>${repeats} repeated inside this file</b> — still ticked, since two identical purchases on one day are usually real`,
+    );
+  return `<p class="note" id="stg-dups">${parts.join(". ")}.
+    <button class="btn ghost" id="stg-skip-flagged" style="padding:2px 10px;font-size:12px">Untick all flagged</button>
+    <button class="btn ghost" id="stg-include-all" style="padding:2px 10px;font-size:12px">Tick all</button></p>`;
+}
+
 function stagingRowHtml(r, i) {
   const sel = (list, val) =>
     list
       .map((o) => `<option${o === val ? " selected" : ""}>${esc(o)}</option>`)
       .join("");
   return `
-  <tr data-row="${i}">
+  <tr data-row="${i}"${r._skip && !staging.replaceFirst ? ' class="stg-skip"' : ""}>
+    <td class="n stg-flagcell"><input type="checkbox" data-include="${i}" title="Import this row" ${r._skip && !staging.replaceFirst ? "" : "checked"} ${staging.replaceFirst ? "disabled" : ""}></td>
+    <td class="stg-flagcell" data-flag="${i}">${flagHtml(r)}</td>
     <td><input type="date" class="stg-in" data-idx="${i}" data-field="date" value="${esc(r.date)}"></td>
     <td><select class="stg-in" data-idx="${i}" data-field="type">${sel(TYPES, r.type)}</select></td>
     <td><select class="stg-in" data-idx="${i}" data-field="category">${sel(listFor("category"), r.category)}</select></td>
@@ -40,7 +116,8 @@ function stagingRowHtml(r, i) {
 
 function stagingPanelHtml() {
   if (!staging) return "";
-  const total = staging.rows.reduce((a, r) => a + (Number(r.amount) || 0), 0);
+  const going = rowsToImport();
+  const total = going.reduce((a, r) => a + (Number(r.amount) || 0), 0);
   return `
   <div class="eyebrow">Review import — <span id="stg-count">${staging.rows.length}</span> row${staging.rows.length === 1 ? "" : "s"} from "${esc(staging.sheet)}"</div>
   <div class="panel stack">
@@ -50,20 +127,37 @@ function stagingPanelHtml() {
         : ""
     }
     <p class="note">Nothing is written yet — fix any row here, remove ones you don't want, then confirm. Amounts are always positive; the Type column carries the sign.</p>
+    ${dupSummaryHtml()}
     <div class="tablewrap" style="max-height:480px"><table><thead><tr>
-      <th>Date</th><th>Type</th><th>Category</th><th>Subcategory</th><th>Description</th>
+      <th class="n">Import</th><th>Duplicate check</th><th>Date</th><th>Type</th><th>Category</th><th>Subcategory</th><th>Description</th>
       <th class="n">Amount</th><th>Payment</th><th>Account</th><th>Person</th><th class="n">Recurring</th><th></th>
     </tr></thead><tbody id="stg-tbody">
-      ${staging.rows.map(stagingRowHtml).join("") || `<tr><td colspan="11" class="muted">Every row was removed.</td></tr>`}
+      ${staging.rows.map(stagingRowHtml).join("") || `<tr><td colspan="13" class="muted">Every row was removed.</td></tr>`}
     </tbody></table></div>
     <div class="actions">
       <label><input type="checkbox" id="stg-replace" ${staging.replaceFirst ? "checked" : ""}> Replace everything first</label>
       <span class="spacer"></span>
-      <span class="muted num" id="stg-total">${staging.rows.length} row${staging.rows.length === 1 ? "" : "s"} · ${money(total)} combined amount</span>
+      <span class="muted num" id="stg-total">${totalText(going, total)}</span>
       <button class="btn ghost" id="stg-cancel">Cancel</button>
-      <button class="btn" id="stg-confirm" ${staging.rows.length ? "" : "disabled"}>Confirm import</button>
+      <button class="btn" id="stg-confirm" ${going.length ? "" : "disabled"}>Confirm import</button>
     </div>
   </div>`;
+}
+
+function totalText(going, total) {
+  const skipped = staging.rows.length - going.length;
+  return `${going.length} row${going.length === 1 ? "" : "s"} to import · ${money(total)} combined amount${skipped ? ` · ${skipped} skipped` : ""}`;
+}
+
+/** Compare the staged rows against the WHOLE store, not just the years the
+    app has loaded so far (boot fetches the current year first and history in
+    the background) - a statement from last December has to be checked
+    against last December. */
+async function stage(next) {
+  await state.store.ensureAllYearsLoaded?.();
+  state.rows = await state.store.list();
+  staging = next;
+  markDuplicates();
 }
 
 export function renderData() {
@@ -190,22 +284,24 @@ export function renderData() {
           out.innerHTML = `<b class="over">No date-and-amount rows recognised in "${esc(file.name)}".</b>`;
           return;
         }
-        out.textContent = "";
-        staging = {
+        out.textContent = "Checking for duplicates\u2026";
+        await stage({
           rows,
           skipped,
           reasons,
           sheet: file.name,
           replaceFirst: false,
-        };
+        });
+        out.textContent = "";
       } else {
         const { rows, skipped, reasons, sheet } = await importFile(file);
         if (!rows.length) {
           out.innerHTML = `<b class="over">No usable rows found on "${esc(sheet)}".</b>`;
           return;
         }
+        out.textContent = "Checking for duplicates\u2026";
+        await stage({ rows, skipped, reasons, sheet, replaceFirst: false });
         out.textContent = "";
-        staging = { rows, skipped, reasons, sheet, replaceFirst: false };
       }
       renderData();
     } catch (err) {
@@ -232,16 +328,26 @@ function wireStaging() {
       else if (f === "amount")
         r.amount = Math.round((Number(el.value) || 0) * 100) / 100;
       else r[f] = el.value;
-      const total = $("#stg-total");
-      if (total) {
-        const sum = staging.rows.reduce(
-          (a, x) => a + (Number(x.amount) || 0),
-          0,
-        );
-        total.textContent = `${staging.rows.length} row${staging.rows.length === 1 ? "" : "s"} \u00b7 ${money(sum)} combined amount`;
-      }
+      if (MATCH_FIELDS.has(f)) {
+        markDuplicates();
+        paintFlags();
+      } else paintTotals();
     });
   });
+
+  view.querySelectorAll("[data-include]").forEach((cb) =>
+    cb.addEventListener("change", () => {
+      const r = staging.rows[Number(cb.dataset.include)];
+      r._skip = !cb.checked;
+      r._pinned = true;
+      paintFlags();
+    }),
+  );
+
+  const sf = $("#stg-skip-flagged");
+  if (sf) sf.onclick = () => bulkSet(true);
+  const ia = $("#stg-include-all");
+  if (ia) ia.onclick = () => bulkSet(false);
 
   view.querySelectorAll("[data-remove]").forEach(
     (b) =>
@@ -253,6 +359,7 @@ function wireStaging() {
 
   $("#stg-replace").onchange = (e) => {
     staging.replaceFirst = e.target.checked;
+    renderData(); // flags and the Import column only apply when appending
   };
 
   $("#stg-cancel").onclick = () => {
@@ -262,19 +369,23 @@ function wireStaging() {
   };
 
   $("#stg-confirm").onclick = async () => {
-    if (!staging.rows.length) return;
+    const rowsToWrite = rowsToImport();
+    if (!rowsToWrite.length) return;
     const dest = backendLabel(state.store);
     const replaceFirst = staging.replaceFirst;
+    const skipped = staging.rows.length - rowsToWrite.length;
     if (
       !confirm(
-        `Import ${staging.rows.length} rows into ${dest}?` +
+        `Import ${rowsToWrite.length} rows into ${dest}?` +
+          (skipped
+            ? `\n\n${skipped} row${skipped === 1 ? "" : "s"} marked as duplicate${skipped === 1 ? "" : "s"} will be left out.`
+            : "") +
           (replaceFirst
             ? "\n\nThis will first delete every existing row."
             : ""),
       )
     )
       return;
-    const rowsToWrite = staging.rows;
     const done = await withBusy(
       `Writing ${rowsToWrite.length} rows`,
       async () => {
@@ -295,6 +406,59 @@ function wireStaging() {
     }
     renderData();
   };
+}
+
+/** Fields the duplicate check compares - editing one re-runs the check. */
+const MATCH_FIELDS = new Set(["date", "amount", "description", "account", "person"]);
+
+/** Patch the flag cells, Import ticks and totals in place after an edit,
+    instead of re-rendering the table - a full render would throw away the
+    focus and cursor position of whatever cell is being typed in. */
+function paintFlags() {
+  staging.rows.forEach((r, i) => {
+    const skip = r._skip && !staging.replaceFirst;
+    const tr = view.querySelector(`#stg-tbody tr[data-row="${i}"]`);
+    if (!tr) return;
+    tr.classList.toggle("stg-skip", !!skip);
+    const cb = tr.querySelector("[data-include]");
+    if (cb) cb.checked = !skip;
+    const cell = tr.querySelector("[data-flag]");
+    if (cell) cell.innerHTML = flagHtml(r);
+  });
+  const summary = $("#stg-dups");
+  if (summary) {
+    const tmp = document.createElement("div");
+    tmp.innerHTML = dupSummaryHtml();
+    const fresh = tmp.firstElementChild;
+    if (fresh?.id === "stg-dups") {
+      summary.innerHTML = fresh.innerHTML;
+      const sf = $("#stg-skip-flagged");
+      if (sf) sf.onclick = () => bulkSet(true);
+      const ia = $("#stg-include-all");
+      if (ia) ia.onclick = () => bulkSet(false);
+    } else if (fresh) summary.replaceWith(fresh);
+  }
+  paintTotals();
+}
+
+function bulkSet(skipFlagged) {
+  staging.rows.forEach((r) => {
+    r._skip = skipFlagged ? !!r._dup : false;
+    r._pinned = true;
+  });
+  renderData();
+}
+
+function paintTotals() {
+  const going = rowsToImport();
+  const total = $("#stg-total");
+  if (total)
+    total.textContent = totalText(
+      going,
+      going.reduce((a, x) => a + (Number(x.amount) || 0), 0),
+    );
+  const btn = $("#stg-confirm");
+  if (btn) btn.disabled = !going.length;
 }
 
 /* ==================================================================== router */
