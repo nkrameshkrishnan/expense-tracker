@@ -29,6 +29,11 @@
   color: var(--ink-3);
   margin-left: auto;
 }
+.nw-refresh-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+  white-space: nowrap;
+}
 
 .nw-warn {
   border: 1px solid var(--rule-2);

@@ -1,17 +1,18 @@
 name: Fetch daily exchange rates
 
-# Fetches CAD-per-unit rates for INR and AED from open.er-api.com (free, no
-# API key, updates once daily) and upserts today's rows into exchange_rates
-# via the Supabase REST API using the project's secret key (Project Settings
-# -> API Keys -> Secret keys), which bypasses RLS the same way
-# fetch-gold-price.yml already does for gold_price_history - that table has
-# no insert/update policy for anon/authenticated, see supabase/schema.sql.
+# Fetches CAD-per-unit rates for INR and AED from the CBSA's public exchange
+# rate feed (official Canadian government data, sourced from either CBSA or
+# the Bank of Canada, no API key required) and upserts today's rows into
+# exchange_rates via the Supabase REST API using the project's secret key
+# (Project Settings -> API Keys -> Secret keys), which bypasses RLS the same
+# way fetch-gold-price.yml already does for gold_price_history - that table
+# has no insert/update policy for anon/authenticated, see supabase/schema.sql.
 # No Supabase Edge Function is involved; this workflow is the entire pipeline.
 #
-# open.er-api.com returns "units of X per 1 CAD" (e.g. INR: 67.72), so the
-# rate this app actually wants - CAD per 1 unit of that currency - is its
-# reciprocal. That reciprocal is exactly assets/constants.js's fx_rate: the
-# multiplier that turns a native amount into its CAD equivalent.
+# The feed's "Rate" field is already "1 unit of FromCurrency = Rate CAD" -
+# i.e. exactly assets/constants.js's fx_rate, the multiplier that turns a
+# native amount into its CAD equivalent. No inversion needed (unlike the
+# open.er-api.com source this replaced, which gave units-of-X-per-CAD).
 
 on:
   schedule:
@@ -22,7 +23,7 @@ jobs:
   fetch-rates:
     runs-on: ubuntu-latest
     steps:
-      - name: Fetch CAD cross-rates and upsert into Supabase
+      - name: Fetch CBSA/BoC cross-rates and upsert into Supabase
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
@@ -34,32 +35,41 @@ jobs:
             exit 1
           fi
 
-          RESPONSE=$(curl -sf "https://open.er-api.com/v6/latest/CAD")
-          TODAY=$(date -u +%F)
+          RESPONSE=$(curl -sf "https://bcd-api-dca-ipa.cbsa-asfc.cloud-nuage.canada.ca/exchange-rate-lambda/exchange-rates")
 
           for CUR in INR AED; do
-            RATE_TO_CAD=$(echo "$RESPONSE" | node -e '
+            LINE=$(echo "$RESPONSE" | node -e '
               let data = "";
               process.stdin.on("data", d => data += d);
               process.stdin.on("end", () => {
                 const parsed = JSON.parse(data);
-                if (parsed.result !== "success") { throw new Error("API result: " + parsed.result); }
-                const perCad = Number(parsed.rates["'"$CUR"'"]);
-                if (!isFinite(perCad) || perCad <= 0) { throw new Error("bad rate for '"$CUR"': " + parsed.rates["'"$CUR"'"]); }
-                // Invert: the API gives units-of-CUR per 1 CAD, this app wants
-                // CAD per 1 unit of CUR (see this file'"'"'s header comment).
-                console.log((1 / perCad).toFixed(8));
+                const rows = parsed.ForeignExchangeRates || [];
+                const hit = rows.find(
+                  (r) => r.FromCurrency?.Value === "'"$CUR"'" && r.ToCurrency?.Value === "CAD",
+                );
+                if (!hit) { throw new Error("no CAD rate found for '"$CUR"' in feed"); }
+                const rate = Number(hit.Rate);
+                if (!isFinite(rate) || rate <= 0) { throw new Error("bad rate for '"$CUR"': " + hit.Rate); }
+                // Effective date is the feed'"'"'s own dated record, not just
+                // "today" per the runner'"'"'s clock - keeps the stored date
+                // correct even if this job runs slightly early/late UTC.
+                const date = (hit.ExchangeRateEffectiveTimestamp || "").slice(0, 10);
+                if (!date) { throw new Error("no effective date for '"$CUR"'"); }
+                console.log(date + " " + rate.toFixed(8));
               });
             ')
 
-            echo "$CUR: $RATE_TO_CAD CAD per unit on $TODAY"
+            DATE=$(echo "$LINE" | cut -d" " -f1)
+            RATE_TO_CAD=$(echo "$LINE" | cut -d" " -f2)
+
+            echo "$CUR: $RATE_TO_CAD CAD per unit on $DATE"
 
             curl -sf -X POST "$SUPABASE_URL/rest/v1/exchange_rates" \
               -H "apikey: $SUPABASE_SECRET_KEY" \
               -H "Authorization: Bearer $SUPABASE_SECRET_KEY" \
               -H "Content-Type: application/json" \
               -H "Prefer: resolution=merge-duplicates" \
-              -d "{\"date\": \"$TODAY\", \"currency\": \"$CUR\", \"rate_to_cad\": $RATE_TO_CAD}"
+              -d "{\"date\": \"$DATE\", \"currency\": \"$CUR\", \"rate_to_cad\": $RATE_TO_CAD}"
           done
 
           echo "Upserted successfully."

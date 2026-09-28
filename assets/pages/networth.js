@@ -178,6 +178,22 @@ export function renderNetWorth() {
     ? accounts.filter((a) => valueAt(latest, a.account) === null)
     : accounts;
 
+  // "Refresh FX" only ever touches the LATEST snapshot's stored fx_rate, and
+  // only for accounts already in a non-CAD currency - it never changes a
+  // native balance, never creates a new dated snapshot, and never rewrites
+  // an older snapshot (those stay historically accurate to the rate on the
+  // day they were recorded, same as the trend chart below). It's purely
+  // "bring today's rate into the current total", for the gap-between-
+  // snapshots problem: a foreign balance can drift in CAD value purely from
+  // FX movement even when nothing about the account itself changed, and
+  // nothing else here would ever notice that on its own.
+  const foreignInLatest = latest
+    ? at(latest).filter((b) => b.currency && b.currency !== "CAD")
+    : [];
+  const canRefreshFx =
+    foreignInLatest.length > 0 &&
+    typeof state.store.getExchangeRate === "function";
+
   const fmtDate = (d) => {
     try {
       return new Date(d + "T12:00:00").toLocaleDateString("en-CA", {
@@ -220,6 +236,13 @@ export function renderNetWorth() {
   <div class="nw-asat">
     <span class="nw-asat-label">Net worth as at</span>
     <span class="nw-asat-date">${esc(fmtDate(latest))}</span>
+    ${
+      canRefreshFx
+        ? `<button class="btn ghost nw-refresh-btn" id="nw-refresh-fx" type="button"
+             title="Re-fetch today's rate for ${esc(foreignInLatest.map((b) => b.account).join(", "))} and update this snapshot's CAD totals — native balances and older snapshots are untouched">
+             &#8635; Refresh FX (${foreignInLatest.length})</button>`
+        : ""
+    }
     <span class="nw-asat-note">${
       latest === dates[0] && dates.length > 1
         ? `updates automatically when you record a newer snapshot`
@@ -329,6 +352,63 @@ export function renderNetWorth() {
   $("#nw-record").onclick = () => renderBalanceForm(latest);
   wireDebtHandlers();
   wireMetalsHandlers();
+
+  if (canRefreshFx) {
+    $("#nw-refresh-fx").onclick = async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      let refreshed = [];
+      let misses = [];
+      const done = await withBusy(
+        `Refreshing today's rate for ${foreignInLatest.length} account${foreignInLatest.length > 1 ? "s" : ""}`,
+        async () => {
+          const entries = await Promise.all(
+            at(latest).map(async (row) => {
+              const base = {
+                account: row.account,
+                owner: row.owner,
+                kind: row.kind,
+                balance: row.balance,
+                currency: row.currency || "CAD",
+                fx_rate: row.fx_rate || 1,
+                notes: row.notes || "",
+              };
+              if (!row.currency || row.currency === "CAD") return base;
+              const fx = await state.store.getExchangeRate(today, row.currency);
+              if (!fx) {
+                misses.push(row.account);
+                return base; // leave this one's rate exactly as it was
+              }
+              refreshed.push(row.account);
+              return { ...base, fx_rate: fx.rateToCad };
+            }),
+          );
+          // Same primary key as a normal save (date, account) - this replaces
+          // the latest snapshot in place rather than creating a new dated one.
+          await state.store.setBalances(latest, entries);
+          state.balances = await state.store.getBalances();
+        },
+      );
+      if (done) {
+        renderNetWorth();
+        if (refreshed.length && !misses.length) {
+          notice(
+            `Refreshed today's rate for ${refreshed.join(", ")}. Native balances and older snapshots are unchanged.`,
+            "ok",
+          );
+        } else if (refreshed.length && misses.length) {
+          notice(
+            `Refreshed ${refreshed.join(", ")}. No rate available yet for ${misses.join(", ")} — left as is.`,
+            "ok",
+          );
+        } else {
+          notice(
+            `No exchange rate available yet for ${misses.join(", ")}. Try again after today's rate has been fetched.`,
+            "bad",
+          );
+        }
+      }
+    };
+  }
   view.querySelectorAll("[data-delsnap]").forEach(
     (b) =>
       (b.onclick = async () => {
