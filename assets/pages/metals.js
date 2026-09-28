@@ -8,6 +8,31 @@ import { money, pct } from "../xlsxio.js";
 import { $, view, esc, state, kpi, notice, withBusy } from "../core.js";
 import { isRemoteStore } from "../auth.js";
 
+/** A purchase receipt usually shows a total amount paid, not a price/gram -
+    that division is on you to do by hand, which is exactly the kind of
+    arithmetic this app should do instead. Every lot is still STORED as
+    pricePerGram (that's what metalsSummary/priceAppreciation and the schema
+    already key off, and per-gram is what lets lots of different weights
+    average together correctly) - this just accepts a total purchase price
+    as an alternative way to arrive at that number. When a total is given,
+    it always wins over a manually-typed price/gram, since the receipt's
+    total is the more authoritative number (a typed price/gram could be a
+    stale or misremembered rate; the total is what was actually paid).
+    Returns null if neither a usable price/gram nor a usable total was
+    given, so the caller can refuse to save rather than guess. */
+export function resolvePricePerGram({ weightGrams, pricePerGram, purchasePrice }) {
+  if (!(weightGrams > 0)) return null;
+  if (purchasePrice !== null && purchasePrice !== undefined && purchasePrice !== "") {
+    const total = Number(purchasePrice);
+    return total >= 0 ? total / weightGrams : null;
+  }
+  if (pricePerGram !== null && pricePerGram !== undefined && pricePerGram !== "") {
+    const perGram = Number(pricePerGram);
+    return perGram >= 0 ? perGram : null;
+  }
+  return null;
+}
+
 /** Value, average cost, and unrealized gain across all lots, valued at
     latestPrice. Lots are purchase transactions (see supabase/schema.sql's
     precious_metal_holdings comment) - average cost is always the
@@ -137,6 +162,7 @@ export function renderMetalsSection(scopeOwner) {
         <td><span class="person-chip" data-p="${esc(h.owner)}">${esc(h.owner)}</span></td>
         <td class="n num">${h.weightGrams}g</td>
         <td class="n num">${money(h.pricePerGram)}</td>
+        <td class="n num muted">${money(h.weightGrams * h.pricePerGram)}</td>
         <td class="n num">${valueToday === null ? "—" : money(valueToday)}</td>
         <td><button class="rowbtn" data-delmetal="${h.id}" title="Delete this lot">✕</button></td>
       </tr>`;
@@ -150,7 +176,7 @@ export function renderMetalsSection(scopeOwner) {
     holdings.length
       ? `<div class="tablewrap"><table><thead><tr>
       <th>Date</th><th>Metal</th><th>Owner</th><th class="n">Weight</th>
-      <th class="n">Price paid/g</th><th class="n">Value today</th><th></th>
+      <th class="n">Price paid/g</th><th class="n">Total paid</th><th class="n">Value today</th><th></th>
     </tr></thead><tbody>${rows}</tbody></table></div>`
       : `<div class="empty">No precious metal holdings recorded. Add a purchase lot below.</div>`
   }
@@ -160,15 +186,18 @@ export function renderMetalsSection(scopeOwner) {
       <label class="f"><span>Metal</span>
         <select name="metal"><option>Gold</option></select></label>
       <label class="f"><span>Weight (grams)</span>
-        <input type="number" name="weightGrams" step="0.001" min="0.001" required placeholder="e.g. 10"></label>
+        <input type="number" name="weightGrams" id="metal-weight" step="0.001" min="0.001" required placeholder="e.g. 10"></label>
+      <label class="f"><span>Purchase price (total)</span>
+        <input type="number" name="purchasePrice" id="metal-total" step="0.01" min="0" placeholder="e.g. 850.00"></label>
       <label class="f"><span>Price paid/gram</span>
-        <input type="number" name="pricePerGram" step="0.01" min="0" required placeholder="0.00"></label>
+        <input type="number" name="pricePerGram" id="metal-pergram" step="0.01" min="0" placeholder="or enter this instead"></label>
       <label class="f"><span>Purchase date</span>
         <input type="date" name="purchaseDate" value="${new Date().toISOString().slice(0, 10)}" required></label>
       <label class="f"><span>Owner</span>
         <select name="owner">${PEOPLE.map((p) => `<option>${esc(p)}</option>`).join("")}</select></label>
       <button class="btn" type="submit">Add lot</button>
     </form>
+    <p class="note" id="metal-calc-hint" style="margin:8px 0 0"></p>
     <div class="err" id="metal-err"></div>
   </div>
   <p class="note">Value updates automatically from the daily gold price &mdash;
@@ -183,16 +212,48 @@ export function wireMetalsHandlers() {
     renderNetWorth();
   };
 
+  // Live calculator: as soon as there's enough to compute a price/gram
+  // (weight + either field), show what will actually get saved, so a typo
+  // in the total is caught before submitting rather than after.
+  const updateCalcHint = () => {
+    const hint = $("#metal-calc-hint");
+    if (!hint) return;
+    const weightGrams = Number($("#metal-weight")?.value);
+    const purchasePrice = $("#metal-total")?.value ?? "";
+    const pricePerGramInput = $("#metal-pergram")?.value ?? "";
+    const resolved = resolvePricePerGram({
+      weightGrams,
+      pricePerGram: pricePerGramInput,
+      purchasePrice,
+    });
+    if (resolved === null) {
+      hint.textContent = "";
+      return;
+    }
+    hint.textContent =
+      purchasePrice !== ""
+        ? `= ${money(resolved)}/gram (from ${money(Number(purchasePrice))} ÷ ${weightGrams}g)`
+        : `= ${money(resolved * weightGrams)} total (${weightGrams}g × ${money(resolved)}/g)`;
+  };
+  ["metal-weight", "metal-total", "metal-pergram"].forEach((id) =>
+    $("#" + id)?.addEventListener("input", updateCalcHint),
+  );
+
   $("#metal-add-form")?.addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const f = Object.fromEntries(new FormData(ev.target));
     const weightGrams = Number(f.weightGrams);
-    const pricePerGram = Number(f.pricePerGram);
     if (!(weightGrams > 0))
       return ($("#metal-err").textContent =
         "Weight must be greater than zero.");
-    if (!(pricePerGram >= 0))
-      return ($("#metal-err").textContent = "Price can't be negative.");
+    const pricePerGram = resolvePricePerGram({
+      weightGrams,
+      pricePerGram: f.pricePerGram,
+      purchasePrice: f.purchasePrice,
+    });
+    if (pricePerGram === null)
+      return ($("#metal-err").textContent =
+        "Enter either the total purchase price or the price paid per gram (not negative).");
     const done = await withBusy("Adding lot", async () => {
       await state.store.addMetalHolding({
         metal: f.metal,
