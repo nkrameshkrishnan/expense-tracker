@@ -1,5 +1,5 @@
 /* Add/Edit transaction page. */
-import { TYPES, MONTHS, currentYear, spendOf } from "../store.js";
+import { TYPES, MONTHS, currentYear, spendOf, CURRENCIES, toCad } from "../store.js";
 import { money, monthOf } from "../xlsxio.js";
 import {
   listFor,
@@ -18,6 +18,11 @@ import {
   refresh,
 } from "../core.js";
 import { go } from "../router.js";
+
+// AED has no single-character symbol in common use, so it's spelled out -
+// matching how it appears on an actual UAE statement, rather than an
+// unfamiliar glyph.
+const CURRENCY_SYMBOL = { CAD: "$", INR: "₹", AED: "AED " };
 
 /** Pill row for the "Whose" field: one button per known person plus a
     "+ New…" pill, mirroring the type-picker's look rather than a dropdown. */
@@ -38,6 +43,8 @@ export function renderAdd() {
   const today = new Date().toISOString().slice(0, 10);
   const selType = e?.type || "Expense";
   const selCat = e?.category || "Groceries";
+  const selCurrency = e?.currency || "CAD";
+  const selFxRate = e?.fx_rate && e.fx_rate !== 1 ? e.fx_rate : "";
   // Default to whoever is selected in the header, so a run of Surya's receipts
   // does not need the field touched on every entry.
   const people = listFor("person");
@@ -106,11 +113,20 @@ export function renderAdd() {
         </div>
 
         <div class="add-amount-wrap">
-          <span class="add-currency">$</span>
+          <span class="add-currency" id="add-currency-symbol">${esc(CURRENCY_SYMBOL[selCurrency] || "$")}</span>
           <input class="add-amount num" type="number" name="amount" step="0.01" min="0.01"
             value="${e?.amount ?? ""}" placeholder="0.00" inputmode="decimal"
             autocomplete="off" id="amount-input">
-          <span class="add-currency-code">CAD</span>
+          <select class="add-currency-code" id="f-currency" name="currency">
+            ${CURRENCIES.map((c) => `<option value="${c}"${c === selCurrency ? " selected" : ""}>${c}</option>`).join("")}
+          </select>
+        </div>
+        <div class="add-fx-row" id="fx-row" ${selCurrency === "CAD" ? 'style="display:none"' : ""}>
+          <label for="f-fxrate" class="add-label">1 ${esc(selCurrency)} = ? CAD</label>
+          <input id="f-fxrate" name="fx_rate" type="number" step="0.000001" min="0.000001"
+            value="${esc(String(selFxRate))}" placeholder="rate to CAD" inputmode="decimal" autocomplete="off">
+          <span class="add-field-hint muted" id="fx-hint"></span>
+          <span class="add-field-hint" id="fx-preview"></span>
         </div>
         <div class="err" id="err"></div>
 
@@ -250,6 +266,7 @@ export function renderAdd() {
   wireNewOption("f-pay", "payment");
   wireNewOption("f-acc", "account");
   wirePersonPills();
+  wireCurrency();
 
   view.querySelectorAll(".add-type-btn").forEach((btn) => {
     btn.onclick = () => {
@@ -322,6 +339,94 @@ export function renderAdd() {
   $("#f-date").oninput = (ev) => {
     $("#day-name").textContent = dayName(ev.target.value);
   };
+
+  /** Looks up the CAD rate for `currency` on `date` via the store (Supabase
+      only - LocalStore/MemoryStore have no exchange_rates table, so `?.()`
+      just leaves the field for manual entry there). Never overwrites a rate
+      the person already typed - only fills the field when it's empty or
+      still holds a value THIS function put there (tracked via
+      dataset.auto), so switching the date after typing a real rate from a
+      statement never clobbers it. */
+  async function lookupRate(currency, date) {
+    const hint = $("#fx-hint");
+    const rateInput = $("#f-fxrate");
+    if (!rateInput) return;
+    try {
+      const found = await state.store.getExchangeRate?.(date, currency);
+      if (found) {
+        if (!rateInput.value || rateInput.dataset.auto === "1") {
+          rateInput.value = found.rateToCad;
+          rateInput.dataset.auto = "1";
+        }
+        if (hint)
+          hint.textContent =
+            found.date === date
+              ? "auto-filled from today's rate — edit if your statement shows a different one"
+              : `auto-filled from ${found.date}'s rate (closest available) — edit if your statement shows a different one`;
+      } else if (hint) {
+        hint.textContent =
+          "no stored rate yet for this date — enter the rate from your statement";
+      }
+    } catch {
+      if (hint)
+        hint.textContent =
+          "couldn't look up a rate — enter it from your statement";
+    }
+    updateFxPreview();
+  }
+
+  function updateFxPreview() {
+    const preview = $("#fx-preview");
+    if (!preview) return;
+    const currency = $("#f-currency")?.value;
+    const amount = Number($("#amount-input")?.value) || 0;
+    const rate = Number($("#f-fxrate")?.value) || 0;
+    if (currency === "CAD" || !amount || !rate) {
+      preview.textContent = "";
+      return;
+    }
+    preview.textContent = `≈ ${money(toCad(amount, rate))} CAD`;
+  }
+
+  function wireCurrency() {
+    const sel = $("#f-currency");
+    const row = $("#fx-row");
+    const rateInput = $("#f-fxrate");
+    if (!sel) return;
+    sel.addEventListener("change", () => {
+      const currency = sel.value;
+      if (row) row.style.display = currency === "CAD" ? "none" : "";
+      const label = row?.querySelector("label");
+      if (label) label.textContent = `1 ${currency} = ? CAD`;
+      const symbol = $("#add-currency-symbol");
+      if (symbol) symbol.textContent = CURRENCY_SYMBOL[currency] || "$";
+      if (currency === "CAD") {
+        // Nothing to enter for CAD - amount already IS the CAD amount.
+        if (rateInput) {
+          rateInput.value = "";
+          delete rateInput.dataset.auto;
+        }
+        const hint = $("#fx-hint");
+        if (hint) hint.textContent = "";
+        updateFxPreview();
+      } else {
+        lookupRate(currency, $("#f-date")?.value || today);
+      }
+    });
+    rateInput?.addEventListener("input", () => {
+      delete rateInput.dataset.auto; // the person is typing their own value now
+      updateFxPreview();
+    });
+    $("#amount-input")?.addEventListener("input", updateFxPreview);
+    $("#f-date")?.addEventListener("change", () => {
+      // Re-lookup only if the field is still on an auto-filled value - a
+      // hand-entered rate should survive a date correction untouched.
+      if (sel.value !== "CAD" && rateInput?.dataset.auto === "1") {
+        lookupRate(sel.value, $("#f-date").value);
+      }
+    });
+    updateFxPreview();
+  }
 
   wireNewOption("f-cat", "category", () => refreshSubOptions());
 
@@ -430,6 +535,15 @@ export function renderAdd() {
     if (!(amount > 0)) {
       errEl.textContent = "Amount must be greater than zero.";
       $("#amount-input").focus();
+      return;
+    }
+    // Not just a nicety: normalise() silently defaults a missing/invalid
+    // fx_rate to 1 for a non-CAD currency, which would record a ₹5,000
+    // purchase as if it were $5,000 CAD. Rather than trust that fallback for
+    // real money, refuse to save until a real rate is entered.
+    if (d.currency && d.currency !== "CAD" && !(Number(d.fx_rate) > 0)) {
+      errEl.textContent = `Enter the rate to CAD for this ${d.currency} amount.`;
+      $("#f-fxrate").focus();
       return;
     }
 

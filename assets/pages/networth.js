@@ -5,8 +5,11 @@ import {
   UNASSIGNED,
   CUSTOM_KEY,
   NET_WORTH_ACCOUNTS,
+  CURRENCIES,
+  toCad,
+  balanceCad,
 } from "../store.js";
-import { money } from "../xlsxio.js";
+import { money, moneyIn } from "../xlsxio.js";
 import { loadCustom } from "../categories.js";
 import * as charts from "../charts.js";
 import {
@@ -126,7 +129,7 @@ export function renderNetWorth() {
   const sumOf = (d, kind) =>
     at(d)
       .filter((b) => b.kind === kind && (!scopeOwner || b.owner === scopeOwner))
-      .reduce((a, b) => a + Number(b.balance || 0), 0);
+      .reduce((a, b) => a + balanceCad(b), 0);
 
   // Outstanding debts and loans are part of net worth, computed from their
   // payment history rather than needing a balance snapshot of their own.
@@ -148,10 +151,16 @@ export function renderNetWorth() {
   const accounts = nwAccounts().filter(
     (a) => !scopeOwner || a.owner === scopeOwner,
   );
+  // Returns the CAD-equivalent (balanceCad), or null when that account has no
+  // row in that snapshot. A separate valueAtRow() below gets at the native
+  // balance/currency for display - this one is for arithmetic (the "By
+  // account" table's month-over-month Change, and anything else that sums or
+  // diffs across accounts, must never mix currencies).
   const valueAt = (d, acct) => {
     const hit = at(d).find((b) => b.account === acct);
-    return hit ? Number(hit.balance || 0) : null;
+    return hit ? balanceCad(hit) : null;
   };
+  const valueAtRow = (d, acct) => at(d).find((b) => b.account === acct) || null;
 
   const series = [...dates].reverse().map((d) => ({
     date: d,
@@ -261,14 +270,22 @@ export function renderNetWorth() {
     <th class="n">${prev ? "Change" : ""}</th></tr></thead><tbody>
     ${accounts
       .map((a) => {
-        const v = valueAt(latest, a.account);
+        const row = valueAtRow(latest, a.account);
+        const v = row ? balanceCad(row) : null;
         const p = prev ? valueAt(prev, a.account) : null;
         const ch = v !== null && p !== null ? v - p : null;
+        const foreign = row && row.currency && row.currency !== "CAD";
         return `<tr class="${v === null ? "nw-blank" : ""}">
         <td>${esc(a.account)}</td>
         <td><span class="person-chip" data-p="${esc(a.owner)}">${esc(a.owner)}</span></td>
         <td><span class="tag">${a.kind}</span></td>
-        <td class="n num">${v === null ? '<span class="muted">not recorded</span>' : money(v)}</td>
+        <td class="n num">${
+          v === null
+            ? '<span class="muted">not recorded</span>'
+            : foreign
+              ? `${moneyIn(row.balance, row.currency)}<br><span class="muted" style="font-size:10.5px">\u2248 ${money(v)} CAD</span>`
+              : money(v)
+        }</td>
         <td class="n num ${ch === null ? "muted" : ch < 0 ? "tx-over" : "tx-income"}">${
           ch === null ? "\u2014" : (ch >= 0 ? "+" : "") + money(ch)
         }</td></tr>`;
@@ -348,12 +365,29 @@ function renderBalanceForm(copyFrom) {
     const hit = existing.find((x) => x.account === a.account);
     return hit ? Number(hit.balance) : "";
   };
+  // An account's currency is a property of the account itself in practice
+  // (an INR savings account doesn't switch currency month to month) - rather
+  // than a separate setting to maintain, it's just read off that account's
+  // own most recent snapshot, anywhere one exists yet. Brand new accounts
+  // default to CAD and the person picks the right one on first entry.
+  const lastCurrencyFor = (acct) => {
+    const rows = snaps
+      .filter((b) => b.account === acct)
+      .sort((x, y) => (x.date < y.date ? 1 : -1));
+    return rows[0]?.currency || "CAD";
+  };
+  const prefillRate = (a) => {
+    const hit = existing.find((x) => x.account === a.account);
+    return hit && hit.currency && hit.currency !== "CAD" ? hit.fx_rate : "";
+  };
 
   const groupRows = (owner) =>
     nwAccounts()
       .filter((a) => a.owner === owner)
-      .map(
-        (a) => `
+      .map((a) => {
+        const ccy = existing.find((x) => x.account === a.account)?.currency ||
+          lastCurrencyFor(a.account);
+        return `
     <tr>
       <td>${esc(a.account)}
         <button class="rowbtn nw-del-acct" data-delacct="${esc(a.account)}"
@@ -365,10 +399,18 @@ function renderBalanceForm(copyFrom) {
           <input class="num nw-input" type="number" step="0.01" inputmode="decimal"
             data-account="${esc(a.account)}" data-owner="${esc(a.owner)}" data-kind="${a.kind}"
             value="${prefill(a)}" placeholder="0.00">
+          <select class="nw-ccy-select" data-ccy-for="${esc(a.account)}">
+            ${CURRENCIES.map((c) => `<option value="${c}"${c === ccy ? " selected" : ""}>${c}</option>`).join("")}
+          </select>
+        </div>
+        <div class="nw-fx-row" data-fxrow-for="${esc(a.account)}" ${ccy === "CAD" ? 'style="display:none"' : ""}>
+          <input class="nw-fx-input" type="number" step="0.000001" min="0.000001"
+            data-fx-for="${esc(a.account)}" value="${prefillRate(a)}" placeholder="rate to CAD">
+          <span class="muted" style="font-size:10.5px">1 ${esc(ccy)} = ? CAD</span>
         </div>
       </td>
-    </tr>`,
-      )
+    </tr>`;
+      })
       .join("");
 
   view.innerHTML = `
@@ -398,7 +440,7 @@ function renderBalanceForm(copyFrom) {
     .map(
       (owner) => `
     <div class="eyebrow">${owner} <span class="muted" style="text-transform:none;letter-spacing:0" id="nw-sub-${owner}"></span></div>
-    <div class="tablewrap"><table><thead><tr><th>Account</th><th>Kind</th><th class="n" style="width:190px">Balance (CAD)</th></tr></thead>
+    <div class="tablewrap"><table><thead><tr><th>Account</th><th>Kind</th><th class="n" style="width:230px">Balance</th></tr></thead>
       <tbody>${groupRows(owner)}</tbody></table></div>`,
     )
     .join("")}
@@ -425,10 +467,25 @@ function renderBalanceForm(copyFrom) {
   </div>
 
   <p class="note"><b>Import file\u2026</b> loads a <code>.json</code> or <code>.csv</code> from your machine
-    (columns <code>date, account, owner, kind, balance</code>). It is read in the browser and written straight
-    to your sheet &mdash; never uploaded, never stored in the repository.</p>
+    (columns <code>date, account, owner, kind, balance</code>, plus optional <code>currency</code> and
+    <code>fx_rate</code> for an INR/AED account &mdash; omit both and CAD is assumed). It is read in the browser
+    and written straight to your sheet &mdash; never uploaded, never stored in the repository.</p>
   <p class="note">Enter liabilities as positive numbers &mdash; a $500 card balance is <code>500</code>, and it is
     subtracted from net worth automatically. Balances never affect your income, expense or budget figures.</p>`;
+
+  // rateFor() falls back to 1 when the field is blank/invalid - that fallback
+  // is only correct for the LIVE PREVIEW total (recalc(), below), which must
+  // show *some* number as the person types. It must never be used to decide
+  // whether a real rate was actually entered - rawRateFor() below is for
+  // that, so the missing-rate save guard can't be defeated by its own
+  // fallback the way it briefly was.
+  const rawRateFor = (acct) =>
+    view.querySelector(`.nw-fx-input[data-fx-for="${CSS.escape(acct)}"]`)
+      ?.value ?? "";
+  const rateFor = (acct) => Number(rawRateFor(acct)) || 1;
+  const ccyFor = (acct) =>
+    view.querySelector(`.nw-ccy-select[data-ccy-for="${CSS.escape(acct)}"]`)
+      ?.value || "CAD";
 
   const recalc = () => {
     let A = 0,
@@ -438,7 +495,13 @@ function renderBalanceForm(copyFrom) {
     view.querySelectorAll(".nw-input").forEach((i) => {
       if (i.value === "") return;
       filled++;
-      const v = Math.abs(Number(i.value) || 0);
+      const native = Math.abs(Number(i.value) || 0);
+      const ccy = ccyFor(i.dataset.account);
+      // Running total is always CAD - a foreign row's rate field (1 when the
+      // field is blank/not yet entered, same fallback normalise() uses)
+      // converts it before it's added in, so an INR balance never gets
+      // added to a CAD one as if they were the same unit.
+      const v = ccy === "CAD" ? native : toCad(native, rateFor(i.dataset.account));
       if (i.dataset.kind === "Liability") {
         L += v;
         perOwner[i.dataset.owner] -= v;
@@ -462,6 +525,35 @@ function renderBalanceForm(copyFrom) {
   view
     .querySelectorAll(".nw-input")
     .forEach((i) => i.addEventListener("input", recalc));
+  view.querySelectorAll(".nw-fx-input").forEach((i) =>
+    i.addEventListener("input", recalc),
+  );
+  view.querySelectorAll(".nw-ccy-select").forEach((sel) =>
+    sel.addEventListener("change", async () => {
+      const acct = sel.dataset.ccyFor;
+      const row = view.querySelector(`[data-fxrow-for="${CSS.escape(acct)}"]`);
+      const rateInput = view.querySelector(
+        `.nw-fx-input[data-fx-for="${CSS.escape(acct)}"]`,
+      );
+      if (row) {
+        row.style.display = sel.value === "CAD" ? "none" : "";
+        const label = row.querySelector("span");
+        if (label) label.textContent = `1 ${sel.value} = ? CAD`;
+      }
+      if (sel.value === "CAD") {
+        if (rateInput) rateInput.value = "";
+      } else if (rateInput && !rateInput.value) {
+        // Same optional-chained lookup Add page uses - only present on
+        // SupabaseStore, so this is a no-op (manual entry) on Local/Memory.
+        const found = await state.store.getExchangeRate?.(
+          $("#nw-date")?.value || today,
+          sel.value,
+        );
+        if (found) rateInput.value = found.rateToCad;
+      }
+      recalc();
+    }),
+  );
   recalc();
 
   $("#nw-add-acct").onclick = () => {
@@ -521,6 +613,15 @@ function renderBalanceForm(copyFrom) {
       const hit = existing.find((x) => x.account === i.dataset.account);
       i.value = hit ? Number(hit.balance) : "";
     });
+    view.querySelectorAll(".nw-ccy-select").forEach((sel) => {
+      const hit = existing.find((x) => x.account === sel.dataset.ccyFor);
+      sel.value = hit?.currency || "CAD";
+      sel.dispatchEvent(new Event("change"));
+    });
+    view.querySelectorAll(".nw-fx-input").forEach((i) => {
+      const hit = existing.find((x) => x.account === i.dataset.fxFor);
+      i.value = hit && hit.currency !== "CAD" ? hit.fx_rate : "";
+    });
     recalc();
     notice(
       `Copied ${existing.length} balances from ${source} \u2014 edit what changed, then save.`,
@@ -555,6 +656,8 @@ function renderBalanceForm(copyFrom) {
               owner: g("owner"),
               kind: g("kind"),
               balance: Number(String(g("balance")).replace(/[$,\s]/g, "")),
+              currency: g("currency"),
+              fx_rate: g("fx_rate") || g("rate") || g("rate to cad"),
             };
           });
       }
@@ -569,15 +672,33 @@ function renderBalanceForm(copyFrom) {
           '<b class="over">No usable rows. Need date, account and balance.</b>';
         return;
       }
+      // Same rule as everywhere else money moves in this feature: a
+      // non-CAD row with no valid rate is refused rather than silently
+      // defaulted to 1 (which would book a foreign balance as if it were
+      // already CAD).
+      const badRate = rows.find(
+        (r) =>
+          r.currency &&
+          r.currency !== "CAD" &&
+          !(Number(r.fx_rate) > 0),
+      );
+      if (badRate) {
+        out.innerHTML = `<b class="over">"${esc(badRate.account)}" is in ${esc(badRate.currency)} but has no valid fx_rate column value — add one and re-import.</b>`;
+        return;
+      }
       const byDate = {};
-      for (const r of rows)
+      for (const r of rows) {
+        const currency = CURRENCIES.includes(r.currency) ? r.currency : "CAD";
         (byDate[r.date] ||= []).push({
           account: r.account,
           owner: r.owner || "Ramesh",
           kind: r.kind === "Liability" ? "Liability" : "Asset",
           balance: Math.abs(Number(r.balance) || 0),
+          currency,
+          fx_rate: currency === "CAD" ? 1 : Number(r.fx_rate),
           notes: r.notes || "imported",
         });
+      }
       const dateList = Object.keys(byDate).sort();
       if (
         !confirm(
@@ -622,15 +743,33 @@ function renderBalanceForm(copyFrom) {
     const date = $("#nw-date").value;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date))
       return notice("Pick a valid date.", "bad");
-    const entries = [...view.querySelectorAll(".nw-input")]
-      .filter((i) => i.value !== "")
-      .map((i) => ({
+    const filledInputs = [...view.querySelectorAll(".nw-input")].filter(
+      (i) => i.value !== "",
+    );
+    // Same discipline as the Add page: normalise() would silently default a
+    // missing/invalid rate to 1, recording a foreign balance as if it were
+    // already CAD. Refuse to save rather than trust that fallback here.
+    const missingRate = filledInputs.find((i) => {
+      const ccy = ccyFor(i.dataset.account);
+      return ccy !== "CAD" && !(Number(rawRateFor(i.dataset.account)) > 0);
+    });
+    if (missingRate)
+      return notice(
+        `Enter the rate to CAD for ${missingRate.dataset.account}.`,
+        "bad",
+      );
+    const entries = filledInputs.map((i) => {
+      const currency = ccyFor(i.dataset.account);
+      return {
         account: i.dataset.account,
         owner: i.dataset.owner,
         kind: i.dataset.kind,
         balance: Math.abs(Number(i.value) || 0),
+        currency,
+        fx_rate: currency === "CAD" ? 1 : rateFor(i.dataset.account),
         notes: "",
-      }));
+      };
+    });
     if (!entries.length) return notice("Enter at least one balance.", "bad");
     if (
       dates.includes(date) &&

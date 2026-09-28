@@ -1,0 +1,65 @@
+name: Fetch daily exchange rates
+
+# Fetches CAD-per-unit rates for INR and AED from open.er-api.com (free, no
+# API key, updates once daily) and upserts today's rows into exchange_rates
+# via the Supabase REST API using the project's secret key (Project Settings
+# -> API Keys -> Secret keys), which bypasses RLS the same way
+# fetch-gold-price.yml already does for gold_price_history - that table has
+# no insert/update policy for anon/authenticated, see supabase/schema.sql.
+# No Supabase Edge Function is involved; this workflow is the entire pipeline.
+#
+# open.er-api.com returns "units of X per 1 CAD" (e.g. INR: 67.72), so the
+# rate this app actually wants - CAD per 1 unit of that currency - is its
+# reciprocal. That reciprocal is exactly assets/constants.js's fx_rate: the
+# multiplier that turns a native amount into its CAD equivalent.
+
+on:
+  schedule:
+    - cron: "15 13 * * *" # ~9:15am Eastern (UTC-4/5) daily, after the gold-price job
+  workflow_dispatch:
+
+jobs:
+  fetch-rates:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch CAD cross-rates and upsert into Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SECRET_KEY" ]; then
+            echo "::error::SUPABASE_URL/SUPABASE_SECRET_KEY not set as repo secrets. Skipping fetch."
+            exit 1
+          fi
+
+          RESPONSE=$(curl -sf "https://open.er-api.com/v6/latest/CAD")
+          TODAY=$(date -u +%F)
+
+          for CUR in INR AED; do
+            RATE_TO_CAD=$(echo "$RESPONSE" | node -e '
+              let data = "";
+              process.stdin.on("data", d => data += d);
+              process.stdin.on("end", () => {
+                const parsed = JSON.parse(data);
+                if (parsed.result !== "success") { throw new Error("API result: " + parsed.result); }
+                const perCad = Number(parsed.rates["'"$CUR"'"]);
+                if (!isFinite(perCad) || perCad <= 0) { throw new Error("bad rate for '"$CUR"': " + parsed.rates["'"$CUR"'"]); }
+                // Invert: the API gives units-of-CUR per 1 CAD, this app wants
+                // CAD per 1 unit of CUR (see this file'"'"'s header comment).
+                console.log((1 / perCad).toFixed(8));
+              });
+            ')
+
+            echo "$CUR: $RATE_TO_CAD CAD per unit on $TODAY"
+
+            curl -sf -X POST "$SUPABASE_URL/rest/v1/exchange_rates" \
+              -H "apikey: $SUPABASE_SECRET_KEY" \
+              -H "Authorization: Bearer $SUPABASE_SECRET_KEY" \
+              -H "Content-Type: application/json" \
+              -H "Prefer: resolution=merge-duplicates" \
+              -d "{\"date\": \"$TODAY\", \"currency\": \"$CUR\", \"rate_to_cad\": $RATE_TO_CAD}"
+          done
+
+          echo "Upserted successfully."

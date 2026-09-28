@@ -1,7 +1,7 @@
 /* Shared plumbing used by all three store backends (Supabase/Local/Memory):
    row normalisation, budget shaping, the lazy Supabase SDK loader, and a
    small sleep/retry/error-tagging toolkit. */
-import { CAT_NAMES, TYPES } from "./constants.js";
+import { CAT_NAMES, TYPES, CURRENCIES } from "./constants.js";
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -76,6 +76,15 @@ export function normalise(r) {
   let type = r.type || r.typ || "Expense";
   if (!TYPES.includes(type)) type = "Expense";
   const raw = r.category || r.cat;
+  let currency = r.currency || "CAD";
+  if (!CURRENCIES.includes(currency)) currency = "CAD";
+  // A CAD row's amount IS its CAD amount - forcing fx_rate to exactly 1 here
+  // (rather than trusting whatever a caller passed) means every CAD/no-rate
+  // row in the app is guaranteed a correct amountCad() with no rate lookup
+  // ever needed, and a stray non-1 rate on a CAD row can never silently
+  // scale a transaction's own total.
+  const fxRate =
+    currency === "CAD" ? 1 : Math.abs(Number(r.fx_rate || r.fxRate)) || 1;
   return {
     // Postgres bigint columns (used for Supabase's identity primary keys)
     // serialize as STRINGS over JSON - both pg and PostgREST do this
@@ -97,6 +106,8 @@ export function normalise(r) {
     subcategory: r.subcategory || r.sub || "",
     description: r.description || r.desc || "",
     amount: Math.round(amount * 100) / 100,
+    currency,
+    fx_rate: Math.round(fxRate * 1e6) / 1e6,
     payment: r.payment || "",
     account: r.account || "",
     recurring: r.recurring === "Yes" || r.recur === "Yes" ? "Yes" : "No",

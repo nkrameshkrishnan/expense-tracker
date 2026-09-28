@@ -1,6 +1,6 @@
 /* Transactions list page - search/filter, inline edit, delete. */
-import { TYPES, MONTHS, UNASSIGNED, spendOf } from "../store.js";
-import { money, monthOf } from "../xlsxio.js";
+import { TYPES, MONTHS, UNASSIGNED, spendOf, amountCad } from "../store.js";
+import { money, moneyIn, monthOf } from "../xlsxio.js";
 import { listFor } from "../categories.js";
 import {
   $,
@@ -39,7 +39,7 @@ export function renderTransactions() {
 
   const income = rows
     .filter((r) => r.type === "Income")
-    .reduce((a, r) => a + r.amount, 0);
+    .reduce((a, r) => a + amountCad(r), 0);
   // Expenses minus refunds (spendOf) - a refund is money back on a purchase.
   const expense = rows.reduce((a, r) => a + spendOf(r), 0);
   const net = income - expense;
@@ -62,7 +62,7 @@ export function renderTransactions() {
     g.label = (MONTHS[Number(m) - 1] || m) + " " + y;
     g.income = g.rows
       .filter((r) => r.type === "Income")
-      .reduce((a, r) => a + r.amount, 0);
+      .reduce((a, r) => a + amountCad(r), 0);
     g.expense = g.rows.reduce((a, r) => a + spendOf(r), 0);
   }
 
@@ -107,7 +107,10 @@ export function renderTransactions() {
           ${r.payment ? `<span class="tx-sep">·</span><span class="tx-pay">${esc(r.payment)}</span>` : ""}
         </div>
       </div>
-      <div class="tx-amount num ${typeClass(r.type)}">${r.type === "Income" || r.type === "Refund" ? "+" : ""}${money(r.amount)}</div>
+      <div class="tx-amount num ${typeClass(r.type)}">
+        ${r.type === "Income" || r.type === "Refund" ? "+" : ""}${moneyIn(r.amount, r.currency)}
+        ${r.currency && r.currency !== "CAD" ? `<span class="tx-cad-equiv muted">≈ ${money(amountCad(r))} CAD</span>` : ""}
+      </div>
       <div class="tx-actions">
         <button class="txbtn edit" data-edit="${r.id}" title="Edit">✎</button>
         <button class="txbtn del" data-del="${r.id}" title="Delete">✕</button>
@@ -329,7 +332,7 @@ export function renderTransactions() {
         const orig = row.innerHTML;
         row.innerHTML = `
       <div class="tx-confirm">
-        <span>Delete <b>${esc(r.category)}</b> ${money(r.amount)} on ${esc(r.date)}?</span>
+        <span>Delete <b>${esc(r.category)}</b> ${moneyIn(r.amount, r.currency)} on ${esc(r.date)}?</span>
         <div style="display:flex;gap:8px;flex-shrink:0">
           <button class="btn danger" style="padding:4px 12px;font-size:12px" id="cd-yes">Delete</button>
           <button class="btn ghost"  style="padding:4px 12px;font-size:12px" id="cd-no">Cancel</button>

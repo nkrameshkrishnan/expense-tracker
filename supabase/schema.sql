@@ -66,7 +66,21 @@ create table if not exists transactions (
   account text not null default '',
   recurring text not null default 'No' check (recurring in ('Yes', 'No')),
   notes text not null default '',
-  person text not null default ''
+  person text not null default '',
+  -- The currency `amount` is actually denominated in. Almost everything is
+  -- CAD; INR/AED cover a purchase or remittance made in that currency.
+  -- `amount` is NEVER converted in place - it stays exactly what was on the
+  -- statement, and fx_rate is the separate, explicit multiplier that gets
+  -- you to CAD (see assets/constants.js's amountCad()). Every dashboard/
+  -- budget total is computed FROM these two fields, never from `amount`
+  -- alone - a raw sum across currencies would add rupees to dollars.
+  currency text not null default 'CAD' check (currency in ('CAD', 'INR', 'AED')),
+  -- CAD per one unit of `currency` - 1 for a CAD row (amount is already CAD,
+  -- so the multiplier is a no-op), the day's rate for INR/AED, filled from
+  -- exchange_rates (see fetch-fx-rates.yml) but always hand-editable, since
+  -- a card statement's own posted CAD-equivalent line is the more accurate
+  -- number when it's available.
+  fx_rate numeric(12, 6) not null default 1 check (fx_rate > 0)
 );
 
 -- 'Refund' was added to the allowed types after the table first shipped.
@@ -76,6 +90,18 @@ create table if not exists transactions (
 alter table transactions drop constraint if exists transactions_type_check;
 alter table transactions add constraint transactions_type_check
   check (type in ('Expense', 'Income', 'Transfer', 'Dividends', 'Refund'));
+
+-- currency/fx_rate were added after the table first shipped, same situation
+-- as Refund above - `add column if not exists` backfills every existing row
+-- with the default (CAD / 1), which is exactly correct: every row already in
+-- the table really was recorded in CAD.
+alter table transactions add column if not exists currency text not null default 'CAD';
+alter table transactions drop constraint if exists transactions_currency_check;
+alter table transactions add constraint transactions_currency_check
+  check (currency in ('CAD', 'INR', 'AED'));
+alter table transactions add column if not exists fx_rate numeric(12, 6) not null default 1;
+alter table transactions drop constraint if exists transactions_fx_rate_check;
+alter table transactions add constraint transactions_fx_rate_check check (fx_rate > 0);
 
 alter table transactions enable row level security;
 
@@ -120,8 +146,22 @@ create table if not exists balances (
   kind text not null check (kind in ('Asset', 'Liability')),
   balance numeric(14, 2) not null,
   notes text not null default '',
+  -- Same currency/fx_rate shape as transactions above, and the same reason:
+  -- an INR bank account or AED cash balance is entered in its own currency,
+  -- never converted in place, with fx_rate as the explicit CAD multiplier
+  -- net worth totals apply (see assets/constants.js's amountCad()).
+  currency text not null default 'CAD' check (currency in ('CAD', 'INR', 'AED')),
+  fx_rate numeric(12, 6) not null default 1 check (fx_rate > 0),
   primary key (date, account)
 );
+
+alter table balances add column if not exists currency text not null default 'CAD';
+alter table balances drop constraint if exists balances_currency_check;
+alter table balances add constraint balances_currency_check
+  check (currency in ('CAD', 'INR', 'AED'));
+alter table balances add column if not exists fx_rate numeric(12, 6) not null default 1;
+alter table balances drop constraint if exists balances_fx_rate_check;
+alter table balances add constraint balances_fx_rate_check check (fx_rate > 0);
 
 alter table balances enable row level security;
 
@@ -208,6 +248,25 @@ create table if not exists gold_price_history (
 alter table gold_price_history enable row level security;
 
 create policy "household can read gold price history" on gold_price_history
+  for select using (is_allowed_household_member());
+
+-- ============================================================ exchange_rates
+-- One CAD-per-unit rate per (date, currency), written exclusively by the
+-- fetch-fx-rates.yml GitHub Actions workflow via the Supabase secret key -
+-- same trust boundary and same read-only-for-the-household shape as
+-- gold_price_history just above. Only non-CAD currencies get a row here
+-- (CAD-to-CAD is always exactly 1 and never needs a lookup).
+create table if not exists exchange_rates (
+  date date not null,
+  currency text not null check (currency in ('INR', 'AED')),
+  rate_to_cad numeric(12, 8) not null check (rate_to_cad > 0),
+  fetched_at timestamptz not null default now(),
+  primary key (date, currency)
+);
+
+alter table exchange_rates enable row level security;
+
+create policy "household can read exchange rates" on exchange_rates
   for select using (is_allowed_household_member());
 
 -- ============================================================ household access (Profile page)

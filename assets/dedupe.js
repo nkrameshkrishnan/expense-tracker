@@ -7,11 +7,13 @@
    against the rows above it in the same file, and flagged before anything is
    written:
 
-   - "exact"  same date, same amount, same description (after normalising
-              case/punctuation/spacing), and no conflicting account or person.
-              This is the re-uploaded-file case. Skipped by default.
-   - "likely" same amount and no conflicting account/person, within
-              DATE_WINDOW days, with a similar description (or same date).
+   - "exact"  same date, same amount, same currency, same description (after
+              normalising case/punctuation/spacing), and no conflicting
+              account or person. This is the re-uploaded-file case. Skipped
+              by default.
+   - "likely" same amount, same currency, and no conflicting account/person,
+              within DATE_WINDOW days, with a similar description (or same
+              date).
               This catches a posting date that moved between a PDF and a CSV
               export, or a description the bank truncated differently. Also
               used for an identical row repeated inside the same file.
@@ -72,8 +74,17 @@ function dayNumber(iso) {
 const compatible = (a, b) =>
   !a || !b || String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
 
+// Unlike account/person, a blank currency is never genuinely "unknown" - a
+// row's currency always resolves to CAD by default (see store-helpers.js's
+// normalise()), so a staged row that hasn't been normalised yet and a stored
+// row are compared as if the staged one already had that same default.
+const currencyOf = (r) => r.currency || "CAD";
+
 function classify(s, e) {
   if (cents(s.amount) !== cents(e.amount)) return null;
+  // A same-numeric-amount CAD row and INR row are NOT the same money (e.g.
+  // $50.00 CAD vs ₹50.00) - never let those two match on amount alone.
+  if (currencyOf(s) !== currencyOf(e)) return null;
   if (!compatible(s.account, e.account)) return null;
   if (!compatible(s.person, e.person)) return null;
   const gap = Math.abs(dayNumber(s.date) - dayNumber(e.date));

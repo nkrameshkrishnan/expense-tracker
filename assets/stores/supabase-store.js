@@ -474,6 +474,47 @@ export class SupabaseStore {
     }));
   }
 
+  /** The CAD-per-unit rate for `currency` closest to `date` - on-or-before
+      first (the rate that was actually in effect that day), falling back to
+      the closest date after if the workflow hadn't run yet that far back
+      (e.g. looking up a date before fetch-fx-rates.yml's first run). Returns
+      null if exchange_rates has no rows for this currency at all yet, so the
+      Add page can fall back to asking for the rate by hand rather than
+      silently defaulting to 1. Two queries rather than one "order by
+      absolute date difference" - Postgres/PostgREST has no built-in date
+      subtraction operator to order by through the JS client, and two
+      indexed range queries are cheap regardless. */
+  async getExchangeRate(date, currency) {
+    const sb = await this._client();
+    const before = await sb
+      .from("exchange_rates")
+      .select("*")
+      .eq("currency", currency)
+      .lte("date", date)
+      .order("date", { ascending: false })
+      .limit(1);
+    if (before.error) throw dbError(before.error);
+    if (before.data?.length)
+      return {
+        date: before.data[0].date,
+        rateToCad: Number(before.data[0].rate_to_cad) || 0,
+      };
+    const after = await sb
+      .from("exchange_rates")
+      .select("*")
+      .eq("currency", currency)
+      .gt("date", date)
+      .order("date", { ascending: true })
+      .limit(1);
+    if (after.error) throw dbError(after.error);
+    if (after.data?.length)
+      return {
+        date: after.data[0].date,
+        rateToCad: Number(after.data[0].rate_to_cad) || 0,
+      };
+    return null;
+  }
+
   async addDebt(record) {
     const sb = await this._client();
     const { data, error } = await sb

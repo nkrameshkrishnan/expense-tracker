@@ -119,6 +119,46 @@
   white-space: nowrap;
   letter-spacing: 0.06em;
 }
+select.add-currency-code {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-weight: 600;
+  appearance: none;
+  -webkit-appearance: none;
+}
+select.add-currency-code:focus {
+  outline: none;
+}
+
+/* CAD-rate row, shown only when a non-CAD currency is picked */
+.add-fx-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: -2px 0 10px;
+}
+.add-fx-row .add-label {
+  white-space: nowrap;
+}
+.add-fx-row input {
+  width: 130px;
+  border: 1px solid var(--rule-2);
+  padding: 6px 8px;
+  font-family: var(--mono);
+  font-size: 13px;
+  background: #fff;
+  color: var(--ink);
+}
+.add-fx-row input:focus {
+  outline: 2px solid var(--ink);
+  outline-offset: -1px;
+}
+#fx-preview {
+  font-weight: 600;
+  color: var(--ink);
+}
 
 /* primary row */
 .add-primary {

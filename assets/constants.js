@@ -33,17 +33,49 @@ export const CAT_TYPE = Object.fromEntries(CATEGORIES);
 
 export const TYPES = ["Expense", "Income", "Transfer", "Dividends", "Refund"];
 
-/** How much a row adds to spending. A Refund is money back on an earlier
-    purchase: it keeps that purchase's category (a returned item under
-    Shopping, points applied to a flight under Travel) and is subtracted from
-    it, so category and total spend show what was actually paid. Amounts are
-    always stored positive - the type carries the sign. Every other type
-    (Income, Transfer, Dividends) is not spending and contributes 0.
-    A booking cancelled in full is NOT a Refund: the charge and the refund
-    are both recorded as Transfers so neither month is inflated or driven
-    negative. */
+/* Currencies a transaction or balance can be recorded in. CAD is the home
+   currency - every dashboard, budget and net-worth total is expressed in it.
+   INR/AED rows keep their own native amount (never converted in place) plus
+   an fx_rate - see amountCad() below, and assets/dedupe.js's compatible()
+   check, which must never match a CAD row against an INR/AED row of the same
+   numeric amount. Extending this list is a schema change too - see
+   supabase/schema.sql's currency check constraints on transactions/balances,
+   and exchange_rates' own currency check (which excludes CAD - see there). */
+export const CURRENCIES = ["CAD", "INR", "AED"];
+// The subset that actually needs a looked-up rate. CAD's rate is always
+// exactly 1, so it's never fetched or stored in exchange_rates.
+export const FX_CURRENCIES = CURRENCIES.filter((c) => c !== "CAD");
+
+/** The CAD value of a native amount, given the row's own fx_rate (1 for a
+    CAD row - a no-op multiply). `amount`/`balance` themselves are NEVER
+    converted in place; this is the one place that conversion happens, and
+    every total in the app (spendOf below, Dashboard, Budget, Net Worth,
+    xlsxio's report aggregation) is built by summing this, never the raw
+    field, so a rupee and a dollar are never added together as if they were
+    the same unit. Rounded to cents, same precision the fields themselves are
+    stored at. */
+export const toCad = (nativeAmount, fxRate) =>
+  Math.round((Number(nativeAmount) || 0) * (Number(fxRate) || 1) * 100) / 100;
+
+/** The CAD-equivalent of a transaction row's own amount/fx_rate. */
+export const amountCad = (r) => toCad(r.amount, r.fx_rate);
+
+/** The CAD-equivalent of a net-worth balance row's own balance/fx_rate. */
+export const balanceCad = (b) => toCad(b.balance, b.fx_rate);
+
+/** How much a row adds to spending, in CAD. A Refund is money back on an
+    earlier purchase: it keeps that purchase's category (a returned item
+    under Shopping, points applied to a flight under Travel) and is
+    subtracted from it, so category and total spend show what was actually
+    paid. Amounts are always stored positive - the type carries the sign.
+    Every other type (Income, Transfer, Dividends) is not spending and
+    contributes 0. A booking cancelled in full is NOT a Refund: the charge
+    and the refund are both recorded as Transfers so neither month is
+    inflated or driven negative. Goes through amountCad, not raw r.amount,
+    so a Refund on an INR purchase nets against that purchase's CAD value,
+    not its rupee face value. */
 export const spendOf = (r) =>
-  r.type === "Expense" ? r.amount : r.type === "Refund" ? -r.amount : 0;
+  r.type === "Expense" ? amountCad(r) : r.type === "Refund" ? -amountCad(r) : 0;
 export const PAYMENTS = [
   "Credit Card",
   "Debit Card",

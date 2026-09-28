@@ -10,6 +10,7 @@ import {
   currentYear,
   normalise,
   spendOf,
+  amountCad,
   inferTypeFromSignAndDescription,
 } from "./store.js";
 import {
@@ -50,6 +51,24 @@ export const money = (n) =>
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+
+const CURRENCY_LOCALE = { CAD: "en-CA", INR: "en-IN", AED: "en-AE" };
+/** Formats a NATIVE amount in its own currency - for showing a foreign-
+    currency row as it actually reads on the statement (e.g. "₹4,200.00"),
+    never for a total, which is always CAD (use money() + amountCad()/
+    spendOf() for those - see constants.js). Falls back to money()'s plain
+    CAD formatting for CAD or an unrecognised code. */
+export const moneyIn = (n, currency) => {
+  if (!currency || currency === "CAD") return money(n);
+  try {
+    return new Intl.NumberFormat(CURRENCY_LOCALE[currency] || "en-US", {
+      style: "currency",
+      currency,
+    }).format(n);
+  } catch {
+    return money(n);
+  }
+};
 export const pct = (n) => (n * 100).toFixed(1) + "%";
 export const monthOf = (r) => Number(String(r.date).slice(5, 7)) || 0;
 
@@ -80,7 +99,7 @@ export function personBreakdown(rows, month, year = currentYear()) {
         expense: mine.reduce((a, r) => a + spendOf(r), 0),
         income: mine
           .filter((r) => r.type === "Income")
-          .reduce((a, r) => a + r.amount, 0),
+          .reduce((a, r) => a + amountCad(r), 0),
         count: mine.length,
       };
     })
@@ -171,7 +190,10 @@ export function aggregate(rows, budget, month, year = currentYear()) {
       Number(String(r.date).slice(0, 4)) === year &&
       (month === 0 || monthOf(r) === month),
   );
-  const sum = (f) => inScope.filter(f).reduce((a, r) => a + r.amount, 0);
+  // amountCad, not raw r.amount - Income/Refund/Dividends totals below must
+  // convert an INR/AED row to CAD exactly like spendOf() already does for
+  // Expense/Refund, or a foreign-currency Income row would distort the total.
+  const sum = (f) => inScope.filter(f).reduce((a, r) => a + amountCad(r), 0);
   // Spending is Expense minus Refund (spendOf), never a plain sum of amounts.
   const spend = (f) => inScope.filter(f).reduce((a, r) => a + spendOf(r), 0);
 
@@ -224,11 +246,11 @@ export function aggregate(rows, budget, month, year = currentYear()) {
     );
     const inc = inM
       .filter((r) => r.type === "Income")
-      .reduce((a, r) => a + r.amount, 0);
+      .reduce((a, r) => a + amountCad(r), 0);
     const exp = inM.reduce((a, r) => a + spendOf(r), 0);
     const div = inM
       .filter((r) => r.type === "Dividends")
-      .reduce((a, r) => a + r.amount, 0);
+      .reduce((a, r) => a + amountCad(r), 0);
     const bud = EXPENSE_CATS.reduce(
       (a, c) => a + (Number(budget[c]?.[m]) || 0),
       0,
@@ -297,7 +319,17 @@ export async function exportWorkbook(rows, budget) {
       "Category",
       "Subcategory",
       "Description",
-      "Amount (CAD)",
+      // "Amount" is native - whatever the row's own Currency actually is.
+      // "CAD Equivalent" is the same row converted with its own fx_rate (1
+      // for a CAD row) - see amountCad() in constants.js - shown for
+      // reference only. Deliberately NOT named "Amount (CAD)" - that header
+      // text is a legacy alias (HEADER_ALIASES below) for the OLD export
+      // format's amount column and re-importing THIS export must read the
+      // native "Amount" column, never this computed one.
+      "Amount",
+      "Currency",
+      "FX Rate",
+      "CAD Equivalent",
       "Payment Method",
       "Account",
       "Recurring?",
@@ -315,6 +347,9 @@ export async function exportWorkbook(rows, budget) {
       r.subcategory,
       r.description,
       r.amount,
+      r.currency || "CAD",
+      r.fx_rate || 1,
+      amountCad(r),
       r.payment,
       r.account,
       r.recurring,
@@ -341,13 +376,17 @@ export async function exportWorkbook(rows, budget) {
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(bgAoa), "Budget");
 
   // Live cross-tab. Classic functions only, so it behaves the same in Excel and Sheets.
+  // Sums column K (CAD Equivalent), not H (native Amount) - a category with
+  // both CAD and INR/AED rows would otherwise add rupees and dollars
+  // together as if they were the same unit. See the Transactions header row
+  // above for the column layout this is keyed to.
   const last = txAoa.length;
   const pvAoa = [["Category", "Type", ...MONTHS, "Total"]];
   CAT_NAMES.forEach((c, i) => {
     const r = 2 + i;
     const cells = MONTHS.map((_, m) => ({
       f:
-        `SUMIFS(Transactions!$H$2:$H$${last},Transactions!$E$2:$E$${last},$A${r},` +
+        `SUMIFS(Transactions!$K$2:$K$${last},Transactions!$E$2:$E$${last},$A${r},` +
         `Transactions!$B$2:$B$${last},${String.fromCharCode(67 + m)}$1)`,
     }));
     pvAoa.push([c, CAT_TYPE[c], ...cells, { f: `SUM(C${r}:N${r})` }]);
@@ -393,6 +432,10 @@ const HEADER_ALIASES = {
   "amount (cad)": "amount",
   value: "amount",
   debit: "amount",
+  currency: "currency",
+  "fx rate": "fx_rate",
+  fxrate: "fx_rate",
+  "rate to cad": "fx_rate",
   "payment method": "payment",
   payment: "payment",
   method: "payment",
@@ -573,6 +616,8 @@ export async function importFile(file) {
         subcategory: get("subcategory"),
         description: get("description"),
         amount,
+        currency: get("currency"),
+        fx_rate: get("fx_rate"),
         payment: get("payment"),
         account: get("account"),
         recurring: get("recurring"),
