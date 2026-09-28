@@ -191,8 +191,10 @@ create policy "household can delete metal holdings" on precious_metal_holdings
 
 -- ============================================================ gold_price_history
 -- Written exclusively by the fetch-gold-price.yml GitHub Actions workflow
--- using the Supabase service-role key, which bypasses RLS entirely (same
--- trust boundary migrate.mjs already uses over a raw pg connection) - so
+-- using the Supabase project's secret key (Project Settings -> API Keys ->
+-- Secret keys - the current API key system's replacement for the older
+-- service_role key), which bypasses RLS entirely (same trust boundary
+-- migrate.mjs already uses over a raw pg connection) - so
 -- this table gets a read policy for the household and deliberately no
 -- insert/update/delete policy for anon/authenticated, the same
 -- zero-direct-write shape allowed_emails uses for a different reason.

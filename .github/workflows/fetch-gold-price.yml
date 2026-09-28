@@ -2,8 +2,10 @@ name: Fetch daily gold price
 
 # Fetches the spot gold price (CAD, per troy ounce) from goldprice.dev, converts
 # to price-per-gram, and upserts today's row into gold_price_history via the
-# Supabase REST API using the service-role key (bypasses RLS - this table has
-# no insert/update policy for anon/authenticated, see supabase/schema.sql).
+# Supabase REST API using the project's secret key (Project Settings -> API
+# Keys -> Secret keys in Supabase's current API key system; the replacement
+# for the older service_role key, and bypasses RLS the same way - this table
+# has no insert/update policy for anon/authenticated, see supabase/schema.sql).
 # No Supabase Edge Function is involved; this workflow is the entire pipeline.
 
 on:
@@ -18,12 +20,12 @@ jobs:
       - name: Fetch spot price and upsert into Supabase
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           set -euo pipefail
 
-          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
-            echo "::error::SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY not set as repo secrets. Skipping fetch."
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SECRET_KEY" ]; then
+            echo "::error::SUPABASE_URL/SUPABASE_SECRET_KEY not set as repo secrets. Skipping fetch."
             exit 1
           fi
 
@@ -46,8 +48,8 @@ jobs:
           echo "Gold price: \$$PRICE_PER_OUNCE/oz -> \$$PRICE_PER_GRAM/g on $TODAY"
 
           curl -sf -X POST "$SUPABASE_URL/rest/v1/gold_price_history" \
-            -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
-            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "apikey: $SUPABASE_SECRET_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SECRET_KEY" \
             -H "Content-Type: application/json" \
             -H "Prefer: resolution=merge-duplicates" \
             -d "{\"date\": \"$TODAY\", \"metal\": \"Gold\", \"price_per_gram_cad\": $PRICE_PER_GRAM}"
