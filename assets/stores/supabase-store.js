@@ -346,10 +346,7 @@ export class SupabaseStore {
   }
   async deleteBalanceAccount(account) {
     const sb = await this._client();
-    const { error } = await sb
-      .from("balances")
-      .delete()
-      .eq("account", account);
+    const { error } = await sb.from("balances").delete().eq("account", account);
     if (error) throw dbError(error);
     if (this.cache) await this._refreshBalances();
   }
