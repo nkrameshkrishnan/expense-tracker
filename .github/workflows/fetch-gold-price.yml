@@ -1,0 +1,55 @@
+name: Fetch daily gold price
+
+# Fetches the spot gold price (CAD, per troy ounce) from goldprice.dev, converts
+# to price-per-gram, and upserts today's row into gold_price_history via the
+# Supabase REST API using the service-role key (bypasses RLS - this table has
+# no insert/update policy for anon/authenticated, see supabase/schema.sql).
+# No Supabase Edge Function is involved; this workflow is the entire pipeline.
+
+on:
+  schedule:
+    - cron: "0 13 * * *" # ~9am Eastern (UTC-4/5) daily
+  workflow_dispatch:
+
+jobs:
+  fetch-price:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch spot price and upsert into Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "::error::SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY not set as repo secrets. Skipping fetch."
+            exit 1
+          fi
+
+          RESPONSE=$(curl -sf "https://api.goldprice.dev/v1/prices?symbol=XAU-CAD-SPOT")
+          PRICE_PER_OUNCE=$(echo "$RESPONSE" | node -e '
+            let data = "";
+            process.stdin.on("data", d => data += d);
+            process.stdin.on("end", () => {
+              const parsed = JSON.parse(data);
+              const price = Number(parsed.symbols[0].price);
+              if (!isFinite(price) || price <= 0) { throw new Error("bad price: " + parsed.symbols[0].price); }
+              console.log(price);
+            });
+          ')
+
+          # 1 troy ounce = 31.1034768 grams.
+          PRICE_PER_GRAM=$(node -e "console.log(($PRICE_PER_OUNCE / 31.1034768).toFixed(2))")
+          TODAY=$(date -u +%F)
+
+          echo "Gold price: \$$PRICE_PER_OUNCE/oz -> \$$PRICE_PER_GRAM/g on $TODAY"
+
+          curl -sf -X POST "$SUPABASE_URL/rest/v1/gold_price_history" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: resolution=merge-duplicates" \
+            -d "{\"date\": \"$TODAY\", \"metal\": \"Gold\", \"price_per_gram_cad\": $PRICE_PER_GRAM}"
+
+          echo "Upserted successfully."

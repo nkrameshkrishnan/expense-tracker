@@ -110,6 +110,7 @@ export class SupabaseStore {
       { data: bg, error: e2 },
       { data: bal, error: e3 },
       { data: debts, error: e4 },
+      { data: holdings, error: e5 },
     ] = await Promise.all([
       selectAllRows((from, to) =>
         sb
@@ -131,8 +132,11 @@ export class SupabaseStore {
           .range(from, to),
       ),
       selectAllRows((from, to) => sb.from("debts").select("*").range(from, to)),
+      selectAllRows((from, to) =>
+        sb.from("precious_metal_holdings").select("*").range(from, to),
+      ),
     ]);
-    const err = e1 || e2 || e3 || e4;
+    const err = e1 || e2 || e3 || e4 || e5;
     if (err) throw dbError(err);
     this.cache = {
       transactions: tx.map(normalise),
@@ -142,6 +146,7 @@ export class SupabaseStore {
       budgetYear: year,
       balances: bal || [],
       debts: (debts || []).map((d) => this._normDebt(d)),
+      metalHoldings: (holdings || []).map((h) => this._normMetalHolding(h)),
     };
     return this.cache;
   }
@@ -391,6 +396,85 @@ export class SupabaseStore {
     if ("interestRate" in record) out.interest_rate = interestRate;
     if ("debtType" in record) out.debt_type = debtType;
     return out;
+  }
+
+  /** snake_case (Postgres) <-> camelCase (app) translation, same reasoning
+      as _normDebt/_toDbDebt: weight_grams/price_per_gram/purchase_date
+      would otherwise leak snake_case into pages/metals.js and LocalStore/
+      MemoryStore, which don't exist for this feature but would still need
+      to agree on a shape if they ever did. */
+  _normMetalHolding(h) {
+    const { weight_grams, price_per_gram, purchase_date, ...rest } = h;
+    return {
+      ...rest,
+      id: Number(h.id) || 0,
+      weightGrams: Number(weight_grams) || 0,
+      pricePerGram: Number(price_per_gram) || 0,
+      purchaseDate: purchase_date,
+    };
+  }
+  _toDbMetalHolding(record) {
+    const { weightGrams, pricePerGram, purchaseDate, ...rest } = record;
+    const out = { ...rest };
+    if ("weightGrams" in record) out.weight_grams = weightGrams;
+    if ("pricePerGram" in record) out.price_per_gram = pricePerGram;
+    if ("purchaseDate" in record) out.purchase_date = purchaseDate;
+    return out;
+  }
+
+  async listMetalHoldings() {
+    return (await this._ensure()).metalHoldings;
+  }
+  async addMetalHolding(record) {
+    const sb = await this._client();
+    const { data, error } = await sb
+      .from("precious_metal_holdings")
+      .insert(this._toDbMetalHolding(record))
+      .select()
+      .single();
+    if (error) throw dbError(error);
+    const result = this._normMetalHolding(data);
+    if (this.cache) this.cache.metalHoldings.push(result);
+    return result.id;
+  }
+  async deleteMetalHolding(id) {
+    const numId = Number(id);
+    const sb = await this._client();
+    const { error } = await sb
+      .from("precious_metal_holdings")
+      .delete()
+      .eq("id", id);
+    if (error) throw dbError(error);
+    if (this.cache)
+      this.cache.metalHoldings = this.cache.metalHoldings.filter(
+        (h) => h.id !== numId,
+      );
+  }
+  async getLatestGoldPrice() {
+    const sb = await this._client();
+    const { data, error } = await sb
+      .from("gold_price_history")
+      .select("*")
+      .order("date", { ascending: false })
+      .limit(1);
+    if (error) throw dbError(error);
+    if (!data || !data.length) return null;
+    return {
+      date: data[0].date,
+      pricePerGramCad: Number(data[0].price_per_gram_cad) || 0,
+    };
+  }
+  async getGoldPriceHistory() {
+    const sb = await this._client();
+    const { data, error } = await sb
+      .from("gold_price_history")
+      .select("*")
+      .order("date", { ascending: true });
+    if (error) throw dbError(error);
+    return (data || []).map((r) => ({
+      date: r.date,
+      pricePerGramCad: Number(r.price_per_gram_cad) || 0,
+    }));
   }
 
   async addDebt(record) {

@@ -172,6 +172,9 @@ export async function refresh() {
   state.budget = await state.store.getBudget(state.year);
   state.balances = (await state.store.getBalances?.()) || [];
   state.debts = (await state.store.getDebts?.()) || [];
+  state.metalHoldings = (await state.store.listMetalHoldings?.()) || [];
+  state.goldPrice = (await state.store.getLatestGoldPrice?.()) || null;
+  state.goldPriceHistory = (await state.store.getGoldPriceHistory?.()) || [];
   $("#foot-count").textContent = `${state.rows.length} transactions stored`;
   renderPeopleSwitch();
   renderProfileMenu();

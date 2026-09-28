@@ -163,6 +163,51 @@ create policy "household can update debts" on debts
 create policy "household can delete debts" on debts
   for delete using (is_allowed_household_member());
 
+-- ============================================================ precious_metal_holdings
+-- Purchase lots, not a running balance: each buy is its own row so average
+-- cost/gram and unrealized gain are derived, never hand-calculated - the
+-- same reasoning debts.outstanding uses payment history instead of a
+-- stored running total.
+create table if not exists precious_metal_holdings (
+  id bigint generated always as identity primary key,
+  metal text not null default 'Gold' check (metal in ('Gold')),
+  weight_grams numeric(10, 3) not null check (weight_grams > 0),
+  price_per_gram numeric(10, 2) not null check (price_per_gram >= 0),
+  purchase_date date not null,
+  owner text not null default '',
+  notes text not null default ''
+);
+
+alter table precious_metal_holdings enable row level security;
+
+create policy "household can read metal holdings" on precious_metal_holdings
+  for select using (is_allowed_household_member());
+create policy "household can write metal holdings" on precious_metal_holdings
+  for insert with check (is_allowed_household_member());
+create policy "household can update metal holdings" on precious_metal_holdings
+  for update using (is_allowed_household_member()) with check (is_allowed_household_member());
+create policy "household can delete metal holdings" on precious_metal_holdings
+  for delete using (is_allowed_household_member());
+
+-- ============================================================ gold_price_history
+-- Written exclusively by the fetch-gold-price.yml GitHub Actions workflow
+-- using the Supabase service-role key, which bypasses RLS entirely (same
+-- trust boundary migrate.mjs already uses over a raw pg connection) - so
+-- this table gets a read policy for the household and deliberately no
+-- insert/update/delete policy for anon/authenticated, the same
+-- zero-direct-write shape allowed_emails uses for a different reason.
+create table if not exists gold_price_history (
+  date date primary key,
+  metal text not null default 'Gold',
+  price_per_gram_cad numeric(10, 2) not null,
+  fetched_at timestamptz not null default now()
+);
+
+alter table gold_price_history enable row level security;
+
+create policy "household can read gold price history" on gold_price_history
+  for select using (is_allowed_household_member());
+
 -- ============================================================ household access (Profile page)
 -- Lets a signed-in household member see and manage who else is on the
 -- allow-list, without ever granting direct SELECT/INSERT/DELETE on
