@@ -670,6 +670,20 @@ tbody tr:hover {
 .rowbtn.edit:hover {
   color: var(--blue);
 }
+/* Without this, a disabled rowbtn (e.g. the primary household member's own
+   "remove" ✕, or the old "can't remove the last remaining email" case)
+   renders in the exact same ink-3 as an active one - it only reveals itself
+   as non-functional on hover (no colour change, title tooltip), which reads
+   as a broken button rather than an intentionally locked one. Faded +
+   not-allowed cursor makes "this one's off-limits" visible at a glance,
+   without a click. */
+.rowbtn:disabled {
+  color: var(--rule-2);
+  cursor: not-allowed;
+}
+.rowbtn:disabled:hover {
+  color: var(--rule-2);
+}
 
 /* ---------- forms ---------- */
 .formgrid {
