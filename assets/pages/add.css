@@ -25,6 +25,8 @@
   flex-wrap: wrap;
   margin-bottom: 20px;
   border: 1px solid var(--rule-2);
+  border-radius: var(--radius-xs);
+  overflow: hidden;
   width: fit-content;
   max-width: 100%;
 }
@@ -62,6 +64,9 @@
   cursor: pointer;
   color: var(--ink-3);
   text-transform: uppercase;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
 }
 .add-type-btn:last-child {
   border-right: 0;
@@ -81,13 +86,14 @@
   align-items: center;
   gap: 0;
   border: 1px solid var(--rule-2);
+  border-radius: var(--radius-xs);
   background: #fff;
   margin-bottom: 6px;
-  transition: outline 0.1s;
+  transition: border-color var(--motion-fast) var(--ease-out), box-shadow var(--motion-fast) var(--ease-out);
 }
 .add-amount-wrap:focus-within {
-  outline: 2px solid var(--ink);
-  outline-offset: -1px;
+  border-color: var(--amber);
+  box-shadow: var(--shadow-focus);
 }
 .add-currency {
   font-family: var(--mono);
@@ -145,15 +151,12 @@ select.add-currency-code:focus {
 .add-fx-row input {
   width: 130px;
   border: 1px solid var(--rule-2);
+  border-radius: var(--radius-xs);
   padding: 6px 8px;
   font-family: var(--mono);
   font-size: 13px;
   background: #fff;
   color: var(--ink);
-}
-.add-fx-row input:focus {
-  outline: 2px solid var(--ink);
-  outline-offset: -1px;
 }
 #fx-preview {
   font-weight: 600;
@@ -195,6 +198,7 @@ select.add-currency-code:focus {
 .add-field input,
 .add-field select {
   border: 1px solid var(--rule-2);
+  border-radius: var(--radius-xs);
   padding: 8px 10px;
   font-family: var(--disp);
   font-size: 13px;
@@ -203,11 +207,6 @@ select.add-currency-code:focus {
 }
 .add-field input[type="date"] {
   font-family: var(--mono);
-}
-.add-field input:focus,
-.add-field select:focus {
-  outline: 2px solid var(--ink);
-  outline-offset: -1px;
 }
 .add-field-hint {
   font-size: 11.5px;
@@ -251,6 +250,7 @@ details[open] .add-details-toggle::before {
   gap: 12px;
   padding: 14px;
   border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
   background: var(--paper-2);
 }
 @media (max-width: 560px) {
@@ -280,10 +280,13 @@ details[open] .add-details-toggle::before {
 
 /* context panel */
 .add-context {
-  border: 1px solid var(--rule-2);
+  border: var(--border-card);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
   background: #fff;
   position: sticky;
   top: 70px;
+  overflow: hidden;
 }
 .add-ctx-section {
   padding: 14px 16px;

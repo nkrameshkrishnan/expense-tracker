@@ -24,6 +24,7 @@
   width: 100%;
   text-align: center;
   border-radius: var(--radius-md);
+  border: var(--border-card);
   box-shadow: var(--shadow-card);
   background: #fff;
   padding: 36px 30px;
@@ -113,5 +114,13 @@
 @keyframes boot-spin {
   to {
     transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* This is a functional indeterminate-progress loop (the app is actually
+     booting), not decorative chrome, so it's kept rather than removed -
+     just slowed way down so it doesn't read as a spinning animation. */
+  .boot-spin {
+    animation-duration: 2.4s;
   }
 }

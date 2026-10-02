@@ -8,6 +8,7 @@
   flex-wrap: wrap;
   border: 1px solid var(--rule-2);
   border-left: 3px solid var(--amber);
+  border-radius: var(--radius-xs);
   background: #fff;
   padding: 11px 15px;
   margin-bottom: 16px;
@@ -38,6 +39,7 @@
 .nw-warn {
   border: 1px solid var(--rule-2);
   border-left: 3px solid var(--amber);
+  border-radius: var(--radius-xs);
   background: #fff0ed;
   padding: 10px 15px;
   margin-bottom: 14px;
@@ -60,6 +62,7 @@
   align-items: flex-end;
   flex-wrap: wrap;
   border-radius: var(--radius-md);
+  border: var(--border-card);
   box-shadow: var(--shadow-card);
   background: #fff;
   padding: 14px 16px;
@@ -91,9 +94,11 @@
   display: flex;
   align-items: center;
   border: 1px solid var(--rule-2);
+  border-radius: var(--radius-xs);
   background: #fff;
   width: 210px;
   margin-left: auto;
+  transition: border-color var(--motion-fast) var(--ease-out), box-shadow var(--motion-fast) var(--ease-out);
 }
 .nw-ccy-select {
   border: 0;
@@ -115,19 +120,16 @@
 .nw-fx-input {
   width: 90px;
   border: 1px solid var(--rule-2);
+  border-radius: var(--radius-xs);
   padding: 4px 6px;
   font-family: var(--mono);
   font-size: 12px;
   background: #fff;
   color: var(--ink);
 }
-.nw-fx-input:focus {
-  outline: 2px solid var(--ink);
-  outline-offset: -1px;
-}
 .nw-input-wrap:focus-within {
-  outline: 2px solid var(--ink);
-  outline-offset: -1px;
+  border-color: var(--amber);
+  box-shadow: var(--shadow-focus);
 }
 .nw-currency {
   font-family: var(--mono);
@@ -220,6 +222,7 @@ tr:hover .nw-del-acct {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   border-radius: var(--radius-md);
+  border: var(--border-card);
   box-shadow: var(--shadow-card);
   background: #fff;
   margin-bottom: 14px;
@@ -252,9 +255,17 @@ tr:hover .nw-del-acct {
 }
 .debt-card {
   border-radius: var(--radius-md);
+  border: var(--border-card);
   box-shadow: var(--shadow-card);
   background: #fff;
   padding: 14px 16px;
+  transition:
+    box-shadow var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+.debt-card:hover {
+  box-shadow: var(--shadow-card-hover);
+  border-color: rgba(20, 21, 26, 0.14);
 }
 .debt-card.settled {
   opacity: 0.62;
