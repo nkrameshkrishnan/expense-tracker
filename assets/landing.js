@@ -55,10 +55,7 @@ function renderHero() {
       <p class="l-sub">Track spending, keep a household budget, and watch your
         net worth grow &mdash; built for the two of you, not a company
         trying to sell you a subscription.</p>
-      <div class="l-hero-ctas">
-        <button type="button" class="l-btn l-hero-cta" data-action="open-signin" data-mode="signup">Get started</button>
-        <button type="button" class="l-link" data-action="open-signin" data-mode="signin">Already have access? Sign in</button>
-      </div>
+      <button type="button" class="l-btn l-hero-cta" data-action="open-signin" data-mode="signup">Get started</button>
       <p class="l-trust">Google sign-in &middot; access checked against an
         allow-list &middot; your data lives in your own Supabase project</p>
     </header>`;
