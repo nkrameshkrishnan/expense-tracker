@@ -41,6 +41,8 @@
 .l-btn {
   display: inline-block;
   cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
   font-family: var(--disp);
   font-size: 13px;
   font-weight: 500;
@@ -116,30 +118,10 @@
   max-width: 540px;
   margin: 0 auto 28px;
 }
-/* The real Google button mounts into #gsi-button right here - this is the
-   hero's actual call to action, not a styled link that scrolls to one. */
-.l-signin {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  scroll-margin-top: 24px;
-  min-height: 44px;
-}
-#gsi-button {
-  display: flex;
-  justify-content: center;
-  min-height: 44px;
-}
-.l-signin-hint {
-  font-size: 12px;
-  color: var(--ink-3);
-  max-width: 360px;
-  margin: 0;
-  line-height: 1.5;
-}
-.l-signin-hint:empty {
-  display: none;
+.l-hero-cta {
+  display: inline-block;
+  padding: 12px 28px;
+  font-size: 14px;
 }
 .l-trust {
   margin: 18px 0 0;
@@ -559,5 +541,86 @@
 @media (max-width: 560px) {
   .l-footer-note {
     margin-left: 0;
+  }
+}
+
+/* ---------- sign-in modal ---------- */
+/* Hidden until a "Sign in" button is clicked (see wireLandingSignin() in
+   auth.js) - the real Google button only mounts into #gsi-button the first
+   time this opens, never just because the landing page loaded. */
+.l-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.l-modal[hidden] {
+  display: none;
+}
+.l-modal-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(20, 21, 26, 0.45);
+  animation: l-scrim-in var(--motion-fast) var(--ease-out);
+}
+.l-modal-card {
+  position: relative;
+  z-index: 1;
+  max-width: 400px;
+  width: 100%;
+  margin: 0;
+  animation: l-modal-in var(--motion-base) var(--ease-out);
+}
+.l-modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: none;
+  color: var(--ink-3);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
+}
+.l-modal-close:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.l-modal-close:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+@keyframes l-scrim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes l-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .l-modal-scrim,
+  .l-modal-card {
+    animation: none;
   }
 }

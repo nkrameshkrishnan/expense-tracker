@@ -18,7 +18,11 @@ import {
 import { $, esc, state, notice, withBusy, refresh } from "./core.js";
 import { go, VIEWS } from "./router.js";
 import { renderDashboard } from "./pages/dashboard.js";
-import { renderLandingIntro, renderLandingFooter } from "./landing.js";
+import {
+  renderLandingIntro,
+  renderLandingModal,
+  renderLandingFooter,
+} from "./landing.js";
 
 /** Hex-encoded SHA-256 of a string - used only for the Google sign-in nonce
     below. Google's initialize() takes the HASHED nonce and embeds it in the
@@ -47,47 +51,17 @@ async function sha256Hex(text) {
 let gsiInitialized = false;
 let gsiPrompted = false;
 
-export function showGate(message) {
-  // Named bootOverlay, not boot - a local `const boot` here would shadow the
-  // outer async function boot() below, called from this function's own
-  // nested sign-in callback. That exact collision happened once already:
-  // "boot is not a function", caught by testing the actual sign-in flow
-  // rather than just reading the diff.
-  const bootOverlay = $("#boot-loading");
-  if (bootOverlay) bootOverlay.hidden = true; // was z-index above the gate - would otherwise hide it entirely
-  const gate = $("#gate");
-  gate.hidden = false;
-  // The full marketing-style landing page only makes sense on a genuinely
-  // fresh sign-in (no message - see app.js). A mid-session re-auth (token
-  // expired, a failed boot) passes a message here instead, and jumping that
-  // interruption straight back into a scroll of hero copy and feature
-  // sections would be a jarring regression from whatever the person was
-  // doing - so that path keeps the old plain, compact card.
-  const showLanding = !message;
-  gate.classList.toggle("gate-landing", showLanding);
-  // The landing page's own hero already has the #signin anchor and the
-  // #gsi-button mount point built in (see renderHero() in landing.js) - a
-  // fresh sign-in gets ONLY that, not this boxed card as well, which used to
-  // show up as a redundant second "Ledger" block part-way down the page. A
-  // mid-session re-auth (message set) has no landing page around it, so it
-  // still needs this card to be the whole screen.
-  gate.innerHTML = showLanding
-    ? renderLandingIntro() + renderLandingFooter()
-    : `
-    <div class="gate-card" id="signin">
-      <div class="gate-mark">&#8214;</div>
-      <h1 class="gate-title">Ledger</h1>
-      <p class="gate-sub">${esc(message || "Sign in with the Google account linked to this tracker.")}</p>
-      <div id="gsi-button"></div>
-      <p class="gate-note">Access is verified by Supabase Row Level Security against an allow-list.
-        Signing in here does not grant access on its own.</p>
-      <p class="gate-note"><a href="terms.html" target="_blank" rel="noopener">Terms &amp; Privacy</a>
-        &mdash; what Google profile information this app collects and why.</p>
-    </div>`;
-
+/** Initializes Google Identity Services (once, module-wide) and renders the
+    real sign-in button into `container`. Pulled out of showGate() so it can
+    be called two different ways: immediately, for the compact mid-session
+    re-auth card (unchanged from before), or lazily - only once the person
+    actually clicks a "Sign in" button on the landing page - see
+    wireLandingSignin() below. Google is never contacted just because the
+    landing page loaded; only once there's real intent to sign in. */
+function mountGoogleSignIn(container) {
   const cid = getClientId();
   if (!cid) {
-    $("#gsi-button").innerHTML =
+    container.innerHTML =
       `<p class="gate-error">No Google client ID configured. Set GOOGLE_CLIENT_ID in
        assets/config.js, then reload.</p>`;
     return;
@@ -119,7 +93,7 @@ export function showGate(message) {
         callback: async (res) => {
           setIdToken(res.credential);
           setNonce(rawNonce);
-          gate.hidden = true;
+          $("#gate").hidden = true;
           // boot() below makes a real network fetch that can take several
           // seconds on a cold start. Hiding the gate here without showing
           // anything else left a genuinely blank #view for that whole window -
@@ -158,7 +132,7 @@ export function showGate(message) {
         // requirement on every browser, so it is the primary path now.
       });
     }
-    google.accounts.id.renderButton($("#gsi-button"), {
+    google.accounts.id.renderButton(container, {
       theme: "filled_black",
       size: "large",
       text: "signin_with",
@@ -193,6 +167,82 @@ export function showGate(message) {
       () => window.google?.accounts?.id && start(),
       { once: true },
     );
+}
+
+/** Wires up the landing page's "Sign in" buttons (nav + hero) to open the
+    sign-in modal, and the modal's own close affordances (the &times;
+    button, the scrim, Escape) to dismiss it. The real Google button is
+    mounted into the modal on the FIRST open only - reopening it later just
+    toggles visibility, it doesn't re-mount or re-prompt. */
+function wireLandingSignin(gate) {
+  const modal = $("#signin-modal");
+  if (!modal) return;
+  let mounted = false;
+  const open = () => {
+    modal.hidden = false;
+    if (!mounted) {
+      mounted = true;
+      mountGoogleSignIn($("#gsi-button"));
+    }
+    modal.querySelector(".l-modal-close")?.focus();
+  };
+  const close = () => {
+    modal.hidden = true;
+  };
+  gate
+    .querySelectorAll('[data-action="open-signin"]')
+    .forEach((btn) => (btn.onclick = open));
+  gate
+    .querySelectorAll('[data-action="close-signin"]')
+    .forEach((el) => (el.onclick = close));
+  modal.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") close();
+  });
+}
+
+export function showGate(message) {
+  // Named bootOverlay, not boot - a local `const boot` here would shadow the
+  // outer async function boot() below, called from this function's own
+  // nested sign-in callback. That exact collision happened once already:
+  // "boot is not a function", caught by testing the actual sign-in flow
+  // rather than just reading the diff.
+  const bootOverlay = $("#boot-loading");
+  if (bootOverlay) bootOverlay.hidden = true; // was z-index above the gate - would otherwise hide it entirely
+  const gate = $("#gate");
+  gate.hidden = false;
+  // The full marketing-style landing page only makes sense on a genuinely
+  // fresh sign-in (no message - see app.js). A mid-session re-auth (token
+  // expired, a failed boot) passes a message here instead, and jumping that
+  // interruption straight back into a scroll of hero copy and feature
+  // sections would be a jarring regression from whatever the person was
+  // doing - so that path keeps the old plain, compact card.
+  const showLanding = !message;
+  gate.classList.toggle("gate-landing", showLanding);
+  if (showLanding) {
+    // No Google button anywhere until the person actually clicks "Sign in" -
+    // see renderHero()/renderSigninModal() in landing.js and
+    // wireLandingSignin() above. A modern landing page doesn't start talking
+    // to an auth provider just because it loaded.
+    gate.innerHTML =
+      renderLandingIntro() + renderLandingModal() + renderLandingFooter();
+    wireLandingSignin(gate);
+  } else {
+    // Mid-session re-auth: unchanged from before - show the compact card
+    // and mount the Google button immediately, since this is already an
+    // interruption the person needs to resolve, not a page they're browsing.
+    gate.innerHTML = `
+    <div class="gate-card" id="signin">
+      <div class="gate-mark">&#8214;</div>
+      <h1 class="gate-title">Ledger</h1>
+      <p class="gate-sub">${esc(message)}</p>
+      <div id="gsi-button"></div>
+      <p class="gate-note">Access is verified by Supabase Row Level Security against an allow-list.
+        Signing in here does not grant access on its own.</p>
+      <p class="gate-note"><a href="terms.html" target="_blank" rel="noopener">Terms &amp; Privacy</a>
+        &mdash; what Google profile information this app collects and why.</p>
+    </div>`;
+    mountGoogleSignIn($("#gsi-button"));
+  }
 }
 
 export function signOut() {
