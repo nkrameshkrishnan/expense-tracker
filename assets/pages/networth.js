@@ -309,6 +309,17 @@ export function renderNetWorth() {
   </div>
 
   ${
+    series.length > 1
+      ? `
+  <div class="eyebrow">Over time</div>
+  <div class="grid2">
+    <div class="panel"><h3>Net worth trend</h3><div class="chartbox"><canvas id="c-nw-trend"></canvas></div></div>
+    <div class="panel"><h3>Assets by account &mdash; ${esc(latest)}</h3><div class="chartbox"><canvas id="c-nw-split"></canvas></div></div>
+  </div>`
+      : `<p class="note">Record a second snapshot to see a trend. Monthly is plenty &mdash; balances move slowly.</p>`
+  }
+
+  ${
     missing.length
       ? `<div class="nw-warn">
     <b>${missing.length} account${missing.length > 1 ? "s have" : " has"} no balance in this snapshot</b> &mdash;
@@ -361,17 +372,6 @@ export function renderNetWorth() {
       })
       .join("")}
   </tbody></table></div>
-
-  ${
-    series.length > 1
-      ? `
-  <div class="eyebrow">Over time</div>
-  <div class="grid2">
-    <div class="panel"><h3>Net worth trend</h3><div class="chartbox"><canvas id="c-nw-trend"></canvas></div></div>
-    <div class="panel"><h3>Assets by account &mdash; ${esc(latest)}</h3><div class="chartbox"><canvas id="c-nw-split"></canvas></div></div>
-  </div>`
-      : `<p class="note">Record a second snapshot to see a trend. Monthly is plenty &mdash; balances move slowly.</p>`
-  }
 
   <div class="eyebrow">Snapshots</div>
   <div class="tablewrap"><table><thead><tr><th>Date</th><th class="n">Accounts</th><th class="n">Assets</th><th class="n">Liabilities</th><th class="n">Net worth</th><th></th></tr></thead><tbody>
