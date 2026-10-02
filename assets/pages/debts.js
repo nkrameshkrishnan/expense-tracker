@@ -2,7 +2,7 @@
    PDF export, and the "Debts & loans" card list on the Net worth page. */
 import { PEOPLE } from "../store.js";
 import { money, pct } from "../xlsxio.js";
-import { $, view, esc, state, notice, withBusy } from "../core.js";
+import { $, view, esc, state, notice, withBusy, kpi } from "../core.js";
 import { go } from "../router.js";
 import { renderNetWorth } from "./networth.js";
 import { emptyIcon } from "../icons.js";
@@ -808,10 +808,15 @@ export function renderDebtSection(scopeOwner) {
   <div class="eyebrow">Debts &amp; loans</div>
   ${
     rows.length
-      ? `<div class="debt-summary">
-    <div><span class="debt-sum-label">You owe</span><span class="debt-sum-val num tx-over">${money(owedTotal)}</span></div>
-    <div><span class="debt-sum-label">Owed to you</span><span class="debt-sum-val num tx-income">${money(lentTotal)}</span></div>
-    <div><span class="debt-sum-label">Net position</span><span class="debt-sum-val num ${lentTotal - owedTotal < 0 ? "tx-over" : "tx-income"}">${money(lentTotal - owedTotal)}</span></div>
+      ? `<div class="kpis">
+    ${kpi("You owe", money(owedTotal), owedTotal > 0 ? "outstanding" : "nothing owed", owedTotal > 0 ? "neg" : "")}
+    ${kpi("Owed to you", money(lentTotal), lentTotal > 0 ? "outstanding" : "nothing lent", lentTotal > 0 ? "pos" : "")}
+    ${kpi(
+      "Net position",
+      money(lentTotal - owedTotal),
+      "",
+      lentTotal - owedTotal < 0 ? "neg" : "pos",
+    )}
   </div>`
       : ""
   }

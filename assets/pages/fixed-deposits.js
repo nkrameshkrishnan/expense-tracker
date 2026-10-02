@@ -128,6 +128,7 @@ const fmtTenure = (startDate, maturityDate) => {
 export function renderFixedDepositsSection(scopeOwner) {
   if (!isRemoteStore(state.store)) {
     return `
+    <div class="eyebrow">Fixed deposits</div>
     <div class="nw-warn">
       <b>Not connected to Supabase.</b> Fixed deposit tracking needs a
       Supabase backend. Connect under <b>Data &rarr; Supabase</b> to use
@@ -173,6 +174,7 @@ export function renderFixedDepositsSection(scopeOwner) {
     .join("");
 
   return `
+  <div class="eyebrow">Fixed deposits</div>
   ${tiles}
   ${
     deposits.length
