@@ -111,6 +111,7 @@ export class SupabaseStore {
       { data: bal, error: e3 },
       { data: debts, error: e4 },
       { data: holdings, error: e5 },
+      { data: fds, error: e6 },
     ] = await Promise.all([
       selectAllRows((from, to) =>
         sb
@@ -135,8 +136,11 @@ export class SupabaseStore {
       selectAllRows((from, to) =>
         sb.from("precious_metal_holdings").select("*").range(from, to),
       ),
+      selectAllRows((from, to) =>
+        sb.from("fixed_deposits").select("*").range(from, to),
+      ),
     ]);
-    const err = e1 || e2 || e3 || e4 || e5;
+    const err = e1 || e2 || e3 || e4 || e5 || e6;
     if (err) throw dbError(err);
     this.cache = {
       transactions: tx.map(normalise),
@@ -147,6 +151,7 @@ export class SupabaseStore {
       balances: bal || [],
       debts: (debts || []).map((d) => this._normDebt(d)),
       metalHoldings: (holdings || []).map((h) => this._normMetalHolding(h)),
+      fixedDeposits: (fds || []).map((f) => this._normFixedDeposit(f)),
     };
     return this.cache;
   }
@@ -479,6 +484,77 @@ export class SupabaseStore {
         (h) => h.id !== numId,
       );
   }
+  /** Same snake_case <-> camelCase translation as _normDebt/_normMetalHolding
+      above, for the same reason: fixed-deposits.js, debts.js's sibling
+      module, deals entirely in camelCase. maturity_amount is nullable
+      (null = use the calculated value - see fixed-deposits.js's
+      calculatedMaturity()), so unlike the required numeric fields it's left
+      as null rather than coerced to 0, which would otherwise look like a
+      real "maturity value of zero" override. */
+  _normFixedDeposit(f) {
+    const {
+      annual_rate,
+      start_date,
+      maturity_date,
+      maturity_amount,
+      fx_rate,
+      ...rest
+    } = f;
+    return {
+      ...rest,
+      id: Number(f.id) || 0,
+      principal: Number(f.principal) || 0,
+      annualRate: Number(annual_rate) || 0,
+      startDate: start_date,
+      maturityDate: maturity_date,
+      maturityAmount: maturity_amount != null ? Number(maturity_amount) : null,
+      fxRate: Number(fx_rate) || 1,
+    };
+  }
+  _toDbFixedDeposit(record) {
+    const {
+      annualRate,
+      startDate,
+      maturityDate,
+      maturityAmount,
+      fxRate,
+      ...rest
+    } = record;
+    const out = { ...rest };
+    if ("annualRate" in record) out.annual_rate = annualRate;
+    if ("startDate" in record) out.start_date = startDate;
+    if ("maturityDate" in record) out.maturity_date = maturityDate;
+    if ("maturityAmount" in record) out.maturity_amount = maturityAmount;
+    if ("fxRate" in record) out.fx_rate = fxRate;
+    return out;
+  }
+
+  async listFixedDeposits() {
+    return (await this._ensure()).fixedDeposits;
+  }
+  async addFixedDeposit(record) {
+    const sb = await this._client();
+    const { data, error } = await sb
+      .from("fixed_deposits")
+      .insert(this._toDbFixedDeposit(record))
+      .select()
+      .single();
+    if (error) throw dbError(error);
+    const result = this._normFixedDeposit(data);
+    if (this.cache) this.cache.fixedDeposits.push(result);
+    return result.id;
+  }
+  async deleteFixedDeposit(id) {
+    const numId = Number(id);
+    const sb = await this._client();
+    const { error } = await sb.from("fixed_deposits").delete().eq("id", id);
+    if (error) throw dbError(error);
+    if (this.cache)
+      this.cache.fixedDeposits = this.cache.fixedDeposits.filter(
+        (f) => f.id !== numId,
+      );
+  }
+
   async getLatestGoldPrice() {
     const sb = await this._client();
     const { data, error } = await sb

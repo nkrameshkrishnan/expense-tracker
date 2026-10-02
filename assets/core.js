@@ -184,6 +184,7 @@ export async function refresh() {
   state.balances = (await state.store.getBalances?.()) || [];
   state.debts = (await state.store.getDebts?.()) || [];
   state.metalHoldings = (await state.store.listMetalHoldings?.()) || [];
+  state.fixedDeposits = (await state.store.listFixedDeposits?.()) || [];
   state.goldPrice = (await state.store.getLatestGoldPrice?.()) || null;
   state.goldPriceHistory = (await state.store.getGoldPriceHistory?.()) || [];
   $("#foot-count").textContent = `${state.rows.length} transactions stored`;

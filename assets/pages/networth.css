@@ -1,5 +1,52 @@
 /* Net worth page: accounts/balances and the debt-card list. */
 
+/* in-page tabs (Overview / Fixed Deposits) - same bordered-segment look as
+   the Add page's .add-type-row/.add-type-btn, under Net-Worth-specific
+   names rather than reusing that page's classes directly. */
+.nw-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+  border: 1px solid var(--rule-2);
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+  width: fit-content;
+  max-width: 100%;
+}
+.nw-tab-btn {
+  background: var(--card-bg);
+  border: 0;
+  border-right: 1px solid var(--rule-2);
+  padding: 8px 22px;
+  font-family: var(--disp);
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+}
+.nw-tab-btn:last-child {
+  border-right: 0;
+}
+.nw-tab-btn:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.nw-tab-btn.on {
+  background: var(--ink);
+  color: var(--paper);
+}
+.nw-tab-count {
+  display: inline-block;
+  margin-left: 2px;
+  font-size: 10.5px;
+  opacity: 0.75;
+}
+
 /* --------------------------------------------------------------- net worth */
 .nw-asat {
   display: flex;

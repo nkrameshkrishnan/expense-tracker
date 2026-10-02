@@ -261,6 +261,45 @@ alter table gold_price_history enable row level security;
 create policy "household can read gold price history" on gold_price_history
   for select using (is_allowed_household_member());
 
+-- ============================================================ fixed_deposits
+-- A fixed/term deposit: one-time principal placed with a bank for a fixed
+-- tenure at a fixed rate, maturing to a lump sum - e.g. an Indian bank FD.
+-- Same shared-household read/write shape as debts/precious_metal_holdings
+-- above (not the zero-policy allowed_emails shape), and the same
+-- currency/fx_rate pair balances/transactions use for a non-CAD amount:
+-- entered and shown in its own currency (see assets/pages/fixed-deposits.js),
+-- converted to CAD only for the Net Worth total.
+create table if not exists fixed_deposits (
+  id bigint generated always as identity primary key,
+  institution text not null,
+  principal numeric(14, 2) not null check (principal > 0),
+  currency text not null default 'INR' check (currency in ('CAD', 'INR', 'AED')),
+  annual_rate numeric(6, 3) not null check (annual_rate >= 0),
+  compounding text not null default 'Quarterly'
+    check (compounding in ('Simple', 'Annually', 'Semi-Annually', 'Quarterly', 'Monthly')),
+  start_date date not null,
+  maturity_date date not null check (maturity_date > start_date),
+  -- Null = use the calculated value (principal/rate/compounding/tenure -
+  -- see calculatedMaturity() in fixed-deposits.js). Set when the bank's own
+  -- certificate shows a slightly different figure (a different day-count
+  -- convention, rounding, etc.) and that exact number should win instead.
+  maturity_amount numeric(14, 2),
+  fx_rate numeric(12, 6) not null default 1 check (fx_rate > 0),
+  owner text not null default '',
+  notes text not null default ''
+);
+
+alter table fixed_deposits enable row level security;
+
+create policy "household can read fixed deposits" on fixed_deposits
+  for select using (is_allowed_household_member());
+create policy "household can write fixed deposits" on fixed_deposits
+  for insert with check (is_allowed_household_member());
+create policy "household can update fixed deposits" on fixed_deposits
+  for update using (is_allowed_household_member()) with check (is_allowed_household_member());
+create policy "household can delete fixed deposits" on fixed_deposits
+  for delete using (is_allowed_household_member());
+
 -- ============================================================ exchange_rates
 -- One CAD-per-unit rate per (date, currency), written exclusively by the
 -- fetch-fx-rates.yml GitHub Actions workflow via the Supabase secret key -

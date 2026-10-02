@@ -32,6 +32,22 @@ import {
   renderMetalsSection,
   wireMetalsHandlers,
 } from "./metals.js";
+import {
+  fixedDepositsSummary,
+  renderFixedDepositsSection,
+  wireFixedDepositsHandlers,
+} from "./fixed-deposits.js";
+
+// Which of the Net Worth page's own in-page tabs is showing - "Overview"
+// (balances/debts/metals, the page's original content) or "Fixed Deposits"
+// (its own tab, per the user's explicit request - not just another stacked
+// section like Debts/Metals above). A plain module-level variable, not
+// state.*: it only needs to survive this page's own re-renders (after a
+// save, a delete, etc.), the same lifetime renderBalanceForm's local
+// variables already rely on, not a page navigation - leaving Net Worth and
+// coming back to "Overview" by default is the expected reset, same as any
+// other page's scroll position or in-progress form.
+let activeTab = "overview";
 
 function nwAccounts() {
   const custom = loadCustom().nwAccount || [];
@@ -143,8 +159,16 @@ export function renderNetWorth() {
     metalHoldings,
     state.goldPrice || null,
   ).value;
+  const fixedDeposits = (state.fixedDeposits || []).filter(
+    (d) => !scopeOwner || d.owner === scopeOwner,
+  );
+  const today = new Date().toISOString().slice(0, 10);
+  const fdValueCad = fixedDepositsSummary(fixedDeposits, today).totalValueCad;
   const assets =
-    (latest ? sumOf(latest, "Asset") : 0) + dnw.receivable + metalsValue;
+    (latest ? sumOf(latest, "Asset") : 0) +
+    dnw.receivable +
+    metalsValue +
+    fdValueCad;
   const liabs = (latest ? sumOf(latest, "Liability") : 0) + dnw.liability;
   const net = assets - liabs;
   const prevNet = prev ? sumOf(prev, "Asset") - sumOf(prev, "Liability") : null;
@@ -217,6 +241,15 @@ export function renderNetWorth() {
     <button class="btn" id="nw-record">Record balances</button>
   </div>
 
+  <div class="nw-tabs" role="tablist">
+    <button class="nw-tab-btn${activeTab === "overview" ? " on" : ""}" data-nwtab="overview" type="button" role="tab" aria-selected="${activeTab === "overview"}">Overview</button>
+    <button class="nw-tab-btn${activeTab === "fixeddeposits" ? " on" : ""}" data-nwtab="fixeddeposits" type="button" role="tab" aria-selected="${activeTab === "fixeddeposits"}">Fixed Deposits${fixedDeposits.length ? ` <span class="nw-tab-count">${fixedDeposits.length}</span>` : ""}</button>
+  </div>
+
+  ${
+    activeTab === "fixeddeposits"
+      ? renderFixedDepositsSection(scopeOwner)
+      : `
   ${
     !isRemoteStore(state.store)
       ? `<div class="nw-warn" style="border-left-color:var(--red)">
@@ -349,7 +382,22 @@ export function renderNetWorth() {
       .join("")}
   </tbody></table></div>
   `
+  }
+  `
   }`;
+
+  view.querySelectorAll("[data-nwtab]").forEach(
+    (b) =>
+      (b.onclick = () => {
+        activeTab = b.dataset.nwtab;
+        renderNetWorth();
+      }),
+  );
+
+  if (activeTab === "fixeddeposits") {
+    wireFixedDepositsHandlers();
+    return;
+  }
 
   $("#nw-record").onclick = () => renderBalanceForm(latest);
   wireDebtHandlers();
