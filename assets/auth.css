@@ -10,6 +10,24 @@
   justify-content: center;
   padding: 20px;
   background: var(--paper);
+  overflow-y: auto;
+}
+/* The full landing page (nav, hero, feature sections, sign-in, footer) needs
+   normal top-to-bottom document flow instead of the compact gate's
+   single-card centering - see showGate() in auth.js for when each applies. */
+#gate.gate-landing {
+  display: block;
+  padding: 0;
+  scroll-behavior: smooth;
+}
+#gate.gate-landing .gate-card {
+  margin: 0 auto 64px;
+  scroll-margin-top: 24px;
+}
+@media (prefers-reduced-motion: reduce) {
+  #gate.gate-landing {
+    scroll-behavior: auto;
+  }
 }
 /* #gate{display:flex} is an ID selector; the browser's built-in [hidden]{display:none}
    is only an attribute selector, so on specificity alone #gate ALWAYS won regardless

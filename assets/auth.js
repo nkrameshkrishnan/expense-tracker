@@ -18,6 +18,7 @@ import {
 import { $, esc, state, notice, withBusy, refresh } from "./core.js";
 import { go, VIEWS } from "./router.js";
 import { renderDashboard } from "./pages/dashboard.js";
+import { renderLandingIntro, renderLandingFooter } from "./landing.js";
 
 /** Hex-encoded SHA-256 of a string - used only for the Google sign-in nonce
     below. Google's initialize() takes the HASHED nonce and embeds it in the
@@ -56,8 +57,17 @@ export function showGate(message) {
   if (bootOverlay) bootOverlay.hidden = true; // was z-index above the gate - would otherwise hide it entirely
   const gate = $("#gate");
   gate.hidden = false;
+  // The full marketing-style landing page only makes sense on a genuinely
+  // fresh sign-in (no message - see app.js). A mid-session re-auth (token
+  // expired, a failed boot) passes a message here instead, and jumping that
+  // interruption straight back into a scroll of hero copy and feature
+  // sections would be a jarring regression from whatever the person was
+  // doing - so that path keeps the old plain, compact card.
+  const showLanding = !message;
+  gate.classList.toggle("gate-landing", showLanding);
   gate.innerHTML = `
-    <div class="gate-card">
+    ${showLanding ? renderLandingIntro() : ""}
+    <div class="gate-card" id="signin">
       <div class="gate-mark">&#8214;</div>
       <h1 class="gate-title">Ledger</h1>
       <p class="gate-sub">${esc(message || "Sign in with the Google account linked to this tracker.")}</p>
@@ -66,7 +76,8 @@ export function showGate(message) {
         Signing in here does not grant access on its own.</p>
       <p class="gate-note"><a href="terms.html" target="_blank" rel="noopener">Terms &amp; Privacy</a>
         &mdash; what Google profile information this app collects and why.</p>
-    </div>`;
+    </div>
+    ${showLanding ? renderLandingFooter() : ""}`;
 
   const cid = getClientId();
   if (!cid) {
