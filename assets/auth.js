@@ -383,26 +383,39 @@ async function loadDisplayRateIfNeeded() {
     Supabase's user_settings for a remote store (see supabase-store.js),
     or straight from prefs.js's own localStorage cache otherwise, since
     local/memory storage has no account to key settings off of. Returns
-    whether this is a brand-new account (Supabase, no row yet) or browser
-    (local/memory, never finished the step before) that boot() should send
-    through renderOnboarding() before the real app appears. */
+    whether this is a brand-new account (Supabase, successfully queried,
+    genuinely no row yet) or browser (local/memory, never finished the step
+    before) that boot() should send through renderOnboarding() before the
+    real app appears.
+
+    A FAILED lookup (user_settings missing because the schema migration
+    hasn't been applied yet, a transient network error, an RLS
+    misconfiguration) is deliberately NOT treated as "brand new" - that was
+    the previous behaviour, and it meant a database problem forced the
+    onboarding wizard on every single load forever, with no way to actually
+    get into the app. A failure here falls back to defaults and lets boot()
+    continue normally instead, exactly like a returning user - Profile's
+    Preferences panel is the one place to set currency/theme either way, so
+    nothing is actually lost by skipping the wizard when the lookup itself
+    couldn't be trusted. */
 async function loadUserPrefsAndCheckOnboarding() {
   if (!isRemoteStore(state.store)) return !hasOnboarded();
   const email = getIdTokenEmail();
-  let settings = null;
+  if (!email) return false;
   try {
-    settings = email ? await state.store.getUserSettings(email) : null;
-  } catch {
-    // user_settings missing (schema not migrated yet) or a transient error -
-    // treat exactly like "no settings saved yet" rather than blocking boot;
-    // the same tolerant fallback profile.js's household-access panel uses
-    // for a schema piece that may not exist yet.
+    const settings = await state.store.getUserSettings(email);
+    if (!settings) return true; // query succeeded, genuinely no row yet
+    setHomeCurrency(settings.homeCurrency);
+    setTheme(settings.theme);
+    await loadDisplayRateIfNeeded();
+    return false;
+  } catch (e) {
+    notice(
+      `Couldn’t load your saved preferences (${e.message}) — using defaults for now. You can set them under Profile.`,
+      "bad",
+    );
+    return false;
   }
-  if (!settings) return true;
-  setHomeCurrency(settings.homeCurrency);
-  setTheme(settings.theme);
-  await loadDisplayRateIfNeeded();
-  return false;
 }
 
 /** The onboarding step's "Finish" callback - saves the chosen (currency,
