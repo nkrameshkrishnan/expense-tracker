@@ -242,16 +242,23 @@ async function loadAccessPanel(myEmail) {
             ]
               .filter(Boolean)
               .join(" ");
-            const canRemove = iAmPrimary && !r.is_primary;
-            const removeTitle = r.is_primary
-              ? "The primary household member can't be removed"
-              : !iAmPrimary
-                ? `Only ${esc(primaryEmail || "the primary member")} can remove household members`
-                : "";
+            // The primary's own row never gets a remove control at all - not
+            // even a disabled one - since no one, including the primary
+            // themselves, can ever click it successfully; a button that can
+            // never once be enabled isn't a locked affordance, it's just
+            // clutter. For a non-primary row, only a primary viewer sees the
+            // button; a non-primary viewer sees nothing per-row (the one
+            // note below the table already explains why, once, rather than
+            // repeating a disabled ✕ on every row).
+            const removeCell =
+              r.is_primary
+                ? ""
+                : iAmPrimary
+                  ? `<button class="rowbtn" data-remove-email="${esc(r.email)}">✕</button>`
+                  : "";
             return `<tr>
               <td>${esc(r.email)}${tags ? " " + tags : ""}</td>
-              <td class="n"><button class="rowbtn" data-remove-email="${esc(r.email)}"
-                ${canRemove ? "" : `disabled title="${removeTitle}"`}>✕</button></td>
+              <td class="n">${removeCell}</td>
             </tr>`;
           })
           .join("")}
@@ -267,7 +274,7 @@ async function loadAccessPanel(myEmail) {
       <p class="note" style="margin-top:10px">Anyone added here can sign in with that Google account and see
         every transaction, budget and balance in this household — there's no per-person restriction beyond that.</p>`;
 
-    panel.querySelectorAll("[data-remove-email]:not([disabled])").forEach(
+    panel.querySelectorAll("[data-remove-email]").forEach(
       (b) =>
         (b.onclick = async () => {
           const target = b.dataset.removeEmail;
