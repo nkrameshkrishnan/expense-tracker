@@ -40,7 +40,7 @@
   border-radius: var(--radius-md);
   border: var(--border-card);
   box-shadow: var(--shadow-card);
-  background: #fff;
+  background: var(--card-bg);
   padding: 36px 30px;
 }
 .gate-mark {
@@ -92,6 +92,95 @@
 }
 .signout-btn:hover {
   color: var(--paper);
+}
+
+/* ---------------------------------------------------------------- onboarding */
+/* The first-run "pick your currency, pick your appearance" step - see
+   assets/pages/onboarding.js. Renders into the same #gate element and
+   reuses .gate-card/.gate-mark/.gate-title above, just slightly wider to
+   fit the option list comfortably. */
+.ob-card {
+  max-width: 440px;
+}
+.ob-step-label {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin: 0 0 6px;
+}
+.ob-heading {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 10px;
+}
+.ob-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+}
+.ob-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--rule-2);
+  background: var(--card-bg);
+  color: var(--ink);
+  cursor: pointer;
+  font-family: var(--disp);
+  transition:
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
+}
+.ob-option:hover {
+  border-color: var(--ink-3);
+}
+/* A 1px solid ring via box-shadow (not a thicker border, which would shift
+   layout) - the same "border carries the signal" approach as elevation
+   elsewhere, just doubled up to read clearly as "selected" rather than
+   "hovered". */
+.ob-option.selected {
+  border-color: var(--amber);
+  box-shadow: 0 0 0 1px var(--amber);
+}
+.ob-option:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+.ob-option-symbol {
+  flex-shrink: 0;
+  width: 28px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+.ob-option-text {
+  font-size: 13px;
+  line-height: 1.4;
+}
+.ob-option-text b {
+  font-size: 13.5px;
+}
+.ob-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+.ob-actions .btn {
+  flex: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ob-option {
+    transition: none;
+  }
 }
 
 /* -------------------------------------------------------------- boot loading */

@@ -3,6 +3,12 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Sets data-theme before any stylesheet is even requested, so there is
+     no light-mode flash on a dark-preferring device. A plain classic script
+     (not type="module", not defer/async) so it runs synchronously right
+     here - see assets/theme-init.js for why this can't just be inline
+     (the CSP below has no 'unsafe-inline' in script-src). -->
+    <script src="./assets/theme-init.js"></script>
     <!-- Best-effort CSP: the real defense against injected data is esc() at every
      render site in app.js, but this narrows the blast radius if that's ever
      missed somewhere. style-src needs 'unsafe-inline' because templates set

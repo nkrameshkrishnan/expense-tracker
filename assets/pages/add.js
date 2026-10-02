@@ -1,5 +1,5 @@
 /* Add/Edit transaction page. */
-import { TYPES, MONTHS, currentYear, spendOf, CURRENCIES, toCad } from "../store.js";
+import { TYPES, MONTHS, currentYear, spendOf, CURRENCIES, toCad, getHomeCurrency } from "../store.js";
 import { money, monthOf } from "../xlsxio.js";
 import {
   listFor,
@@ -385,7 +385,7 @@ export function renderAdd() {
       preview.textContent = "";
       return;
     }
-    preview.textContent = `≈ ${money(toCad(amount, rate))} CAD`;
+    preview.textContent = `≈ ${money(toCad(amount, rate))} ${getHomeCurrency()}`;
   }
 
   function wireCurrency() {

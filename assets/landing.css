@@ -67,7 +67,7 @@
   box-shadow: var(--shadow-focus);
 }
 .l-btn-ghost {
-  background: #fff;
+  background: var(--card-bg);
   color: var(--ink);
 }
 .l-btn-ghost:hover {
@@ -210,7 +210,7 @@
 .l-mock {
   width: 100%;
   max-width: 340px;
-  background: #fff;
+  background: var(--card-bg);
   border: var(--border-card);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-card);
@@ -360,7 +360,7 @@
   gap: 12px;
 }
 .l-mock-bcard {
-  background: #fff;
+  background: var(--card-bg);
   border: var(--border-card);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-card);
@@ -464,7 +464,7 @@
   color: var(--paper);
 }
 .l-mock-data-btn.ghost {
-  background: #fff;
+  background: var(--card-bg);
   color: var(--ink);
   border: 1px solid var(--rule-2);
 }
@@ -490,7 +490,7 @@
   margin-top: 24px;
 }
 .l-value-card {
-  background: #fff;
+  background: var(--card-bg);
   border: var(--border-card);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-card);

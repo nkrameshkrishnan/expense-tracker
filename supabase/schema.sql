@@ -269,6 +269,34 @@ alter table exchange_rates enable row level security;
 create policy "household can read exchange rates" on exchange_rates
   for select using (is_allowed_household_member());
 
+-- ============================================================ user_settings
+-- One row per signed-in household member: their own display preferences
+-- (primary/home currency for on-screen totals - see assets/xlsxio.js's
+-- money() - and light/dark/system theme). Entirely separate from
+-- allowed_emails, which controls WHO can sign in at all - this only ever
+-- holds a person's own cosmetic preferences, so unlike every table above it
+-- needs no allow-list indirection: RLS keys directly off the signed-in
+-- JWT's own email, and a person can only ever read or write their own row,
+-- never anyone else's. The ABSENCE of a row for an email is the signal
+-- auth.js's boot() uses to show the first-time "choose your currency and
+-- appearance" step once, right after that email's very first sign-in.
+create table if not exists user_settings (
+  email text primary key,
+  home_currency text not null default 'CAD' check (home_currency in ('CAD', 'INR', 'AED')),
+  theme text not null default 'system' check (theme in ('system', 'light', 'dark')),
+  updated_at timestamptz not null default now()
+);
+
+alter table user_settings enable row level security;
+
+create policy "member can read own settings" on user_settings
+  for select using (email = lower(coalesce(auth.jwt() ->> 'email', '')));
+create policy "member can insert own settings" on user_settings
+  for insert with check (email = lower(coalesce(auth.jwt() ->> 'email', '')));
+create policy "member can update own settings" on user_settings
+  for update using (email = lower(coalesce(auth.jwt() ->> 'email', '')))
+  with check (email = lower(coalesce(auth.jwt() ->> 'email', '')));
+
 -- ============================================================ household access (Profile page)
 -- Lets a signed-in household member see and manage who else is on the
 -- allow-list, without ever granting direct SELECT/INSERT/DELETE on

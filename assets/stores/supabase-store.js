@@ -302,6 +302,38 @@ export class SupabaseStore {
     if (error) throw dbError(error);
   }
 
+  /** The signed-in person's own display preferences - see
+      supabase/schema.sql's user_settings table. Returns null when no row
+      exists yet, which is exactly the signal auth.js's boot() uses to show
+      the first-time currency/appearance step rather than defaulting
+      silently. RLS restricts this to the caller's OWN row (see schema.sql),
+      so `email` here is only ever the signed-in user's own address. */
+  async getUserSettings(email) {
+    const sb = await this._client();
+    const { data, error } = await sb
+      .from("user_settings")
+      .select("*")
+      .eq("email", email)
+      .maybeSingle();
+    if (error) throw dbError(error);
+    return data
+      ? { homeCurrency: data.home_currency, theme: data.theme }
+      : null;
+  }
+  async saveUserSettings(email, { homeCurrency, theme }) {
+    const sb = await this._client();
+    const { error } = await sb.from("user_settings").upsert(
+      {
+        email,
+        home_currency: homeCurrency,
+        theme,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "email" },
+    );
+    if (error) throw dbError(error);
+  }
+
   async getBudget(year) {
     const cached = await this._ensure();
     if (!year || year === cached.budgetYear) return cached.budget;

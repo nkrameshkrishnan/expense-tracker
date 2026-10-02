@@ -22,6 +22,7 @@ import {
   setNonce,
   getClientId,
   getIdTokenEmail,
+  getHomeCurrency,
 } from "./store.js";
 import { byPersonFilter } from "./xlsxio.js";
 import { go } from "./router.js";
@@ -168,6 +169,15 @@ export function notice(msg, kind = "", action = null) {
     }, 4000);
 }
 
+/** The "· CAD" (or "· INR"/"· AED") label beside the brand mark in the
+    header rail - kept in sync with the signed-in person's home-currency
+    preference (see prefs.js) rather than hardcoded, since that preference
+    can change any time from Profile without a reload. */
+export function updateBrandCurrency() {
+  const el = $("#app-header .brand-Currency");
+  if (el) el.textContent = ` · ${getHomeCurrency()}`;
+}
+
 export async function refresh() {
   state.rows = await state.store.list();
   state.budget = await state.store.getBudget(state.year);
@@ -179,6 +189,7 @@ export async function refresh() {
   $("#foot-count").textContent = `${state.rows.length} transactions stored`;
   renderPeopleSwitch();
   renderProfileMenu();
+  updateBrandCurrency();
 }
 
 // Bound once, not per-render below - unlike the button/menu content further

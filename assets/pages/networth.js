@@ -8,6 +8,7 @@ import {
   CURRENCIES,
   toCad,
   balanceCad,
+  getHomeCurrency,
 } from "../store.js";
 import { money, moneyIn } from "../xlsxio.js";
 import { loadCustom } from "../categories.js";
@@ -307,7 +308,7 @@ export function renderNetWorth() {
           v === null
             ? '<span class="muted">not recorded</span>'
             : foreign
-              ? `${moneyIn(row.balance, row.currency)}<br><span class="muted" style="font-size:10.5px">\u2248 ${money(v)} CAD</span>`
+              ? `${moneyIn(row.balance, row.currency)}<br><span class="muted" style="font-size:10.5px">\u2248 ${money(v)} ${getHomeCurrency()}</span>`
               : money(v)
         }</td>
         <td class="n num ${ch === null ? "muted" : ch < 0 ? "tx-over" : "tx-income"}">${

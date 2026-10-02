@@ -1,5 +1,5 @@
 /* Transactions list page - search/filter, inline edit, delete. */
-import { TYPES, MONTHS, UNASSIGNED, spendOf, amountCad } from "../store.js";
+import { TYPES, MONTHS, UNASSIGNED, spendOf, amountCad, getHomeCurrency } from "../store.js";
 import { money, moneyIn, monthOf } from "../xlsxio.js";
 import { listFor } from "../categories.js";
 import {
@@ -118,7 +118,7 @@ export function renderTransactions() {
       </div>
       <div class="tx-amount num ${typeClass(r.type)}">
         ${r.type === "Income" || r.type === "Refund" ? "+" : ""}${moneyIn(r.amount, r.currency)}
-        ${r.currency && r.currency !== "CAD" ? `<span class="tx-cad-equiv muted">≈ ${money(amountCad(r))} CAD</span>` : ""}
+        ${r.currency && r.currency !== "CAD" ? `<span class="tx-cad-equiv muted">≈ ${money(amountCad(r))} ${getHomeCurrency()}</span>` : ""}
       </div>
       <div class="tx-actions">
         <button class="txbtn edit" data-edit="${r.id}" title="Edit">✎</button>

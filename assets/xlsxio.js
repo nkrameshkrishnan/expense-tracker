@@ -12,6 +12,8 @@ import {
   spendOf,
   amountCad,
   inferTypeFromSignAndDescription,
+  getHomeCurrency,
+  getDisplayRate,
 } from "./store.js";
 import {
   looksLikeWealthsimpleCsv,
@@ -44,7 +46,9 @@ function loadXLSX() {
   return xlsxReady;
 }
 
-export const money = (n) =>
+const CURRENCY_LOCALE = { CAD: "en-CA", INR: "en-IN", AED: "en-AE" };
+
+const formatCad = (n) =>
   (n < 0 ? "-" : "") +
   "$" +
   Math.abs(n).toLocaleString("en-CA", {
@@ -52,12 +56,45 @@ export const money = (n) =>
     maximumFractionDigits: 2,
   });
 
-const CURRENCY_LOCALE = { CAD: "en-CA", INR: "en-IN", AED: "en-AE" };
+const formatInCurrency = (n, currency) => {
+  if (!currency || currency === "CAD") return formatCad(n);
+  try {
+    return new Intl.NumberFormat(CURRENCY_LOCALE[currency] || "en-US", {
+      style: "currency",
+      currency,
+    }).format(n);
+  } catch {
+    return formatCad(n);
+  }
+};
+
+/** Formats a CAD total - every call site here has always passed in a
+    number that's already in CAD (amountCad()/balanceCad()/spendOf() from
+    constants.js, or a raw total built from those) - in the signed-in
+    person's chosen home/display currency (see prefs.js and the Profile
+    page's Preferences panel). This is the ONE place that conversion for
+    on-screen display happens; the ledger itself, and every xlsx/json
+    export, stays in CAD exactly as it always has - only what's drawn on
+    screen changes. Falls back to plain CAD whenever the home currency IS
+    CAD (the default, and the only option when nothing has ever been
+    configured), or when a non-CAD home currency has no known exchange rate
+    yet (e.g. running on browser-only storage, which has no exchange_rates
+    table to look one up in) - converting by a guessed rate would be worse
+    than just showing CAD. */
+export const money = (n) => {
+  const code = getHomeCurrency();
+  if (!code || code === "CAD") return formatCad(n);
+  const rate = getDisplayRate(code);
+  if (!rate) return formatCad(n);
+  return formatInCurrency(n / rate, code);
+};
+
 /** Formats a NATIVE amount in its own currency - for showing a foreign-
     currency row as it actually reads on the statement (e.g. "₹4,200.00"),
-    never for a total, which is always CAD (use money() + amountCad()/
-    spendOf() for those - see constants.js). Falls back to money()'s plain
-    CAD formatting for CAD or an unrecognised code. */
+    never for a total, which goes through money() above instead. Falls back
+    to money()'s CAD/home-currency formatting for CAD or an unrecognised
+    code - this is about the row's OWN currency, not the home-currency
+    preference, so it is never itself converted by it. */
 export const moneyIn = (n, currency) => {
   if (!currency || currency === "CAD") return money(n);
   try {

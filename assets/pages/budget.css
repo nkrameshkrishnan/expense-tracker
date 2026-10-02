@@ -7,7 +7,7 @@
   border-radius: var(--radius-md);
   border: var(--border-card);
   box-shadow: var(--shadow-card);
-  background: #fff;
+  background: var(--card-bg);
   margin-bottom: 24px;
 }
 .b-sum-item {
@@ -61,7 +61,7 @@
 }
 
 .bcard {
-  background: #fff;
+  background: var(--card-bg);
   border-radius: var(--radius-md);
   border: var(--border-card);
   box-shadow: var(--shadow-card);
@@ -199,7 +199,7 @@
   padding: 6px 8px;
   border: 1px solid var(--rule-2);
   border-radius: var(--radius-xs);
-  background: #fff;
+  background: var(--card-bg);
   color: var(--ink);
   transition: border-color var(--motion-fast) var(--ease-out);
 }
@@ -234,7 +234,7 @@
   padding: 4px 5px;
   border: 1px solid var(--rule);
   border-radius: var(--radius-xs);
-  background: #fff;
+  background: var(--card-bg);
   color: var(--ink);
   width: 100%;
   transition: border-color var(--motion-fast) var(--ease-out);

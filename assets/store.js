@@ -15,6 +15,7 @@
 export * from "./constants.js";
 export * from "./auth-config.js";
 export * from "./store-helpers.js";
+export * from "./prefs.js";
 export { SupabaseStore } from "./stores/supabase-store.js";
 export { LocalStore } from "./stores/local-store.js";
 export { MemoryStore } from "./stores/memory-store.js";

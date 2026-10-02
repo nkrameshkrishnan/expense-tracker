@@ -7,7 +7,7 @@
   grid-template-columns: repeat(3, 1fr);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-card);
-  background: #fff;
+  background: var(--card-bg);
   margin-bottom: 16px;
 }
 .tx-sum-item {
@@ -82,7 +82,7 @@
   display: flex;
   align-items: center;
   border: 1px solid var(--rule-2);
-  background: #fff;
+  background: var(--card-bg);
 }
 .tx-search-icon {
   position: absolute;

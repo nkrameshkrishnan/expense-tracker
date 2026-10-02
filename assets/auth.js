@@ -14,10 +14,19 @@ import {
   getClientId,
   setIdToken,
   setNonce,
+  getIdTokenEmail,
+  getHomeCurrency,
+  setHomeCurrency,
+  getTheme,
+  setTheme,
+  setDisplayRate,
+  hasOnboarded,
+  markOnboarded,
 } from "./store.js";
-import { $, esc, state, notice, withBusy, refresh } from "./core.js";
+import { $, esc, state, notice, withBusy, refresh, updateBrandCurrency } from "./core.js";
 import { go, VIEWS } from "./router.js";
 import { renderDashboard } from "./pages/dashboard.js";
+import { renderOnboarding } from "./pages/onboarding.js";
 import {
   renderLandingIntro,
   renderLandingModal,
@@ -342,10 +351,89 @@ export const backendLabel = (s) =>
       ? "this session only (nothing will be saved after reload)"
       : "this browser only";
 
+/** Looks up a CAD-per-unit rate for the chosen home currency and caches it
+    in prefs.js (see setDisplayRate()) so xlsxio.js's money() can convert
+    every CAD total for display - a no-op for CAD itself, and a silent
+    no-op (money() just falls back to CAD) when the lookup fails or the
+    current store has no exchange_rates table (local/memory storage). */
+async function loadDisplayRateIfNeeded() {
+  const code = getHomeCurrency();
+  if (code === "CAD") return;
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const rate = await state.store.getExchangeRate?.(today, code);
+    if (rate?.rateToCad) setDisplayRate(code, rate.rateToCad);
+  } catch {
+    // Same graceful degradation as every other optional FX lookup in this
+    // app - a missing/unreachable rate just means money() keeps showing CAD.
+  }
+}
+
+/** Restores the signed-in person's saved currency/theme preferences - from
+    Supabase's user_settings for a remote store (see supabase-store.js),
+    or straight from prefs.js's own localStorage cache otherwise, since
+    local/memory storage has no account to key settings off of. Returns
+    whether this is a brand-new account (Supabase, no row yet) or browser
+    (local/memory, never finished the step before) that boot() should send
+    through renderOnboarding() before the real app appears. */
+async function loadUserPrefsAndCheckOnboarding() {
+  if (!isRemoteStore(state.store)) return !hasOnboarded();
+  const email = getIdTokenEmail();
+  let settings = null;
+  try {
+    settings = email ? await state.store.getUserSettings(email) : null;
+  } catch {
+    // user_settings missing (schema not migrated yet) or a transient error -
+    // treat exactly like "no settings saved yet" rather than blocking boot;
+    // the same tolerant fallback profile.js's household-access panel uses
+    // for a schema piece that may not exist yet.
+  }
+  if (!settings) return true;
+  setHomeCurrency(settings.homeCurrency);
+  setTheme(settings.theme);
+  await loadDisplayRateIfNeeded();
+  return false;
+}
+
+/** The onboarding step's "Finish" callback - saves the chosen (currency,
+    theme) pair the same way loadUserPrefsAndCheckOnboarding() reads it
+    (Supabase when remote, prefs.js's localStorage always), then continues
+    booting exactly where boot() would have gone for an already-onboarded
+    account. */
+async function finishOnboarding(homeCurrency, theme) {
+  setHomeCurrency(homeCurrency);
+  setTheme(theme);
+  markOnboarded();
+  await loadDisplayRateIfNeeded();
+  if (isRemoteStore(state.store)) {
+    const email = getIdTokenEmail();
+    try {
+      if (email)
+        await state.store.saveUserSettings(email, { homeCurrency, theme });
+    } catch (e) {
+      notice(
+        `Couldn’t save your preferences: ${e.message} — continuing anyway.`,
+        "bad",
+      );
+    }
+  }
+  await refresh(); // re-renders the header's currency label now that it's set
+  finishBoot();
+}
+
 export async function boot() {
   startBootMessages();
   state.store = await openStore(notice);
+  const needsOnboarding = await loadUserPrefsAndCheckOnboarding();
   await refresh();
+  if (needsOnboarding) {
+    renderOnboarding({ onFinish: finishOnboarding });
+    return;
+  }
+  finishBoot();
+}
+
+function finishBoot() {
   revealApp();
   // A configured Supabase project that still failed to connect (as opposed
   // to nothing being configured at all, which is a normal, expected state)

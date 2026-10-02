@@ -53,6 +53,59 @@
   --cat-color-9: #0e8275;
   --cat-color-10: #937005;
   --cat-color-11: #53800d;
+  /* The header rail is a permanent dark brand bar, not themed text-on-paper
+     content - it was already dark in light mode (background: var(--ink)
+     only happened to work because --ink was dark then). Giving it its own
+     fixed tokens, pinned to the light-mode ink/paper values and never
+     touched by the dark-mode block below, keeps it a dark bar in both
+     themes instead of flipping to a jarring white bar once --ink/--paper
+     swap for everything else. */
+  --rail-bg: #14151a;
+  --rail-fg: #f6f7f9;
+  /* Tells the browser which palette native chrome (date pickers, the
+     scrollbar track, form-control defaults) should draw in - without this,
+     those stay light-themed even after every custom token above goes dark. */
+  color-scheme: light;
+}
+
+/* Dark mode: prefs.js resolves the "system"/"light"/"dark" preference (see
+   assets/prefs.js and the Profile page's Appearance setting) to a concrete
+   value and sets this attribute on <html> - CSS never has to resolve
+   prefers-color-scheme itself, which is what lets a manual override always
+   win over the OS setting. Only the base ink/paper/rule/shadow tokens
+   change; category/account accent hues (--cat-color-*, --teal/--green/
+   --amber/--red/--blue/--purple) stay the same in both modes; they're
+   already mid-saturation colours that read fine on either background, and
+   keeping them fixed means a category's colour never shifts when someone
+   toggles the theme. --ink/--paper intentionally SWAP roles rather than
+   both just getting lighter/darker: `button.btn`'s solid style is
+   `background: var(--ink); color: var(--paper)`, so swapping them turns a
+   dark-on-light button into a light-on-dark one for free, without a
+   separate dark-mode button rule. */
+:root[data-theme="dark"] {
+  --ink: #eceef2;
+  --ink-2: #b7bac4;
+  --ink-3: #8c8f9b;
+  --paper: #15161b;
+  --paper-2: #1d1f26;
+  --rule: #2b2d36;
+  --rule-2: #393c47;
+  --card-bg: #1b1d24;
+  --border-card: 1px solid rgba(255, 255, 255, 0.09);
+  --shadow-card:
+    0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 20px -10px rgba(0, 0, 0, 0.5);
+  --shadow-card-hover:
+    0 2px 6px rgba(0, 0, 0, 0.35), 0 16px 32px -12px rgba(0, 0, 0, 0.6);
+  --shadow-focus: 0 0 0 3px rgba(178, 74, 51, 0.45);
+  color-scheme: dark;
+}
+/* button.btn/.l-btn's hover darkens toward literal black in light mode,
+   which is correct there (button is already near-black) but would vanish
+   a light-mode-inverted dark-mode button into the page background - see
+   the comment above. Lightens toward the (now light) --ink instead. */
+:root[data-theme="dark"] button.btn:hover,
+:root[data-theme="dark"] .l-btn:hover {
+  background: var(--ink-2);
 }
 * {
   box-sizing: border-box;
@@ -84,8 +137,8 @@ th.n {
 
 /* ---------- header rail ---------- */
 .rail {
-  background: var(--ink);
-  color: var(--paper);
+  background: var(--rail-bg);
+  color: var(--rail-fg);
   position: sticky;
   top: 0;
   z-index: 40;
@@ -141,10 +194,10 @@ th.n {
   text-transform: uppercase;
 }
 .tabs button:hover {
-  color: var(--paper);
+  color: var(--rail-fg);
 }
 .tabs button.on {
-  color: var(--paper);
+  color: var(--rail-fg);
   border-bottom-color: var(--amber);
 }
 .profile-wrap {
@@ -155,8 +208,8 @@ th.n {
   height: 28px;
   border-radius: 50%;
   border: 1px solid #3a3d47;
-  background: var(--paper-2);
-  color: var(--ink);
+  background: var(--rail-fg);
+  color: var(--rail-bg);
   font-family: var(--disp);
   font-size: 12px;
   font-weight: 700;
@@ -238,7 +291,7 @@ button.btn {
   font-family: var(--disp);
   font-size: 13px;
   color: var(--ink);
-  background: #fff;
+  background: var(--card-bg);
   border: 1px solid var(--rule-2);
   border-radius: var(--radius-xs);
   padding: 7px 9px;
@@ -280,14 +333,14 @@ button.btn:focus-visible {
   box-shadow: var(--shadow-focus);
 }
 button.btn.ghost {
-  background: #fff;
+  background: var(--card-bg);
   color: var(--ink);
 }
 button.btn.ghost:hover {
   background: var(--paper-2);
 }
 button.btn.danger {
-  background: #fff;
+  background: var(--card-bg);
   color: var(--red);
   border-color: var(--red);
 }
@@ -467,7 +520,7 @@ label.f > textarea {
 table {
   border-collapse: collapse;
   width: 100%;
-  background: #fff;
+  background: var(--card-bg);
 }
 th,
 td {
@@ -600,7 +653,7 @@ tbody tr:hover {
   text-align: center;
   color: var(--ink-3);
   border: 1px dashed var(--rule-2);
-  background: #fff;
+  background: var(--card-bg);
 }
 .rowbtn {
   background: none;
@@ -624,7 +677,7 @@ tbody tr:hover {
   grid-template-columns: repeat(4, 1fr);
   gap: 14px;
   border: 1px solid var(--rule-2);
-  background: #fff;
+  background: var(--card-bg);
   padding: 18px;
 }
 .formgrid .wide {
@@ -929,7 +982,7 @@ code {
   display: flex;
   align-items: center;
   gap: 6px;
-  background: #fff;
+  background: var(--card-bg);
   border: 1px solid var(--rule-2);
   padding: 6px 14px;
   font-family: var(--disp);
@@ -964,7 +1017,7 @@ code {
   padding: 7px 9px;
   font-family: var(--disp);
   font-size: 13px;
-  background: #fff;
+  background: var(--card-bg);
   color: var(--ink);
 }
 .newopt-input:focus {
@@ -974,7 +1027,7 @@ code {
 .newopt-ok,
 .newopt-cancel {
   border: 1px solid var(--rule-2);
-  background: #fff;
+  background: var(--card-bg);
   cursor: pointer;
   font-family: var(--disp);
   font-size: 12px;

@@ -9,7 +9,7 @@
   border: 1px solid var(--rule-2);
   border-left: 3px solid var(--amber);
   border-radius: var(--radius-xs);
-  background: #fff;
+  background: var(--card-bg);
   padding: 11px 15px;
   margin-bottom: 16px;
 }
@@ -64,7 +64,7 @@
   border-radius: var(--radius-md);
   border: var(--border-card);
   box-shadow: var(--shadow-card);
-  background: #fff;
+  background: var(--card-bg);
   padding: 14px 16px;
   margin-bottom: 6px;
 }
@@ -95,7 +95,7 @@
   align-items: center;
   border: 1px solid var(--rule-2);
   border-radius: var(--radius-xs);
-  background: #fff;
+  background: var(--card-bg);
   width: 210px;
   margin-left: auto;
   transition: border-color var(--motion-fast) var(--ease-out), box-shadow var(--motion-fast) var(--ease-out);
@@ -124,7 +124,7 @@
   padding: 4px 6px;
   font-family: var(--mono);
   font-size: 12px;
-  background: #fff;
+  background: var(--card-bg);
   color: var(--ink);
 }
 .nw-input-wrap:focus-within {
@@ -224,7 +224,7 @@ tr:hover .nw-del-acct {
   border-radius: var(--radius-md);
   border: var(--border-card);
   box-shadow: var(--shadow-card);
-  background: #fff;
+  background: var(--card-bg);
   margin-bottom: 14px;
 }
 .debt-summary > div {
@@ -257,7 +257,7 @@ tr:hover .nw-del-acct {
   border-radius: var(--radius-md);
   border: var(--border-card);
   box-shadow: var(--shadow-card);
-  background: #fff;
+  background: var(--card-bg);
   padding: 14px 16px;
   transition:
     box-shadow var(--motion-fast) var(--ease-out),

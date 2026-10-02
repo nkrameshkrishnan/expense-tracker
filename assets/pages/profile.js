@@ -2,9 +2,99 @@
    household access. Reached via the profile popover's "View profile" item
    in core.js's renderProfileMenu(), not a .tabs nav button - so it has no
    data-tab entry and go("profile") never highlights anything in the nav. */
-import { getIdTokenEmail, getIdTokenClaims } from "../store.js";
-import { $, view, esc, state, notice, withBusy } from "../core.js";
+import {
+  getIdTokenEmail,
+  getIdTokenClaims,
+  CURRENCIES,
+  getHomeCurrency,
+  setHomeCurrency,
+  getTheme,
+  setTheme,
+  setDisplayRate,
+} from "../store.js";
+import { CURRENCY_LABEL, CURRENCY_SYMBOL } from "../prefs.js";
+import { $, view, esc, state, notice, withBusy, updateBrandCurrency } from "../core.js";
 import { isRemoteStore, signOut } from "../auth.js";
+
+const THEME_OPTIONS = [
+  ["system", "System", "Match this device's setting"],
+  ["light", "Light", ""],
+  ["dark", "Dark", ""],
+];
+
+function optionsHtml(items, selected, dataAttr) {
+  return `<div class="ob-options" role="radiogroup">
+    ${items
+      .map(
+        ([value, label, hint, symbol]) => `
+      <button type="button" class="ob-option${value === selected ? " selected" : ""}"
+        role="radio" aria-checked="${value === selected}" data-${dataAttr}="${value}">
+        ${symbol !== undefined ? `<span class="ob-option-symbol">${symbol}</span>` : ""}
+        <span class="ob-option-text"><b>${label}</b>${hint ? `<br><span class="muted">${hint}</span>` : ""}</span>
+      </button>`,
+      )
+      .join("")}
+  </div>`;
+}
+
+function renderPreferencesPanel() {
+  const currencyItems = CURRENCIES.map((c) => [
+    c,
+    c,
+    CURRENCY_LABEL[c] || "",
+    CURRENCY_SYMBOL[c] || "",
+  ]);
+  return `
+  <div class="eyebrow">Preferences</div>
+  <div class="panel">
+    <p class="note" style="margin:0 0 10px">Primary currency — dashboard, budget and net worth totals are shown in this currency.</p>
+    ${optionsHtml(currencyItems, getHomeCurrency(), "currency")}
+    <p class="note" style="margin:16px 0 10px">Appearance</p>
+    ${optionsHtml(THEME_OPTIONS, getTheme(), "theme-choice")}
+  </div>`;
+}
+
+async function loadDisplayRateIfNeeded(code) {
+  if (code === "CAD") return;
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const rate = await state.store.getExchangeRate?.(today, code);
+    if (rate?.rateToCad) setDisplayRate(code, rate.rateToCad);
+  } catch {
+    // Same graceful fallback as auth.js's own lookup - money() just keeps
+    // showing CAD when no rate is available.
+  }
+}
+
+async function savePreferences(homeCurrency, theme) {
+  const email = getIdTokenEmail();
+  setHomeCurrency(homeCurrency);
+  setTheme(theme);
+  await loadDisplayRateIfNeeded(homeCurrency);
+  updateBrandCurrency();
+  if (isRemoteStore(state.store) && email) {
+    const done = await withBusy("Saving preferences", async () => {
+      await state.store.saveUserSettings(email, { homeCurrency, theme });
+    });
+    if (!done) return;
+  }
+  notice("Preferences saved.", "ok");
+  renderProfile(); // re-render so the selected option/theme reflect immediately
+}
+
+function wirePreferences() {
+  $("#view")
+    .querySelectorAll("[data-currency]")
+    .forEach((btn) => {
+      btn.onclick = () => savePreferences(btn.dataset.currency, getTheme());
+    });
+  $("#view")
+    .querySelectorAll("[data-theme-choice]")
+    .forEach((btn) => {
+      btn.onclick = () =>
+        savePreferences(getHomeCurrency(), btn.dataset.themeChoice);
+    });
+}
 
 // Best-effort only: Google's locale claim is a language/region preference
 // the account has set, not a verified country - shown as a courtesy, not a
@@ -62,6 +152,8 @@ export function renderProfile() {
   <p class="note">See <a href="terms.html" target="_blank" rel="noopener">Terms &amp; Privacy</a>
     for what Google profile information this app collects and why.</p>
 
+  ${renderPreferencesPanel()}
+
   <div class="eyebrow">Household access</div>
   ${
     remote
@@ -72,6 +164,7 @@ export function renderProfile() {
   }`;
 
   $("#profile-page-signout").onclick = signOut;
+  wirePreferences();
   if (remote) loadAccessPanel(email);
 }
 
