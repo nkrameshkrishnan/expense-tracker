@@ -427,6 +427,15 @@ export async function boot() {
   const needsOnboarding = await loadUserPrefsAndCheckOnboarding();
   await refresh();
   if (needsOnboarding) {
+    // The boot-loading overlay sits ABOVE #gate (z-index 600 vs 500) - left
+    // alone here, it permanently hides the onboarding wizard behind the
+    // "still working" spinner, since nothing else in this branch ever calls
+    // revealApp()/finishBoot() to dismiss it. Hide it the same way showGate()
+    // does for the sign-in card, but without touching the header (that still
+    // waits for finishBoot() once onboarding actually finishes).
+    stopBootMessages();
+    const bootOverlay = $("#boot-loading");
+    if (bootOverlay) bootOverlay.hidden = true;
     renderOnboarding({ onFinish: finishOnboarding });
     return;
   }
