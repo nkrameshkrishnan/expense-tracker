@@ -37,6 +37,12 @@ function optionsHtml(items, selected, dataAttr) {
   </div>`;
 }
 
+// Two side-by-side panels (the same .grid2/.panel/.stack primitives every
+// other settings-style panel on the site already uses - see dashboard.js's
+// chart panels) rather than one tall merged box: each preference gets its
+// own framed card with a real heading, so "pick a currency" and "pick a
+// theme" read as two distinct choices instead of one long scrolling list
+// with plain-text sub-labels standing in for headings.
 function renderPreferencesPanel() {
   const currencyItems = CURRENCIES.map((c) => [
     c,
@@ -46,11 +52,25 @@ function renderPreferencesPanel() {
   ]);
   return `
   <div class="eyebrow">Preferences</div>
-  <div class="panel">
-    <p class="note" style="margin:0 0 10px">Primary currency — dashboard, budget and net worth totals are shown in this currency.</p>
-    ${optionsHtml(currencyItems, getHomeCurrency(), "currency")}
-    <p class="note" style="margin:16px 0 10px">Appearance</p>
-    ${optionsHtml(THEME_OPTIONS, getTheme(), "theme-choice")}
+  <div class="grid2">
+    <div class="panel">
+      <div class="stack">
+        <div>
+          <h3>Primary currency</h3>
+          <p class="note">Dashboard, budget and net worth totals are shown in this currency.</p>
+        </div>
+        ${optionsHtml(currencyItems, getHomeCurrency(), "currency")}
+      </div>
+    </div>
+    <div class="panel">
+      <div class="stack">
+        <div>
+          <h3>Appearance</h3>
+          <p class="note">Pick a theme, or follow this device's setting.</p>
+        </div>
+        ${optionsHtml(THEME_OPTIONS, getTheme(), "theme-choice")}
+      </div>
+    </div>
   </div>`;
 }
 

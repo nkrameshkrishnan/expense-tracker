@@ -127,7 +127,7 @@
   align-items: center;
   gap: 12px;
   width: 100%;
-  padding: 12px 14px;
+  padding: 12px 16px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--rule-2);
   background: var(--card-bg);
