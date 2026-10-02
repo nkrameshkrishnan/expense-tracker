@@ -81,7 +81,12 @@
     transform: none;
   }
 }
-.l-nav-signin {
+.l-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.l-nav-btn {
   padding: 7px 16px;
   font-size: 12.5px;
 }
@@ -118,10 +123,48 @@
   max-width: 540px;
   margin: 0 auto 28px;
 }
+.l-hero-ctas {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
 .l-hero-cta {
   display: inline-block;
   padding: 12px 28px;
   font-size: 14px;
+}
+/* A plain text trigger, not a second button - "Already have access? Sign
+   in" reads as a quieter alternative to the solid "Get started" CTA above
+   it, matching how Monarch/Linear/Notion pair a primary sign-up action with
+   a secondary sign-in link rather than two equally-weighted buttons. */
+.l-link {
+  display: inline-block;
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font-family: var(--disp);
+  font-size: 13px;
+  color: var(--ink-2);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color var(--motion-fast) var(--ease-out);
+}
+.l-link:hover {
+  color: var(--ink);
+}
+.l-link:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+  border-radius: var(--radius-xs);
+}
+@media (prefers-reduced-motion: reduce) {
+  .l-link {
+    transition: none;
+  }
 }
 .l-trust {
   margin: 18px 0 0;
@@ -134,6 +177,12 @@
   }
   .l-hero {
     padding: 48px 20px 40px;
+  }
+  .l-nav-actions {
+    gap: 6px;
+  }
+  .l-nav-btn {
+    padding: 7px 12px;
   }
 }
 

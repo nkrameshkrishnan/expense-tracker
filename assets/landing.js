@@ -21,14 +21,19 @@ const esc = (s) =>
       ],
   );
 
-/** Sticky top nav + hero. Neither "Sign in" button renders Google's button
+/** Sticky top nav + hero. None of the buttons below render Google's button
     by default - that would mean every visitor's browser starts talking to
-    Google before they've expressed any intent to sign in, which is not how
+    Google before they've expressed any intent to continue, which is not how
     a modern marketing page behaves (Monarch, Linear, Notion all keep auth
-    behind a click). Both buttons are plain, JS-driven triggers
-    (data-action="open-signin") that open the sign-in modal - see
-    renderSigninModal() below and wireLanding() in auth.js for the open/close
-    wiring and the lazy, first-click-only mount of the real Google button. */
+    behind a click). All of them are plain, JS-driven triggers
+    (data-action="open-signin", data-mode="signin"|"signup") that open the
+    SAME sign-in modal - see renderSigninModal() below and
+    wireLandingSignin() in auth.js, which relabels the modal and the real
+    Google button per mode on open. There is no separate account-creation
+    form: Google sign-in is the
+    identical mechanism either way (and access is still gated by the
+    Supabase allow-list afterward), so "Sign up" only changes the wording of
+    the invitation, never what actually happens when it's clicked. */
 function renderHero() {
   return `
     <nav class="l-nav">
@@ -38,7 +43,10 @@ function renderHero() {
           <span class="brand-name">LEDGER</span>
           <span class="brand-Currency"> &middot; CAD</span>
         </div>
-        <button type="button" class="l-btn l-btn-ghost l-nav-signin" data-action="open-signin">Sign in</button>
+        <div class="l-nav-actions">
+          <button type="button" class="l-btn l-btn-ghost l-nav-btn" data-action="open-signin" data-mode="signin">Sign in</button>
+          <button type="button" class="l-btn l-nav-btn" data-action="open-signin" data-mode="signup">Sign up</button>
+        </div>
       </div>
     </nav>
     <header class="l-hero">
@@ -47,16 +55,24 @@ function renderHero() {
       <p class="l-sub">Track spending, keep a household budget, and watch your
         net worth grow &mdash; built for the two of you, not a company
         trying to sell you a subscription.</p>
-      <button type="button" class="l-btn l-hero-cta" data-action="open-signin">Sign in to continue</button>
+      <div class="l-hero-ctas">
+        <button type="button" class="l-btn l-hero-cta" data-action="open-signin" data-mode="signup">Get started</button>
+        <button type="button" class="l-link" data-action="open-signin" data-mode="signin">Already have access? Sign in</button>
+      </div>
       <p class="l-trust">Google sign-in &middot; access checked against an
         allow-list &middot; your data lives in your own Supabase project</p>
     </header>`;
 }
 
 /** Hidden by default (see .l-modal[hidden] in landing.css) - opened only
-    when a "Sign in" button is clicked. Holds the same card content the old
-    always-visible gate-card had; the real Google button mounts into
-    #gsi-button inside it on first open, not before. */
+    when a "Sign in" or "Sign up" button is clicked. Holds the same card
+    content the old always-visible gate-card had; the real Google button is
+    re-rendered into #gsi-button on every open (not just the first) because
+    wireLandingSignin() in auth.js needs to swap its label ("Sign up with
+    Google" vs "Sign in with Google") to match whichever button opened the
+    modal. The title/subtitle text below are placeholders - the same code
+    rewrites them the instant the modal opens; see the COPY table in
+    wireLandingSignin(). */
 function renderSigninModal() {
   return `
     <div class="l-modal" id="signin-modal" hidden>
@@ -65,7 +81,7 @@ function renderSigninModal() {
         <button type="button" class="l-modal-close" data-action="close-signin" aria-label="Close">&times;</button>
         <div class="gate-mark">&#8214;</div>
         <h1 class="gate-title" id="signin-modal-title">Ledger</h1>
-        <p class="gate-sub">Sign in with the Google account linked to this tracker.</p>
+        <p class="gate-sub" id="signin-modal-sub">Sign in or sign up with the Google account linked to this tracker.</p>
         <div id="gsi-button"></div>
         <p class="gate-note">Access is verified by Supabase Row Level Security against an allow-list.
           Signing in here does not grant access on its own.</p>

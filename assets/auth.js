@@ -55,10 +55,19 @@ let gsiPrompted = false;
     real sign-in button into `container`. Pulled out of showGate() so it can
     be called two different ways: immediately, for the compact mid-session
     re-auth card (unchanged from before), or lazily - only once the person
-    actually clicks a "Sign in" button on the landing page - see
+    actually clicks a "Sign in" or "Sign up" button on the landing page - see
     wireLandingSignin() below. Google is never contacted just because the
-    landing page loaded; only once there's real intent to sign in. */
-function mountGoogleSignIn(container) {
+    landing page loaded; only once there's real intent to continue.
+
+    `buttonText` is one of Google's own rendered-button labels
+    ("signin_with" / "signup_with") - the ONLY thing that differs between a
+    "Sign in" and a "Sign up" click here, since both run the identical OAuth
+    flow and the same Supabase allow-list check decides access either way.
+    Unlike the one-time google.accounts.id.initialize() call below,
+    renderButton() is cheap and safe to call again, so wireLandingSignin()
+    calls this on every modal open (not just the first) to keep the label in
+    sync with whichever button was clicked. */
+function mountGoogleSignIn(container, { buttonText = "signin_with" } = {}) {
   const cid = getClientId();
   if (!cid) {
     container.innerHTML =
@@ -135,7 +144,7 @@ function mountGoogleSignIn(container) {
     google.accounts.id.renderButton(container, {
       theme: "filled_black",
       size: "large",
-      text: "signin_with",
+      text: buttonText,
       shape: "rectangular",
     });
 
@@ -169,29 +178,51 @@ function mountGoogleSignIn(container) {
     );
 }
 
-/** Wires up the landing page's "Sign in" buttons (nav + hero) to open the
-    sign-in modal, and the modal's own close affordances (the &times;
-    button, the scrim, Escape) to dismiss it. The real Google button is
-    mounted into the modal on the FIRST open only - reopening it later just
-    toggles visibility, it doesn't re-mount or re-prompt. */
+/** Copy swapped into the sign-in modal depending on which button opened it.
+    This is the ONLY difference between "Sign in" and "Sign up" anywhere in
+    the app - there is no separate registration form or extra data collected,
+    because Google sign-in is the same action either way and the Supabase
+    allow-list (not this modal) is what actually decides who gets access. */
+const SIGNIN_MODAL_COPY = {
+  signin: {
+    title: "Ledger",
+    sub: "Sign in with the Google account linked to this tracker.",
+    buttonText: "signin_with",
+  },
+  signup: {
+    title: "Get started",
+    sub: "Continue with the Google account you want linked to this tracker. Access still needs to be allow-listed before any data loads.",
+    buttonText: "signup_with",
+  },
+};
+
+/** Wires up the landing page's "Sign in" and "Sign up" buttons (nav + hero)
+    to open the shared sign-in modal with mode-appropriate copy, and the
+    modal's own close affordances (the &times; button, the scrim, Escape) to
+    dismiss it. Unlike the single-mode version of this function, the real
+    Google button is re-rendered on EVERY open rather than just the first,
+    since a later click on the other button needs its label updated too;
+    mountGoogleSignIn()'s own gsiInitialized/gsiPrompted guards still keep
+    the one-time Google setup and the one-time auto-prompt from repeating. */
 function wireLandingSignin(gate) {
   const modal = $("#signin-modal");
   if (!modal) return;
-  let mounted = false;
-  const open = () => {
+  const title = modal.querySelector("#signin-modal-title");
+  const sub = modal.querySelector("#signin-modal-sub");
+  const open = (mode) => {
+    const copy = SIGNIN_MODAL_COPY[mode] || SIGNIN_MODAL_COPY.signin;
+    if (title) title.textContent = copy.title;
+    if (sub) sub.textContent = copy.sub;
     modal.hidden = false;
-    if (!mounted) {
-      mounted = true;
-      mountGoogleSignIn($("#gsi-button"));
-    }
+    mountGoogleSignIn($("#gsi-button"), { buttonText: copy.buttonText });
     modal.querySelector(".l-modal-close")?.focus();
   };
   const close = () => {
     modal.hidden = true;
   };
-  gate
-    .querySelectorAll('[data-action="open-signin"]')
-    .forEach((btn) => (btn.onclick = open));
+  gate.querySelectorAll('[data-action="open-signin"]').forEach((btn) => {
+    btn.onclick = () => open(btn.dataset.mode);
+  });
   gate
     .querySelectorAll('[data-action="close-signin"]')
     .forEach((el) => (el.onclick = close));
