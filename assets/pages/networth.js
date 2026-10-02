@@ -26,12 +26,7 @@ import {
 import { go } from "../router.js";
 import { backendLabel, isRemoteStore } from "../auth.js";
 import { emptyIcon } from "../icons.js";
-import {
-  debtNetWorth,
-  debtSummary,
-  renderDebtSection,
-  wireDebtHandlers,
-} from "./debts.js";
+import { debtNetWorth, renderDebtSection, wireDebtHandlers } from "./debts.js";
 import {
   metalsSummary,
   renderMetalsSection,
@@ -176,14 +171,6 @@ export function renderNetWorth() {
   );
   const today = new Date().toISOString().slice(0, 10);
   const fdValueCad = fixedDepositsSummary(fixedDeposits, today).totalValueCad;
-  const debtRows = debtSummary(state.debts || []).filter(
-    (d) => !scopeOwner || d.owner === scopeOwner,
-  );
-  const tabCounts = {
-    debts: debtRows.length,
-    metals: metalHoldings.length,
-    fixeddeposits: fixedDeposits.length,
-  };
   const assets =
     (latest ? sumOf(latest, "Asset") : 0) +
     dnw.receivable +
@@ -262,10 +249,10 @@ export function renderNetWorth() {
   </div>
 
   <div class="nw-tabs" role="tablist">
-    ${NW_TABS.map((t) => {
-      const count = tabCounts[t.id];
-      return `<button class="nw-tab-btn${activeTab === t.id ? " on" : ""}" data-nwtab="${t.id}" type="button" role="tab" aria-selected="${activeTab === t.id}">${t.label}${count ? ` <span class="nw-tab-count">${count}</span>` : ""}</button>`;
-    }).join("")}
+    ${NW_TABS.map(
+      (t) =>
+        `<button class="nw-tab-btn${activeTab === t.id ? " on" : ""}" data-nwtab="${t.id}" type="button" role="tab" aria-selected="${activeTab === t.id}">${t.label}</button>`,
+    ).join("")}
   </div>
 
   ${

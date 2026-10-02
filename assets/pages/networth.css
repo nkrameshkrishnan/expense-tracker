@@ -43,28 +43,6 @@
   background: var(--ink);
   color: var(--paper);
 }
-/* The per-tab row count - a small distinct pill (not plain trailing text,
-   which read as if it had run into the label, e.g. "LOANS1") carrying its
-   own background so it reads as a count, not a typo. */
-.nw-tab-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 5px;
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: normal;
-  text-transform: none;
-  background: color-mix(in srgb, var(--ink-3) 18%, transparent);
-  color: var(--ink-2);
-}
-.nw-tab-btn.on .nw-tab-count {
-  background: rgba(255, 255, 255, 0.22);
-  color: var(--paper);
-}
 
 /* --------------------------------------------------------------- net worth */
 .nw-asat {
