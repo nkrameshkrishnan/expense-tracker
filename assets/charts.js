@@ -14,6 +14,24 @@ const registry = new Map();
 const money0 = (v) =>
   "$" + Number(v).toLocaleString("en-CA", { maximumFractionDigits: 0 });
 
+/** Mixes a hex colour toward white by `amt` (0-1) - the bar/line equivalent
+    of the doughnut's hoverOffset "pop": since a bar can't push outward the
+    way an arc slice can, hovering it instead brightens its fill toward a
+    lighter tint of the same hue, which reads as the same "this one's lifted
+    toward you" cue. backgroundColor is one of Chart.js's default animated
+    colour properties, so this transitions over the same 200ms as everything
+    else rather than snapping instantly. */
+function lighten(hex, amt) {
+  const h = hex.replace("#", "");
+  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  const num = parseInt(full, 16);
+  const mix = (channel) => Math.round(channel + (255 - channel) * amt);
+  const r = mix((num >> 16) & 255);
+  const g = mix((num >> 8) & 255);
+  const b = mix(num & 255);
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
 function mount(id, config) {
   const el = document.getElementById(id);
   if (!el) return;
@@ -78,6 +96,7 @@ export function incomeVsExpense(series) {
           label: "Income",
           data: series.map((s) => s.income),
           backgroundColor: TEAL,
+          hoverBackgroundColor: lighten(TEAL, 0.3),
           hoverBorderColor: "#fff",
           hoverBorderWidth: 2,
         },
@@ -85,6 +104,7 @@ export function incomeVsExpense(series) {
           label: "Expense",
           data: series.map((s) => s.expense),
           backgroundColor: AMBER,
+          hoverBackgroundColor: lighten(AMBER, 0.3),
           hoverBorderColor: "#fff",
           hoverBorderWidth: 2,
         },
@@ -109,6 +129,9 @@ export function netByMonth(series) {
           label: "Net savings",
           data: series.map((s) => s.net),
           backgroundColor: series.map((s) => (s.net < 0 ? RED : TEAL)),
+          hoverBackgroundColor: series.map((s) =>
+            lighten(s.net < 0 ? RED : TEAL, 0.3),
+          ),
           hoverBorderColor: "#fff",
           hoverBorderWidth: 2,
         },
@@ -181,6 +204,9 @@ export function actualVsBudget(catRows) {
           backgroundColor: rows.map((r) =>
             r.budget > 0 && r.actual > r.budget ? RED : INK,
           ),
+          hoverBackgroundColor: rows.map((r) =>
+            lighten(r.budget > 0 && r.actual > r.budget ? RED : INK, 0.3),
+          ),
           hoverBorderColor: "#fff",
           hoverBorderWidth: 2,
         },
@@ -188,6 +214,7 @@ export function actualVsBudget(catRows) {
           label: "Budget",
           data: rows.map((r) => r.budget),
           backgroundColor: SAND,
+          hoverBackgroundColor: lighten(SAND, 0.3),
           hoverBorderColor: "#fff",
           hoverBorderWidth: 2,
         },
@@ -219,6 +246,7 @@ export function topFive(top5) {
         {
           data: top5.map((t) => t.actual),
           backgroundColor: INK,
+          hoverBackgroundColor: lighten(INK, 0.3),
           hoverBorderColor: "#fff",
           hoverBorderWidth: 2,
         },
@@ -313,6 +341,7 @@ export function personByMonth(series, months) {
         label: s.person,
         data: s.data,
         backgroundColor: colorFor(s.person),
+        hoverBackgroundColor: lighten(colorFor(s.person), 0.3),
         hoverBorderColor: "#fff",
         hoverBorderWidth: 2,
       })),
@@ -454,6 +483,7 @@ export function personVsBudget(rows) {
             label: p,
             data: rows.map((r) => r.byPerson[p] || 0),
             backgroundColor: colorFor(p),
+            hoverBackgroundColor: lighten(colorFor(p), 0.3),
             hoverBorderColor: "#fff",
             hoverBorderWidth: 2,
           }))
@@ -570,6 +600,7 @@ export function dividendsTrend(series) {
           label: "Dividends",
           data: series.map((s) => s.dividends || 0),
           backgroundColor: AMBER,
+          hoverBackgroundColor: lighten(AMBER, 0.3),
           hoverBorderColor: "#fff",
           hoverBorderWidth: 2,
         },
