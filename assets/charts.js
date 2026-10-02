@@ -38,6 +38,15 @@ function mount(id, config) {
   Chart.defaults.font.family = "'JetBrains Mono', ui-monospace, monospace";
   Chart.defaults.font.size = 11;
   Chart.defaults.color = INK3;
+  // Chart.js re-animates an element whenever it becomes "active" (hovered),
+  // separately from its initial-render animation - this is that transition's
+  // duration/easing, set once here rather than per-chart so every chart
+  // feels the same when you hover it. Kept short and ease-out, in the same
+  // restrained spirit as this app's own --motion-fast/--ease-out CSS tokens,
+  // even though Chart.js's animation system is a separate (canvas-based)
+  // mechanism from the CSS transitions those tokens drive.
+  Chart.defaults.transitions.active.animation.duration = 200;
+  Chart.defaults.transitions.active.animation.easing = "easeOutQuad";
   registry.set(id, new Chart(el, config));
 }
 export function destroyAll() {
@@ -69,11 +78,15 @@ export function incomeVsExpense(series) {
           label: "Income",
           data: series.map((s) => s.income),
           backgroundColor: TEAL,
+          hoverBorderColor: "#fff",
+          hoverBorderWidth: 2,
         },
         {
           label: "Expense",
           data: series.map((s) => s.expense),
           backgroundColor: AMBER,
+          hoverBorderColor: "#fff",
+          hoverBorderWidth: 2,
         },
       ],
     },
@@ -96,6 +109,8 @@ export function netByMonth(series) {
           label: "Net savings",
           data: series.map((s) => s.net),
           backgroundColor: series.map((s) => (s.net < 0 ? RED : TEAL)),
+          hoverBorderColor: "#fff",
+          hoverBorderWidth: 2,
         },
       ],
     },
@@ -122,6 +137,14 @@ export function trend(series) {
           tension: 0.25,
           spanGaps: true,
           pointRadius: 3,
+          // Hovered point grows into a filled ring rather than just a bigger
+          // dot - same "white border on the accent colour" language as the
+          // doughnut/bar hover states above, so every chart in the dashboard
+          // pops its highlighted element the same way.
+          pointHoverRadius: 6,
+          pointHoverBackgroundColor: "#fff",
+          pointHoverBorderColor: INK,
+          pointHoverBorderWidth: 2,
         },
         {
           label: "Budget ceiling",
@@ -129,6 +152,9 @@ export function trend(series) {
           borderColor: AMBER,
           borderDash: [5, 4],
           pointRadius: 0,
+          // A reference line, not real data - stays dot-free on hover too,
+          // matching its always-dot-free resting state.
+          pointHoverRadius: 0,
           tension: 0,
         },
       ],
@@ -155,11 +181,15 @@ export function actualVsBudget(catRows) {
           backgroundColor: rows.map((r) =>
             r.budget > 0 && r.actual > r.budget ? RED : INK,
           ),
+          hoverBorderColor: "#fff",
+          hoverBorderWidth: 2,
         },
         {
           label: "Budget",
           data: rows.map((r) => r.budget),
           backgroundColor: SAND,
+          hoverBorderColor: "#fff",
+          hoverBorderWidth: 2,
         },
       ],
     },
@@ -185,7 +215,14 @@ export function topFive(top5) {
     type: "bar",
     data: {
       labels: top5.map((t) => t.category),
-      datasets: [{ data: top5.map((t) => t.actual), backgroundColor: INK }],
+      datasets: [
+        {
+          data: top5.map((t) => t.actual),
+          backgroundColor: INK,
+          hoverBorderColor: "#fff",
+          hoverBorderWidth: 2,
+        },
+      ],
     },
     options: {
       maintainAspectRatio: false,
@@ -207,6 +244,11 @@ export function paymentSplit(byPayment) {
           backgroundColor: PIE,
           borderColor: "#fff",
           borderWidth: 2,
+          // The hovered slice pushes outward by this many px - Chart.js's
+          // built-in doughnut/pie hover affordance, not a custom animation;
+          // the 200ms ease-out transition set in mount() is what makes that
+          // push feel smooth rather than an instant jump.
+          hoverOffset: 14,
         },
       ],
     },
@@ -244,6 +286,7 @@ export function personSplit(breakdown) {
           backgroundColor: breakdown.map((b) => colorFor(b.person)),
           borderColor: "#fff",
           borderWidth: 2,
+          hoverOffset: 14,
         },
       ],
     },
@@ -270,6 +313,8 @@ export function personByMonth(series, months) {
         label: s.person,
         data: s.data,
         backgroundColor: colorFor(s.person),
+        hoverBorderColor: "#fff",
+        hoverBorderWidth: 2,
       })),
     },
     options: {
@@ -409,6 +454,8 @@ export function personVsBudget(rows) {
             label: p,
             data: rows.map((r) => r.byPerson[p] || 0),
             backgroundColor: colorFor(p),
+            hoverBorderColor: "#fff",
+            hoverBorderWidth: 2,
           }))
         : [],
     },
@@ -444,6 +491,10 @@ export function netWorthTrend(series) {
           backgroundColor: INK,
           tension: 0.25,
           pointRadius: 4,
+          pointHoverRadius: 7,
+          pointHoverBackgroundColor: "#fff",
+          pointHoverBorderColor: INK,
+          pointHoverBorderWidth: 2,
         },
         {
           label: "Assets",
@@ -451,6 +502,7 @@ export function netWorthTrend(series) {
           borderColor: TEAL,
           borderDash: [5, 4],
           pointRadius: 0,
+          pointHoverRadius: 0,
         },
         {
           label: "Liabilities",
@@ -458,6 +510,7 @@ export function netWorthTrend(series) {
           borderColor: RED,
           borderDash: [5, 4],
           pointRadius: 0,
+          pointHoverRadius: 0,
         },
       ],
     },
@@ -484,6 +537,7 @@ export function assetSplit(assets) {
           backgroundColor: PIE,
           borderColor: "#fff",
           borderWidth: 2,
+          hoverOffset: 14,
         },
       ],
     },
@@ -516,6 +570,8 @@ export function dividendsTrend(series) {
           label: "Dividends",
           data: series.map((s) => s.dividends || 0),
           backgroundColor: AMBER,
+          hoverBorderColor: "#fff",
+          hoverBorderWidth: 2,
         },
       ],
     },
