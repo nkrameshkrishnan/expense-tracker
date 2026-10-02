@@ -43,7 +43,13 @@ export function renderAdd() {
   const today = new Date().toISOString().slice(0, 10);
   const selType = e?.type || "Expense";
   const selCat = e?.category || "Groceries";
-  const selCurrency = e?.currency || "CAD";
+  // A brand-new entry defaults to the signed-in person's primary currency
+  // (Profile → Preferences) rather than always CAD - most entries are in
+  // whatever currency that household actually transacts in day to day, and
+  // forcing CAD here meant re-picking the same non-CAD currency on every
+  // single add. Editing an existing row is unaffected - it always shows
+  // that row's own recorded currency, never the current preference.
+  const selCurrency = e?.currency || getHomeCurrency();
   const selFxRate = e?.fx_rate && e.fx_rate !== 1 ? e.fx_rate : "";
   // Default to whoever is selected in the header, so a run of Surya's receipts
   // does not need the field touched on every entry.
@@ -267,6 +273,16 @@ export function renderAdd() {
   wireNewOption("f-acc", "account");
   wirePersonPills();
   wireCurrency();
+  // wireCurrency() only looks up a rate in response to the <select>'s own
+  // "change" event, which never fires for the value it was already
+  // rendered with - so a brand-new entry whose currency now defaults to a
+  // non-CAD home currency (see selCurrency above) would otherwise show the
+  // rate row with nothing in it until the person touched the dropdown.
+  // Editing an existing row skips this (selFxRate is already populated from
+  // that row's own saved rate).
+  if (!e && selCurrency !== "CAD") {
+    lookupRate(selCurrency, today);
+  }
 
   view.querySelectorAll(".add-type-btn").forEach((btn) => {
     btn.onclick = () => {
