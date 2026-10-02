@@ -48,6 +48,11 @@
 .tx-refund {
   color: var(--teal);
 }
+/* Dividend income - its own colour (matches the Dividends type badge) so a
+   month's dividend total reads apart from regular income. */
+.tx-dividend {
+  color: var(--purple);
+}
 @media (max-width: 560px) {
   .tx-summary {
     grid-template-columns: 1fr 1fr;

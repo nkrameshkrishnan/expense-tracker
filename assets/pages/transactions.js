@@ -57,13 +57,19 @@ export function renderTransactions() {
     groups[seen.get(key)].rows.push(r);
   }
   // Label each group e.g. "Jul 2026"
+  const sumType = (rows, t) =>
+    rows.filter((r) => r.type === t).reduce((a, r) => a + amountCad(r), 0);
   for (const g of groups) {
     const [y, m] = g.key.split("-");
     g.label = (MONTHS[Number(m) - 1] || m) + " " + y;
-    g.income = g.rows
-      .filter((r) => r.type === "Income")
-      .reduce((a, r) => a + amountCad(r), 0);
+    g.income = sumType(g.rows, "Income");
     g.expense = g.rows.reduce((a, r) => a + spendOf(r), 0);
+    // Dividends/Transfer/Refund don't factor into the Expense/Income tally
+    // above, so a filter narrowed to just one of them showed no total next
+    // to the month - these give it the same per-group label.
+    g.dividends = sumType(g.rows, "Dividends");
+    g.transfer = sumType(g.rows, "Transfer");
+    g.refund = sumType(g.rows, "Refund");
   }
 
   // First time we see these groups (e.g. first load, or a filter just narrowed
@@ -208,9 +214,23 @@ export function renderTransactions() {
               <span class="tx-group-label">${esc(g.label)}</span>
               <span class="tx-group-count muted">${g.rows.length}</span>
               <span class="tx-group-stats num">
-                ${g.income > 0 ? `<span class="tx-income">+${money(g.income)}</span>` : ""}
-                ${g.income > 0 && g.expense > 0 ? '<span class="tx-sep">·</span>' : ""}
-                ${g.expense > 0 ? `<span>${money(g.expense)}</span>` : ""}
+                ${[
+                  g.income > 0
+                    ? `<span class="tx-income">+${money(g.income)}</span>`
+                    : "",
+                  g.dividends > 0
+                    ? `<span class="tx-dividend">+${money(g.dividends)}</span>`
+                    : "",
+                  g.refund > 0
+                    ? `<span class="tx-refund">+${money(g.refund)}</span>`
+                    : "",
+                  g.transfer > 0
+                    ? `<span class="tx-transfer">${money(g.transfer)}</span>`
+                    : "",
+                  g.expense > 0 ? `<span>${money(g.expense)}</span>` : "",
+                ]
+                  .filter(Boolean)
+                  .join('<span class="tx-sep">·</span>')}
               </span>
             </button>
             <div class="tx-group-body">${g.rows.map(txRow).join("")}</div>
