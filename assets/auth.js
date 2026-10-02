@@ -65,8 +65,15 @@ export function showGate(message) {
   // doing - so that path keeps the old plain, compact card.
   const showLanding = !message;
   gate.classList.toggle("gate-landing", showLanding);
-  gate.innerHTML = `
-    ${showLanding ? renderLandingIntro() : ""}
+  // The landing page's own hero already has the #signin anchor and the
+  // #gsi-button mount point built in (see renderHero() in landing.js) - a
+  // fresh sign-in gets ONLY that, not this boxed card as well, which used to
+  // show up as a redundant second "Ledger" block part-way down the page. A
+  // mid-session re-auth (message set) has no landing page around it, so it
+  // still needs this card to be the whole screen.
+  gate.innerHTML = showLanding
+    ? renderLandingIntro() + renderLandingFooter()
+    : `
     <div class="gate-card" id="signin">
       <div class="gate-mark">&#8214;</div>
       <h1 class="gate-title">Ledger</h1>
@@ -76,8 +83,7 @@ export function showGate(message) {
         Signing in here does not grant access on its own.</p>
       <p class="gate-note"><a href="terms.html" target="_blank" rel="noopener">Terms &amp; Privacy</a>
         &mdash; what Google profile information this app collects and why.</p>
-    </div>
-    ${showLanding ? renderLandingFooter() : ""}`;
+    </div>`;
 
   const cid = getClientId();
   if (!cid) {

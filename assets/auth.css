@@ -20,10 +20,6 @@
   padding: 0;
   scroll-behavior: smooth;
 }
-#gate.gate-landing .gate-card {
-  margin: 0 auto 64px;
-  scroll-margin-top: 24px;
-}
 @media (prefers-reduced-motion: reduce) {
   #gate.gate-landing {
     scroll-behavior: auto;

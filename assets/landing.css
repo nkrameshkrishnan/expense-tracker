@@ -116,10 +116,30 @@
   max-width: 540px;
   margin: 0 auto 28px;
 }
-.l-hero-cta {
-  display: inline-block;
-  padding: 12px 28px;
-  font-size: 14px;
+/* The real Google button mounts into #gsi-button right here - this is the
+   hero's actual call to action, not a styled link that scrolls to one. */
+.l-signin {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  scroll-margin-top: 24px;
+  min-height: 44px;
+}
+#gsi-button {
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
+}
+.l-signin-hint {
+  font-size: 12px;
+  color: var(--ink-3);
+  max-width: 360px;
+  margin: 0;
+  line-height: 1.5;
+}
+.l-signin-hint:empty {
+  display: none;
 }
 .l-trust {
   margin: 18px 0 0;

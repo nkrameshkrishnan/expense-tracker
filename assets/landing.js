@@ -21,7 +21,10 @@ const esc = (s) =>
       ],
   );
 
-/** Sticky top nav + hero. CTA scrolls down to the real sign-in card. */
+/** Sticky top nav + hero. The real Google sign-in button renders directly
+    into #gsi-button right here - there's no separate boxed "sign in" card
+    further down the page to scroll to, so both the nav link and landing
+    itself point at this one spot. */
 function renderHero() {
   return `
     <nav class="l-nav">
@@ -40,7 +43,10 @@ function renderHero() {
       <p class="l-sub">Track spending, keep a household budget, and watch your
         net worth grow &mdash; built for the two of you, not a company
         trying to sell you a subscription.</p>
-      <a class="l-btn l-hero-cta" href="#signin">Sign in to continue</a>
+      <div class="l-signin" id="signin">
+        <div id="gsi-button"></div>
+        <p class="gate-sub l-signin-hint"></p>
+      </div>
       <p class="l-trust">Google sign-in &middot; access checked against an
         allow-list &middot; your data lives in your own Supabase project</p>
     </header>`;
