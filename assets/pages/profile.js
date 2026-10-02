@@ -22,14 +22,20 @@ const THEME_OPTIONS = [
   ["dark", "Dark", ""],
 ];
 
+// Always renders the `.ob-option-symbol` slot, even empty, so a list with no
+// real symbols (Appearance) still reserves the same width as one that has
+// them (Currency) - without this, "System"/"Light"/"Dark" started flush
+// against the card edge while "CAD"/"INR"/"AED" started ~52px in, and the
+// two side-by-side panels read as misaligned even though they're meant to
+// look like a matched pair.
 function optionsHtml(items, selected, dataAttr) {
   return `<div class="ob-options" role="radiogroup">
     ${items
       .map(
-        ([value, label, hint, symbol]) => `
+        ([value, label, hint, symbol = ""]) => `
       <button type="button" class="ob-option${value === selected ? " selected" : ""}"
         role="radio" aria-checked="${value === selected}" data-${dataAttr}="${value}">
-        ${symbol !== undefined ? `<span class="ob-option-symbol">${symbol}</span>` : ""}
+        <span class="ob-option-symbol">${symbol}</span>
         <span class="ob-option-text"><b>${label}</b>${hint ? `<br><span class="muted">${hint}</span>` : ""}</span>
       </button>`,
       )

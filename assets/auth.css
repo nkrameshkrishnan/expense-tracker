@@ -155,7 +155,12 @@
 }
 .ob-option-symbol {
   flex-shrink: 0;
-  width: 28px;
+  /* Wide enough for the widest symbol actually used (CURRENCY_SYMBOL's
+     "AED " - the only one that isn't a single glyph) at this font size/
+     weight, measured at 33px rendered - 28px let it overflow the box and
+     visually collide with the label text right next to it, eating into the
+     12px gap .ob-option's own `gap` provides everywhere else. */
+  width: 40px;
   text-align: center;
   font-family: var(--mono);
   font-size: 16px;
