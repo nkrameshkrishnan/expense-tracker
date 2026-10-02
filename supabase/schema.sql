@@ -11,14 +11,25 @@
 -- or `supabase db execute --file supabase/schema.sql` against your project.
 
 -- ============================================================ allow-list
+-- is_primary marks the one household member who manages this list itself -
+-- the only one who can add or remove anyone else, and the one row that can
+-- never be removed (see add_allowed_email/remove_allowed_email below). The
+-- partial unique index guarantees at most one row can ever have it set,
+-- even against a direct SQL mistake, not just application logic.
 create table if not exists allowed_emails (
-  email text primary key
+  email text primary key,
+  is_primary boolean not null default false
 );
+alter table allowed_emails add column if not exists is_primary boolean not null default false;
+create unique index if not exists allowed_emails_one_primary
+  on allowed_emails ((is_primary))
+  where is_primary;
 
--- Edit this list to the household's actual emails.
-insert into allowed_emails (email) values
-  ('ramesh@example.com'),
-  ('surya@example.com')
+-- Edit this list to the household's actual emails - exactly one should be
+-- `true` here (whoever owns the account/project).
+insert into allowed_emails (email, is_primary) values
+  ('ramesh@example.com', true),
+  ('surya@example.com', false)
 on conflict (email) do nothing;
 
 -- RLS, no policies: the table this whole access-control system is built on
@@ -298,26 +309,49 @@ create policy "member can update own settings" on user_settings
   with check (email = lower(coalesce(auth.jwt() ->> 'email', '')));
 
 -- ============================================================ household access (Profile page)
--- Lets a signed-in household member see and manage who else is on the
--- allow-list, without ever granting direct SELECT/INSERT/DELETE on
--- allowed_emails itself (see the comment on that table above). Each
--- function re-checks is_allowed_household_member() itself, the same guard
--- every policy above relies on - a Google account that authenticates but
--- isn't on the list gets an empty list / a raised exception here, not a
--- crash, the same "silently see nothing" shape RLS already gives every
--- other table.
-create or replace function list_allowed_emails()
-returns setof text
+-- Same SECURITY DEFINER shape as is_allowed_household_member() above - runs
+-- as the function owner so it can read allowed_emails despite that table's
+-- own RLS having zero policies for anyone else.
+create or replace function is_primary_household_member()
+returns boolean
 language sql
 stable
 security definer
 set search_path = public
 as $$
-  select email from allowed_emails
-  where is_allowed_household_member()
-  order by email;
+  select exists (
+    select 1 from allowed_emails
+    where email = lower(coalesce(auth.jwt() ->> 'email', ''))
+      and is_primary
+  );
 $$;
 
+-- Lets a signed-in household member see who else is on the allow-list
+-- (everyone can READ it - that's unchanged), without ever granting direct
+-- SELECT/INSERT/DELETE on allowed_emails itself (see the comment on that
+-- table above). A Google account that authenticates but isn't on the list
+-- gets an empty result here, not a crash, the same "silently see nothing"
+-- shape RLS already gives every other table. Changed return shape from the
+-- original setof text (email only) to include is_primary, so the client can
+-- show who manages the list without a second round trip - Postgres refuses
+-- `create or replace` across a return-type change, hence the drop first.
+drop function if exists list_allowed_emails();
+create or replace function list_allowed_emails()
+returns table(email text, is_primary boolean)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select email, is_primary from allowed_emails
+  where is_allowed_household_member()
+  order by is_primary desc, email;
+$$;
+
+-- Adding/removing is management, not just access, so these two require the
+-- stricter is_primary_household_member() rather than
+-- is_allowed_household_member() - any other signed-in member can see the
+-- list above, but only the primary can change it.
 create or replace function add_allowed_email(new_email text)
 returns void
 language plpgsql
@@ -325,8 +359,8 @@ security definer
 set search_path = public
 as $$
 begin
-  if not is_allowed_household_member() then
-    raise exception 'Not authorized';
+  if not is_primary_household_member() then
+    raise exception 'Only the primary household member can add new emails';
   end if;
   insert into allowed_emails (email) values (lower(trim(new_email)))
   on conflict (email) do nothing;
@@ -340,13 +374,19 @@ security definer
 set search_path = public
 as $$
 begin
-  if not is_allowed_household_member() then
-    raise exception 'Not authorized';
+  if not is_primary_household_member() then
+    raise exception 'Only the primary household member can remove emails';
+  end if;
+  if (select is_primary from allowed_emails where email = lower(trim(target_email))) then
+    raise exception 'The primary household member cannot be removed';
   end if;
   -- Guards against locking every household member out at once - the same
   -- failure mode the allowed_emails RLS comment above warns about, just
   -- reachable this time through a legitimate management action instead of
-  -- a compromised anon key.
+  -- a compromised anon key. Mostly redundant with the is_primary guard just
+  -- above now (the primary row itself can never be removed, so the list can
+  -- never actually reach zero) but kept as a second line of defence in case
+  -- that invariant is ever violated by a direct SQL change.
   if (select count(*) from allowed_emails) <= 1 then
     raise exception 'Cannot remove the last remaining email — this would lock everyone out.';
   end if;

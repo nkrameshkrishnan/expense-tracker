@@ -218,30 +218,56 @@ export function renderProfile() {
   if (remote) loadAccessPanel(email);
 }
 
+// `rows` is [{email, is_primary}] since list_allowed_emails() started
+// returning that shape (see schema.sql) - only the primary household member
+// can add or remove anyone, and the primary's own row can never be
+// removed, by anyone, including itself. The server (add_allowed_email/
+// remove_allowed_email) is what actually enforces this; hiding/disabling
+// the controls here is just so a non-primary member sees why, instead of
+// clicking something that's just going to come back as an error.
 async function loadAccessPanel(myEmail) {
   const panel = $("#access-panel");
   try {
-    const emails = await accessCall(() => state.store.listAllowedEmails());
+    const rows = await accessCall(() => state.store.listAllowedEmails());
+    const iAmPrimary = !!rows.find((r) => r.email === myEmail)?.is_primary;
+    const primaryEmail = rows.find((r) => r.is_primary)?.email;
+
     panel.innerHTML = `
       <table><tbody>
-        ${emails
-          .map(
-            (e) => `<tr>
-              <td>${esc(e)}${e === myEmail ? ' <span class="tag">you</span>' : ""}</td>
-              <td class="n"><button class="rowbtn" data-remove-email="${esc(e)}"
-                ${emails.length <= 1 ? `disabled title="Can't remove the last remaining email"` : ""}>✕</button></td>
-            </tr>`,
-          )
+        ${rows
+          .map((r) => {
+            const tags = [
+              r.is_primary ? '<span class="tag">primary</span>' : "",
+              r.email === myEmail ? '<span class="tag">you</span>' : "",
+            ]
+              .filter(Boolean)
+              .join(" ");
+            const canRemove = iAmPrimary && !r.is_primary;
+            const removeTitle = r.is_primary
+              ? "The primary household member can't be removed"
+              : !iAmPrimary
+                ? `Only ${esc(primaryEmail || "the primary member")} can remove household members`
+                : "";
+            return `<tr>
+              <td>${esc(r.email)}${tags ? " " + tags : ""}</td>
+              <td class="n"><button class="rowbtn" data-remove-email="${esc(r.email)}"
+                ${canRemove ? "" : `disabled title="${removeTitle}"`}>✕</button></td>
+            </tr>`;
+          })
           .join("")}
       </tbody></table>
-      <div class="actions" style="margin-top:12px">
-        <input id="new-access-email" type="email" placeholder="name@example.com" style="flex:1;min-width:200px">
-        <button class="btn" id="add-access-email" type="button">Add</button>
-      </div>
+      ${
+        iAmPrimary
+          ? `<div class="actions" style="margin-top:12px">
+               <input id="new-access-email" type="email" placeholder="name@example.com" style="flex:1;min-width:200px">
+               <button class="btn" id="add-access-email" type="button">Add</button>
+             </div>`
+          : `<p class="note" style="margin-top:12px">Only <b>${esc(primaryEmail || "the primary member")}</b> can add or remove household members.</p>`
+      }
       <p class="note" style="margin-top:10px">Anyone added here can sign in with that Google account and see
         every transaction, budget and balance in this household — there's no per-person restriction beyond that.</p>`;
 
-    panel.querySelectorAll("[data-remove-email]").forEach(
+    panel.querySelectorAll("[data-remove-email]:not([disabled])").forEach(
       (b) =>
         (b.onclick = async () => {
           const target = b.dataset.removeEmail;
@@ -260,25 +286,27 @@ async function loadAccessPanel(myEmail) {
           }
         }),
     );
-    $("#add-access-email").onclick = async () => {
-      const input = $("#new-access-email");
-      const value = input.value.trim().toLowerCase();
-      if (!value || !/^\S+@\S+\.\S+$/.test(value))
-        return notice("Enter a valid email address.", "bad");
-      const done = await withBusy(`Adding ${value}`, async () => {
-        await accessCall(() => state.store.addAllowedEmail(value));
+    if (iAmPrimary) {
+      $("#add-access-email").onclick = async () => {
+        const input = $("#new-access-email");
+        const value = input.value.trim().toLowerCase();
+        if (!value || !/^\S+@\S+\.\S+$/.test(value))
+          return notice("Enter a valid email address.", "bad");
+        const done = await withBusy(`Adding ${value}`, async () => {
+          await accessCall(() => state.store.addAllowedEmail(value));
+        });
+        if (done) {
+          notice(`Added ${value}.`, "ok");
+          loadAccessPanel(myEmail);
+        }
+      };
+      $("#new-access-email").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          $("#add-access-email").click();
+        }
       });
-      if (done) {
-        notice(`Added ${value}.`, "ok");
-        loadAccessPanel(myEmail);
-      }
-    };
-    $("#new-access-email").addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        $("#add-access-email").click();
-      }
-    });
+    }
   } catch (err) {
     panel.innerHTML = `<b class="over">${esc(err.message)}</b>`;
   }
