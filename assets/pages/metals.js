@@ -7,6 +7,7 @@ import { PEOPLE } from "../constants.js";
 import { money, pct } from "../xlsxio.js";
 import { $, view, esc, state, kpi, notice, withBusy } from "../core.js";
 import { isRemoteStore } from "../auth.js";
+import { emptyIcon } from "../icons.js";
 
 /** A purchase receipt usually shows a total amount paid, not a price/gram -
     that division is on you to do by hand, which is exactly the kind of
@@ -178,7 +179,7 @@ export function renderMetalsSection(scopeOwner) {
       <th>Date</th><th>Metal</th><th>Owner</th><th class="n">Weight</th>
       <th class="n">Price paid/g</th><th class="n">Total paid</th><th class="n">Value today</th><th></th>
     </tr></thead><tbody>${rows}</tbody></table></div>`
-      : `<div class="empty">No precious metal holdings recorded. Add a purchase lot below.</div>`
+      : `<div class="empty">${emptyIcon()}<span>No precious metal holdings recorded. Add a purchase lot below.</span></div>`
   }
 
   <div class="panel" style="margin-top:12px">

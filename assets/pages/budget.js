@@ -9,6 +9,7 @@ import {
 import { money, pct, monthOf } from "../xlsxio.js";
 import { listFor } from "../categories.js";
 import { $, view, esc, state, notice, withBusy, refresh } from "../core.js";
+import { iconBadge } from "../icons.js";
 
 export function renderBudget() {
   // Includes user-created categories, not just the built-in list.
@@ -71,7 +72,7 @@ export function renderBudget() {
     return `<div class="bcard" data-cat="${esc(c)}">
       <div class="bcard-head">
         <div class="bcard-name">
-          <span class="bcard-dot ${type === "Income" ? "income" : ""}"></span>
+          ${iconBadge(c, "category", "sm")}
           ${esc(c)}
         </div>
         <div class="bcard-annual">

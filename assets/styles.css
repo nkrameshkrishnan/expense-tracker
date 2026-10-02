@@ -22,18 +22,25 @@
   --purple: #7e3fb9;
   --mono: "Inter", ui-monospace, SFMono-Regular, Menlo, monospace;
   --disp: "Sora", system-ui, -apple-system, Segoe UI, sans-serif;
+  --radius-xs: 8px;
   --radius-sm: 10px;
   --radius-md: 18px;
   --card-bg: #ffffff;
+  /* Elevation: a hairline border carries the separation, box-shadow is a
+     soft, low-alpha add-on - never the only thing marking a surface raised
+     (keeps flat-looking screenshots honest about where the card edge is). */
+  --border-card: 1px solid rgba(20, 21, 26, 0.08);
   --shadow-card:
-    0 2px 8px rgba(20, 21, 26, 0.06), 0 12px 32px -8px rgba(20, 21, 26, 0.14);
+    0 1px 2px rgba(20, 21, 26, 0.04), 0 8px 20px -10px rgba(20, 21, 26, 0.12);
   --shadow-card-hover:
-    0 4px 12px rgba(20, 21, 26, 0.08), 0 20px 48px -12px rgba(20, 21, 26, 0.2);
-  --shadow-focus: 0 0 0 3px rgba(0, 163, 137, 0.35);
+    0 2px 6px rgba(20, 21, 26, 0.06), 0 16px 32px -12px rgba(20, 21, 26, 0.16);
+  --shadow-focus: 0 0 0 3px rgba(178, 74, 51, 0.3);
   --motion-fast: 150ms;
   --motion-base: 250ms;
   --motion-slow: 600ms;
   --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
   --cat-color-0: #3372d8;
   --cat-color-1: #984de0;
   --cat-color-2: #ca3d83;
@@ -169,10 +176,13 @@ th.n {
   min-width: 200px;
   background: var(--card-bg);
   color: var(--ink);
-  border-radius: 10px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(20, 21, 26, 0.1);
+  border-radius: 12px;
+  box-shadow: var(--shadow-card-hover);
   padding: 14px;
   z-index: 50;
+  animation: menu-in 150ms var(--ease-out);
+  transform-origin: top right;
 }
 
 /* ---------- layout ---------- */
@@ -311,8 +321,18 @@ label.f > textarea {
 .kpi {
   padding: 13px 14px;
   background: var(--card-bg);
+  border: var(--border-card);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-card);
+  transition:
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+.kpi:hover {
+  box-shadow: var(--shadow-card-hover);
+  border-color: rgba(20, 21, 26, 0.14);
+  transform: translateY(-1px);
 }
 .kpi .k {
   font-size: 10.5px;
@@ -363,6 +383,7 @@ label.f > textarea {
 }
 .panel {
   background: var(--card-bg);
+  border: var(--border-card);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-card);
   padding: 14px;
@@ -705,6 +726,9 @@ code {
   flex-shrink: 0;
 }
 .person-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: none;
   border: 0;
   border-right: 1px solid #39434f;
@@ -713,10 +737,14 @@ code {
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.06em;
-  padding: 5px 11px;
+  padding: 4px 11px;
   cursor: pointer;
   text-transform: uppercase;
   white-space: nowrap;
+  transition: color var(--motion-fast);
+}
+.person-btn .avatar {
+  font-size: 9px;
 }
 .person-btn:last-child {
   border-right: 0;
@@ -834,6 +862,9 @@ code {
 
 /* inline chip on transaction rows */
 .person-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 10px;
   letter-spacing: 0.06em;
   padding: 0 5px;
@@ -841,6 +872,11 @@ code {
   color: var(--ink-3);
   margin-right: 6px;
   white-space: nowrap;
+}
+.person-chip .avatar {
+  width: 13px;
+  height: 13px;
+  font-size: 7.5px;
 }
 .person-chip[data-p="Ramesh"] {
   border-color: var(--teal);
@@ -965,4 +1001,184 @@ code {
   .card-hoverable:hover {
     transform: none;
   }
+}
+
+/* ---------- entrance motion ---------- */
+/* Plays automatically whenever one of these elements is first inserted -
+   every page render replaces view.innerHTML wholesale, so this needs no JS
+   trigger: the browser animates any freshly-created node that matches.
+   transform/opacity only, 150-200ms, ease-out - see the motion skill. */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.kpi,
+.panel,
+.person-card,
+.bcard,
+.tx-row,
+.networth-card,
+.metal-card,
+.debt-card {
+  animation: fade-in-up 200ms var(--ease-out) both;
+}
+/* A short, capped stagger on the first screenful of a grid/list - rows past
+   the 8th all still fade in, just without the extra per-item delay. */
+.kpis > .kpi:nth-child(1),
+.person-cards > .person-card:nth-child(1),
+.tx-group-body > .tx-row:nth-child(1) {
+  animation-delay: 0ms;
+}
+.kpis > .kpi:nth-child(2),
+.person-cards > .person-card:nth-child(2),
+.tx-group-body > .tx-row:nth-child(2) {
+  animation-delay: 20ms;
+}
+.kpis > .kpi:nth-child(3),
+.person-cards > .person-card:nth-child(3),
+.tx-group-body > .tx-row:nth-child(3) {
+  animation-delay: 40ms;
+}
+.kpis > .kpi:nth-child(4),
+.person-cards > .person-card:nth-child(4),
+.tx-group-body > .tx-row:nth-child(4) {
+  animation-delay: 60ms;
+}
+.kpis > .kpi:nth-child(5),
+.tx-group-body > .tx-row:nth-child(5) {
+  animation-delay: 80ms;
+}
+.kpis > .kpi:nth-child(6),
+.tx-group-body > .tx-row:nth-child(6) {
+  animation-delay: 100ms;
+}
+.kpis > .kpi:nth-child(7),
+.tx-group-body > .tx-row:nth-child(7) {
+  animation-delay: 120ms;
+}
+.kpis > .kpi:nth-child(8),
+.tx-group-body > .tx-row:nth-child(8) {
+  animation-delay: 140ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .kpi,
+  .panel,
+  .person-card,
+  .bcard,
+  .tx-row,
+  .networth-card,
+  .metal-card,
+  .debt-card,
+  .profile-menu {
+    animation: none;
+  }
+}
+
+/* ---------- icon badges (categories/accounts) ---------- */
+.icon-badge {
+  --badge-color: var(--ink-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--badge-color) 14%, transparent);
+  color: var(--badge-color);
+}
+.icon-badge svg {
+  width: 60%;
+  height: 60%;
+}
+.icon-badge-sm {
+  width: 22px;
+  height: 22px;
+}
+.icon-badge-md {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+}
+
+/* ---------- initials avatars (people) ---------- */
+/* Colour comes from the same [data-p] system as .person-swatch/.person-chip
+   above, just filled instead of outlined - one source of truth per person. */
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--rule-2);
+  color: #fff;
+  font-weight: 700;
+  font-family: var(--disp);
+  line-height: 1;
+}
+.avatar-sm {
+  width: 20px;
+  height: 20px;
+  font-size: 10px;
+}
+.avatar-md {
+  width: 32px;
+  height: 32px;
+  font-size: 13px;
+}
+.avatar-lg {
+  width: 44px;
+  height: 44px;
+  font-size: 17px;
+}
+.avatar[data-p="Ramesh"] {
+  background: var(--teal);
+}
+.avatar[data-p="Surya"] {
+  background: var(--blue);
+}
+.avatar[data-p="Family"] {
+  background: var(--amber);
+}
+.avatar[data-p="Unassigned"] {
+  background: var(--ink-3);
+}
+
+/* ---------- empty-state icon ---------- */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.empty-icon {
+  width: 36px;
+  height: 36px;
+  color: var(--rule-2);
+}
+.empty-icon svg {
+  width: 100%;
+  height: 100%;
 }

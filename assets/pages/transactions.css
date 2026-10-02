@@ -350,9 +350,26 @@
 }
 .tx-cat {
   color: var(--ink-3);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 .tx-pay {
   color: var(--ink-3);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.tx-cat .icon-badge,
+.tx-pay .icon-badge {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+}
+.tx-cat .icon-badge svg,
+.tx-pay .icon-badge svg {
+  width: 65%;
+  height: 65%;
 }
 /* Per-row transaction-type label - one distinct colour per TYPES value so the
    five types read apart at a glance, independent of the row/icon/amount

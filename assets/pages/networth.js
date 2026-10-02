@@ -24,6 +24,7 @@ import {
 } from "../core.js";
 import { go } from "../router.js";
 import { backendLabel, isRemoteStore } from "../auth.js";
+import { emptyIcon } from "../icons.js";
 import { debtNetWorth, renderDebtSection, wireDebtHandlers } from "./debts.js";
 import {
   metalsSummary,
@@ -227,8 +228,8 @@ export function renderNetWorth() {
 
   ${
     !latest
-      ? `<div class="empty">No balances recorded yet. Click <b>Record balances</b> to enter what each
-     account is worth today &mdash; separate from your transactions, and never affects income or expense.</div>
+      ? `<div class="empty">${emptyIcon()}<span>No balances recorded yet. Click <b>Record balances</b> to enter what each
+     account is worth today &mdash; separate from your transactions, and never affects income or expense.</span></div>
      ${renderDebtSection(scopeOwner)}
      ${renderMetalsSection(scopeOwner)}`
       : `

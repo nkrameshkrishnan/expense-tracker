@@ -26,6 +26,7 @@ import {
 import { byPersonFilter } from "./xlsxio.js";
 import { go } from "./router.js";
 import { showGate, signOut } from "./auth.js";
+import { personAvatar } from "./icons.js";
 
 export const $ = (s) => document.querySelector(s);
 export const view = $("#view");
@@ -102,7 +103,7 @@ export function renderPeopleSwitch() {
     .map((p) => {
       const value = p === "Family" ? "" : p;
       const label = p === UNASSIGNED ? "Unassigned" : p;
-      return `<button class="person-btn${state.person === value ? " on" : ""}" data-person="${esc(value)}">${esc(label)}</button>`;
+      return `<button class="person-btn${state.person === value ? " on" : ""}" data-person="${esc(value)}">${personAvatar(label, "sm")}<span>${esc(label)}</span></button>`;
     })
     .join("");
   el.querySelectorAll(".person-btn").forEach(

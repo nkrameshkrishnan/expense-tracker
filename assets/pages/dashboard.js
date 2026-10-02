@@ -23,6 +23,7 @@ import {
   YEAR_KEY,
 } from "../core.js";
 import { go } from "../router.js";
+import { personAvatar } from "../icons.js";
 
 /** Expense card subtitle. Expense is already net of refunds (spendOf), so
     say so whenever refunds were subtracted - otherwise the figure would
@@ -474,7 +475,7 @@ function personCards(people) {
       (b) => `
       <div class="person-card${state.person === (b.person === UNASSIGNED ? UNASSIGNED : b.person) ? " on" : ""}" data-jump="${esc(b.person)}">
         <div class="person-card-head">
-          <span class="person-swatch" data-p="${esc(b.person)}"></span>
+          ${personAvatar(b.person, "sm")}
           <span class="person-card-name">${esc(b.person)}</span>
         </div>
         <div class="person-card-val num">${money(b.expense)}</div>

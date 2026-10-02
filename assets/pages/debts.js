@@ -5,6 +5,7 @@ import { money, pct } from "../xlsxio.js";
 import { $, view, esc, state, notice, withBusy } from "../core.js";
 import { go } from "../router.js";
 import { renderNetWorth } from "./networth.js";
+import { emptyIcon } from "../icons.js";
 
 let pdfLibsReady = null;
 function loadPdfLibs() {
@@ -819,8 +820,8 @@ export function renderDebtSection(scopeOwner) {
     ${
       rows.length
         ? rows.map(card).join("")
-        : `<div class="empty">No debts or loans recorded. Use <b>Add debt or loan</b> to track money you owe,
-         or money you have lent out.</div>`
+        : `<div class="empty">${emptyIcon()}<span>No debts or loans recorded. Use <b>Add debt or loan</b> to track money you owe,
+         or money you have lent out.</span></div>`
     }
   </div>
 

@@ -14,6 +14,7 @@ import {
   refresh,
 } from "../core.js";
 import { go } from "../router.js";
+import { iconBadge, personAvatar, emptyIcon } from "../icons.js";
 
 const txCollapsed = new Set();
 
@@ -109,10 +110,10 @@ export function renderTransactions() {
           ${r.recurring === "Yes" ? '<span class="tx-badge">Recurring</span>' : ""}
         </div>
         <div class="tx-meta">
-          ${!state.person ? `<span class="person-chip" data-p="${esc(r.person || UNASSIGNED)}">${esc(r.person || UNASSIGNED)}</span>` : ""}
+          ${!state.person ? `<span class="person-chip" data-p="${esc(r.person || UNASSIGNED)}">${personAvatar(r.person || UNASSIGNED, "sm")}${esc(r.person || UNASSIGNED)}</span>` : ""}
           <span class="tx-type-badge ${typeBadgeClass(r.type)}">${esc(r.type)}</span>
-          <span class="tx-cat">${esc(r.category)}${r.subcategory ? " · " + esc(r.subcategory) : ""}</span>
-          ${r.payment ? `<span class="tx-sep">·</span><span class="tx-pay">${esc(r.payment)}</span>` : ""}
+          <span class="tx-cat">${iconBadge(r.category, "category", "sm")}${esc(r.category)}${r.subcategory ? " · " + esc(r.subcategory) : ""}</span>
+          ${r.payment ? `<span class="tx-sep">·</span><span class="tx-pay">${iconBadge(r.payment, "account", "sm")}${esc(r.payment)}</span>` : ""}
         </div>
       </div>
       <div class="tx-amount num ${typeClass(r.type)}">
@@ -205,7 +206,7 @@ export function renderTransactions() {
   <div class="tx-list">
     ${
       rows.length === 0
-        ? `<div class="empty">${hasFilters ? "No entries match those filters." : "No transactions yet — add one with the button above."}</div>`
+        ? `<div class="empty">${emptyIcon()}<span>${hasFilters ? "No entries match those filters." : "No transactions yet — add one with the button above."}</span></div>`
         : groups
             .map((g) => {
               const closed = txCollapsed.has(g.key);
