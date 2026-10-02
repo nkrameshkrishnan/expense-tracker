@@ -125,6 +125,16 @@
 .ob-option {
   display: flex;
   align-items: center;
+  /* Browsers apply `text-align: center` to <button> directly in their own
+     UA stylesheet - .ob-options' own `text-align: left` never reaches this
+     element because that's a specified value here, not an inherited one,
+     so a parent's text-align can't override it. Invisible on a single-line
+     label (Light/Dark - no extra width to center within) but very visible
+     on a two-line one (System's hint line is much wider than "System"
+     itself, and same for every currency row's label vs. its full name) -
+     the bold title rendered centered under the longer line below it
+     instead of flush with it. */
+  text-align: left;
   gap: 12px;
   width: 100%;
   padding: 12px 16px;
