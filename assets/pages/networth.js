@@ -26,7 +26,12 @@ import {
 import { go } from "../router.js";
 import { backendLabel, isRemoteStore } from "../auth.js";
 import { emptyIcon } from "../icons.js";
-import { debtNetWorth, renderDebtSection, wireDebtHandlers } from "./debts.js";
+import {
+  debtNetWorth,
+  debtSummary,
+  renderDebtSection,
+  wireDebtHandlers,
+} from "./debts.js";
 import {
   metalsSummary,
   renderMetalsSection,
@@ -38,16 +43,23 @@ import {
   wireFixedDepositsHandlers,
 } from "./fixed-deposits.js";
 
-// Which of the Net Worth page's own in-page tabs is showing - "Overview"
-// (balances/debts/metals, the page's original content) or "Fixed Deposits"
-// (its own tab, per the user's explicit request - not just another stacked
-// section like Debts/Metals above). A plain module-level variable, not
-// state.*: it only needs to survive this page's own re-renders (after a
-// save, a delete, etc.), the same lifetime renderBalanceForm's local
-// variables already rely on, not a page navigation - leaving Net Worth and
-// coming back to "Overview" by default is the expected reset, same as any
-// other page's scroll position or in-progress form.
+// Which of the Net Worth page's own in-page tabs is showing. "Overview" is
+// the page's original content (balances/snapshots/trend); Debts, Metals and
+// Fixed Deposits each get their own tab rather than stacking as
+// always-visible sections underneath Overview, the way they used to. A
+// plain module-level variable, not state.*: it only needs to survive this
+// page's own re-renders (after a save, a delete, etc.), the same lifetime
+// renderBalanceForm's local variables already rely on, not a page
+// navigation - leaving Net Worth and coming back to "Overview" by default
+// is the expected reset, same as any other page's scroll position or
+// in-progress form.
 let activeTab = "overview";
+const NW_TABS = [
+  { id: "overview", label: "Overview" },
+  { id: "debts", label: "Debts & Loans" },
+  { id: "metals", label: "Precious Metals" },
+  { id: "fixeddeposits", label: "Fixed Deposits" },
+];
 
 function nwAccounts() {
   const custom = loadCustom().nwAccount || [];
@@ -164,6 +176,14 @@ export function renderNetWorth() {
   );
   const today = new Date().toISOString().slice(0, 10);
   const fdValueCad = fixedDepositsSummary(fixedDeposits, today).totalValueCad;
+  const debtRows = debtSummary(state.debts || []).filter(
+    (d) => !scopeOwner || d.owner === scopeOwner,
+  );
+  const tabCounts = {
+    debts: debtRows.length,
+    metals: metalHoldings.length,
+    fixeddeposits: fixedDeposits.length,
+  };
   const assets =
     (latest ? sumOf(latest, "Asset") : 0) +
     dnw.receivable +
@@ -242,14 +262,20 @@ export function renderNetWorth() {
   </div>
 
   <div class="nw-tabs" role="tablist">
-    <button class="nw-tab-btn${activeTab === "overview" ? " on" : ""}" data-nwtab="overview" type="button" role="tab" aria-selected="${activeTab === "overview"}">Overview</button>
-    <button class="nw-tab-btn${activeTab === "fixeddeposits" ? " on" : ""}" data-nwtab="fixeddeposits" type="button" role="tab" aria-selected="${activeTab === "fixeddeposits"}">Fixed Deposits${fixedDeposits.length ? ` <span class="nw-tab-count">${fixedDeposits.length}</span>` : ""}</button>
+    ${NW_TABS.map((t) => {
+      const count = tabCounts[t.id];
+      return `<button class="nw-tab-btn${activeTab === t.id ? " on" : ""}" data-nwtab="${t.id}" type="button" role="tab" aria-selected="${activeTab === t.id}">${t.label}${count ? ` <span class="nw-tab-count">${count}</span>` : ""}</button>`;
+    }).join("")}
   </div>
 
   ${
     activeTab === "fixeddeposits"
       ? renderFixedDepositsSection(scopeOwner)
-      : `
+      : activeTab === "debts"
+        ? renderDebtSection(scopeOwner)
+        : activeTab === "metals"
+          ? renderMetalsSection(scopeOwner)
+          : `
   ${
     !isRemoteStore(state.store)
       ? `<div class="nw-warn" style="border-left-color:var(--red)">
@@ -263,9 +289,7 @@ export function renderNetWorth() {
   ${
     !latest
       ? `<div class="empty">${emptyIcon()}<span>No balances recorded yet. Click <b>Record balances</b> to enter what each
-     account is worth today &mdash; separate from your transactions, and never affects income or expense.</span></div>
-     ${renderDebtSection(scopeOwner)}
-     ${renderMetalsSection(scopeOwner)}`
+     account is worth today &mdash; separate from your transactions, and never affects income or expense.</span></div>`
       : `
 
   <div class="nw-asat">
@@ -362,9 +386,6 @@ export function renderNetWorth() {
       : `<p class="note">Record a second snapshot to see a trend. Monthly is plenty &mdash; balances move slowly.</p>`
   }
 
-  ${renderDebtSection(scopeOwner)}
-  ${renderMetalsSection(scopeOwner)}
-
   <div class="eyebrow">Snapshots</div>
   <div class="tablewrap"><table><thead><tr><th>Date</th><th class="n">Accounts</th><th class="n">Assets</th><th class="n">Liabilities</th><th class="n">Net worth</th><th></th></tr></thead><tbody>
     ${[...series]
@@ -398,10 +419,16 @@ export function renderNetWorth() {
     wireFixedDepositsHandlers();
     return;
   }
+  if (activeTab === "debts") {
+    wireDebtHandlers();
+    return;
+  }
+  if (activeTab === "metals") {
+    wireMetalsHandlers();
+    return;
+  }
 
   $("#nw-record").onclick = () => renderBalanceForm(latest);
-  wireDebtHandlers();
-  wireMetalsHandlers();
 
   if (canRefreshFx) {
     $("#nw-refresh-fx").onclick = async () => {
