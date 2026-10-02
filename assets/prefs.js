@@ -33,6 +33,11 @@ export const CURRENCY_LABEL = {
   AED: "UAE Dirham",
 };
 export const CURRENCY_SYMBOL = { CAD: "$", INR: "₹", AED: "AED " };
+// Regional-indicator-pair flag emoji - rendered by the OS/browser itself, no
+// image asset or CDN dependency (same "keeps working offline" reasoning as
+// icons.js's inline SVGs), used as the visual identifier for a currency
+// option in onboarding/pages/onboarding.js and pages/profile.js.
+export const CURRENCY_FLAG = { CAD: "\u{1F1E8}\u{1F1E6}", INR: "\u{1F1EE}\u{1F1F3}", AED: "\u{1F1E6}\u{1F1EA}" };
 
 export const getHomeCurrency = () => state.homeCurrency;
 export const getTheme = () => state.theme;

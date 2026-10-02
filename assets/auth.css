@@ -153,6 +153,11 @@
   outline: none;
   box-shadow: var(--shadow-focus);
 }
+/* Holds either a flag + small currency-code symbol (stacked, Currency rows)
+   or a single inline SVG icon (Appearance rows) - a flex column so both
+   compose the same way regardless of which one a row uses, centered in a
+   fixed-width box so every row's label text starts at the same x position
+   whichever visual it has (see optionsHtml()'s comment in profile.js). */
 .ob-option-symbol {
   flex-shrink: 0;
   /* Wide enough for the widest symbol actually used (CURRENCY_SYMBOL's
@@ -161,11 +166,29 @@
      visually collide with the label text right next to it, eating into the
      12px gap .ob-option's own `gap` provides everywhere else. */
   width: 40px;
-  text-align: center;
-  font-family: var(--mono);
-  font-size: 16px;
-  font-weight: 700;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
   color: var(--ink-2);
+}
+.ob-flag {
+  /* Flag emoji render at roughly 1em square across browsers - large enough
+     to actually read as a flag rather than a coloured dot. */
+  font-size: 20px;
+  line-height: 1;
+}
+.ob-currency-sym {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--ink-3);
+}
+.ob-option-symbol svg {
+  width: 22px;
+  height: 22px;
 }
 .ob-option-text {
   font-size: 13px;

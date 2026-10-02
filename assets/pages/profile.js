@@ -12,9 +12,10 @@ import {
   setTheme,
   setDisplayRate,
 } from "../store.js";
-import { CURRENCY_LABEL, CURRENCY_SYMBOL } from "../prefs.js";
+import { CURRENCY_LABEL, CURRENCY_SYMBOL, CURRENCY_FLAG } from "../prefs.js";
 import { $, view, esc, state, notice, withBusy, updateBrandCurrency } from "../core.js";
 import { isRemoteStore, signOut } from "../auth.js";
+import { themeIcon } from "../icons.js";
 
 const THEME_OPTIONS = [
   ["system", "System", "Match this device's setting"],
@@ -22,25 +23,42 @@ const THEME_OPTIONS = [
   ["dark", "Dark", ""],
 ];
 
-// Always renders the `.ob-option-symbol` slot, even empty, so a list with no
-// real symbols (Appearance) still reserves the same width as one that has
-// them (Currency) - without this, "System"/"Light"/"Dark" started flush
-// against the card edge while "CAD"/"INR"/"AED" started ~52px in, and the
-// two side-by-side panels read as misaligned even though they're meant to
-// look like a matched pair.
+// Always renders the `.ob-option-symbol` slot, even when a row has no visual
+// of its own, so a list with none (there's no such row any more, but keeps
+// this robust) still reserves the same width as one that does - without
+// this, option labels in a visual-less list started flush against the card
+// edge while ones with a flag/icon started ~52px in, and two side-by-side
+// panels would read as misaligned even though they're meant to look like a
+// matched pair. `symbolHtml` is pre-rendered markup (a flag emoji + small
+// currency symbol, or an inline SVG icon) rather than a single character,
+// since both callers below now need more than one glyph in that slot.
 function optionsHtml(items, selected, dataAttr) {
   return `<div class="ob-options" role="radiogroup">
     ${items
       .map(
-        ([value, label, hint, symbol = ""]) => `
+        ({ value, label, hint, symbolHtml = "" }) => `
       <button type="button" class="ob-option${value === selected ? " selected" : ""}"
         role="radio" aria-checked="${value === selected}" data-${dataAttr}="${value}">
-        <span class="ob-option-symbol">${symbol}</span>
+        <span class="ob-option-symbol">${symbolHtml}</span>
         <span class="ob-option-text"><b>${label}</b>${hint ? `<br><span class="muted">${hint}</span>` : ""}</span>
       </button>`,
       )
       .join("")}
   </div>`;
+}
+
+/** The currency option's icon: a country flag (the recognizable "which
+    country" cue) with the currency's own symbol underneath, when that
+    symbol is an actual glyph ($, ₹) rather than just the currency code
+    again - AED has no distinct symbol (CURRENCY_SYMBOL.AED is literally
+    "AED "), and showing "AED" twice in the same row (once as the flag's
+    caption, once as the row's own bold title) would be redundant rather
+    than informative. */
+function currencySymbolHtml(code) {
+  const flag = CURRENCY_FLAG[code] || "";
+  const sym = (CURRENCY_SYMBOL[code] || "").trim();
+  const showSym = sym && sym !== code;
+  return `<span class="ob-flag">${flag}</span>${showSym ? `<span class="ob-currency-sym">${esc(sym)}</span>` : ""}`;
 }
 
 // Two side-by-side panels (the same .grid2/.panel/.stack primitives every
@@ -50,12 +68,18 @@ function optionsHtml(items, selected, dataAttr) {
 // theme" read as two distinct choices instead of one long scrolling list
 // with plain-text sub-labels standing in for headings.
 function renderPreferencesPanel() {
-  const currencyItems = CURRENCIES.map((c) => [
-    c,
-    c,
-    CURRENCY_LABEL[c] || "",
-    CURRENCY_SYMBOL[c] || "",
-  ]);
+  const currencyItems = CURRENCIES.map((c) => ({
+    value: c,
+    label: c,
+    hint: CURRENCY_LABEL[c] || "",
+    symbolHtml: currencySymbolHtml(c),
+  }));
+  const themeItems = THEME_OPTIONS.map(([value, label, hint]) => ({
+    value,
+    label,
+    hint,
+    symbolHtml: themeIcon(value),
+  }));
   return `
   <div class="eyebrow">Preferences</div>
   <div class="grid2">
@@ -74,7 +98,7 @@ function renderPreferencesPanel() {
           <h3>Appearance</h3>
           <p class="note">Pick a theme, or follow this device's setting.</p>
         </div>
-        ${optionsHtml(THEME_OPTIONS, getTheme(), "theme-choice")}
+        ${optionsHtml(themeItems, getTheme(), "theme-choice")}
       </div>
     </div>
   </div>`;

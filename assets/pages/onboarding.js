@@ -12,9 +12,22 @@ import { CURRENCIES } from "../store.js";
 import {
   CURRENCY_LABEL,
   CURRENCY_SYMBOL,
+  CURRENCY_FLAG,
   getTheme,
   setTheme,
 } from "../prefs.js";
+import { themeIcon } from "../icons.js";
+
+/** Same reasoning as profile.js's currencySymbolHtml(): a flag for "which
+    country", plus the currency's own symbol underneath when it's an actual
+    glyph rather than just the code again (AED has none - CURRENCY_SYMBOL.AED
+    is literally "AED ", which would just repeat the row's own bold title). */
+function currencySymbolHtml(code) {
+  const flag = CURRENCY_FLAG[code] || "";
+  const sym = (CURRENCY_SYMBOL[code] || "").trim();
+  const showSym = sym && sym !== code;
+  return `<span class="ob-flag">${flag}</span>${showSym ? `<span class="ob-currency-sym">${sym}</span>` : ""}`;
+}
 
 const THEME_OPTIONS = [
   ["system", "System", "Match this device's setting"],
@@ -53,7 +66,7 @@ export function renderOnboarding({ onFinish }) {
           (c) => `
           <button type="button" class="ob-option${c === currency ? " selected" : ""}"
             role="radio" aria-checked="${c === currency}" data-currency="${c}">
-            <span class="ob-option-symbol">${CURRENCY_SYMBOL[c] || ""}</span>
+            <span class="ob-option-symbol">${currencySymbolHtml(c)}</span>
             <span class="ob-option-text"><b>${c}</b><br><span class="muted">${CURRENCY_LABEL[c] || ""}</span></span>
           </button>`,
         ).join("")}
@@ -82,6 +95,7 @@ export function renderOnboarding({ onFinish }) {
           ([value, label, hint]) => `
           <button type="button" class="ob-option${value === theme ? " selected" : ""}"
             role="radio" aria-checked="${value === theme}" data-theme-choice="${value}">
+            <span class="ob-option-symbol">${themeIcon(value)}</span>
             <span class="ob-option-text"><b>${label}</b>${hint ? `<br><span class="muted">${hint}</span>` : ""}</span>
           </button>`,
         ).join("")}
