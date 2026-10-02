@@ -35,7 +35,10 @@
   letter-spacing: -0.02em;
 }
 .tx-income {
-  color: var(--teal);
+  color: var(--green);
+}
+.tx-expense {
+  color: var(--red);
 }
 .tx-over {
   color: var(--red);
@@ -283,10 +286,10 @@
   box-shadow: var(--shadow-card);
 }
 .tx-row.tx-income {
-  background: #e6f6f3;
+  background: #e9f6ec;
 }
 .tx-row.tx-income:hover {
-  background: #d9f1ed;
+  background: #ddf0e1;
   box-shadow: var(--shadow-card);
 }
 .tx-row.tx-transfer {
@@ -314,7 +317,10 @@
   text-align: center;
 }
 .tx-type-icon.tx-income {
-  color: var(--teal);
+  color: var(--green);
+}
+.tx-type-icon.tx-expense {
+  color: var(--red);
 }
 .tx-type-icon.tx-transfer {
   color: var(--ink-3);
@@ -363,12 +369,12 @@
   vertical-align: middle;
 }
 .tx-type-badge-expense {
-  color: var(--amber);
-  background: rgba(178, 74, 51, 0.12);
+  color: var(--red);
+  background: rgba(183, 57, 61, 0.12);
 }
 .tx-type-badge-income {
-  color: var(--teal);
-  background: rgba(0, 105, 89, 0.12);
+  color: var(--green);
+  background: rgba(26, 127, 55, 0.12);
 }
 .tx-type-badge-transfer {
   color: var(--ink-3);
@@ -410,7 +416,10 @@
   font-weight: 500;
 }
 .tx-amount.tx-income {
-  color: var(--teal);
+  color: var(--green);
+}
+.tx-amount.tx-expense {
+  color: var(--red);
 }
 .tx-amount.tx-transfer {
   color: var(--ink-3);

@@ -88,14 +88,16 @@ export function renderTransactions() {
   const typeClass = (t) =>
     t === "Income"
       ? "tx-income"
-      : t === "Transfer"
-        ? "tx-transfer"
-        : t === "Refund"
-          ? "tx-refund"
-          : "";
+      : t === "Expense"
+        ? "tx-expense"
+        : t === "Transfer"
+          ? "tx-transfer"
+          : t === "Refund"
+            ? "tx-refund"
+            : "";
   // Per-row type badge: every TYPES value gets its own colour (typeClass above
-  // leaves Expense/Dividends unstyled, which is fine for the icon/amount but
-  // not for a label meant to visually distinguish all five types at a glance).
+  // leaves Dividends unstyled, which is fine for the icon/amount but not for
+  // a label meant to visually distinguish all five types at a glance).
   const typeBadgeClass = (t) => "tx-type-badge-" + t.toLowerCase();
 
   const txRow = (r) => `
@@ -148,7 +150,7 @@ export function renderTransactions() {
   <div class="tx-summary">
     <div class="tx-sum-item ${expense > 0 ? "" : "muted-block"}">
       <span class="tx-sum-label">Expense</span>
-      <span class="tx-sum-val num">${money(expense)}</span>
+      <span class="tx-sum-val num tx-expense">${money(expense)}</span>
     </div>
     <div class="tx-sum-item ${income > 0 ? "" : "muted-block"}">
       <span class="tx-sum-label">Income</span>
@@ -227,7 +229,9 @@ export function renderTransactions() {
                   g.transfer > 0
                     ? `<span class="tx-transfer">${money(g.transfer)}</span>`
                     : "",
-                  g.expense > 0 ? `<span>${money(g.expense)}</span>` : "",
+                  g.expense > 0
+                    ? `<span class="tx-expense">${money(g.expense)}</span>`
+                    : "",
                 ]
                   .filter(Boolean)
                   .join('<span class="tx-sep">·</span>')}
