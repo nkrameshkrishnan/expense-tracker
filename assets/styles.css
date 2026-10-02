@@ -396,6 +396,13 @@ label.f > textarea {
      this just makes it the shared default instead of a one-off. */
   grid-template-columns: repeat(4, 1fr);
   gap: 12px;
+  /* Section-break spacing below the strip - matters most where a KPI strip
+     is followed directly by a table/list with no .eyebrow heading in
+     between (Precious Metals, Fixed Deposits), which otherwise left the
+     table's header row touching the KPI cards. Where an .eyebrow (30px
+     top margin) does follow, adjacent margins collapse to the larger of
+     the two, so this doesn't add extra space there. */
+  margin-bottom: 24px;
 }
 .kpi {
   padding: 13px 14px;
