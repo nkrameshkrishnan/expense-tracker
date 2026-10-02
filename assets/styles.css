@@ -240,8 +240,13 @@ button.btn {
   color: var(--ink);
   background: #fff;
   border: 1px solid var(--rule-2);
-  border-radius: 0;
+  border-radius: var(--radius-xs);
   padding: 7px 9px;
+  transition:
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 input[type="number"],
 input[type="date"] {
@@ -250,8 +255,9 @@ input[type="date"] {
 select:focus,
 input:focus,
 textarea:focus {
-  outline: 2px solid var(--ink);
-  outline-offset: -1px;
+  outline: none;
+  border-color: var(--amber);
+  box-shadow: var(--shadow-focus);
 }
 button.btn {
   cursor: pointer;
@@ -264,6 +270,14 @@ button.btn {
 }
 button.btn:hover {
   background: #000;
+  transform: translateY(-1px);
+}
+button.btn:active {
+  transform: translateY(0);
+}
+button.btn:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
 }
 button.btn.ghost {
   background: #fff;
@@ -283,6 +297,18 @@ button.btn.danger:hover {
 button.btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  select,
+  input,
+  textarea,
+  button.btn {
+    transition: none;
+  }
+  button.btn:hover {
+    transform: none;
+  }
 }
 label.f {
   display: block;

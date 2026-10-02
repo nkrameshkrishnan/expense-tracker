@@ -5,6 +5,7 @@
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   border-radius: var(--radius-md);
+  border: var(--border-card);
   box-shadow: var(--shadow-card);
   background: #fff;
   margin-bottom: 24px;
@@ -62,12 +63,19 @@
 .bcard {
   background: #fff;
   border-radius: var(--radius-md);
+  border: var(--border-card);
   box-shadow: var(--shadow-card);
   padding: 14px 16px 12px;
   display: flex;
   flex-direction: column;
   gap: 0;
-  transition: box-shadow 0.15s;
+  transition:
+    box-shadow var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+.bcard:hover {
+  box-shadow: var(--shadow-card-hover);
+  border-color: rgba(20, 21, 26, 0.14);
 }
 .bcard:focus-within {
   box-shadow: var(--shadow-focus);
@@ -190,12 +198,15 @@
   text-align: right;
   padding: 6px 8px;
   border: 1px solid var(--rule-2);
+  border-radius: var(--radius-xs);
   background: #fff;
   color: var(--ink);
+  transition: border-color var(--motion-fast) var(--ease-out);
 }
 .bcard-flat-input:focus {
-  outline: 2px solid var(--ink);
-  outline-offset: -1px;
+  outline: none;
+  border-color: var(--amber);
+  box-shadow: var(--shadow-focus);
 }
 
 /* monthly grid */
@@ -222,13 +233,16 @@
   text-align: right;
   padding: 4px 5px;
   border: 1px solid var(--rule);
+  border-radius: var(--radius-xs);
   background: #fff;
   color: var(--ink);
   width: 100%;
+  transition: border-color var(--motion-fast) var(--ease-out);
 }
 .bmonth-input:focus {
-  outline: 2px solid var(--ink);
-  outline-offset: -1px;
+  outline: none;
+  border-color: var(--amber);
+  box-shadow: var(--shadow-focus);
 }
 .bmonth-input.over {
   border-color: var(--red);
