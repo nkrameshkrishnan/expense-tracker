@@ -321,13 +321,23 @@ function stopBootMessages() {
   _bootMsgTimers = [];
 }
 
-/** Reveal the real app - hide the boot overlay, show the header/nav that was
-    deliberately kept invisible (not un-rendered, just visibility:hidden) so
-    there is zero layout shift the instant it appears. */
+/** Reveal the real app - hide the boot overlay, hide #gate, and show the
+    header/nav that was deliberately kept invisible (not un-rendered, just
+    visibility:hidden) so there is zero layout shift the instant it appears.
+    Hiding #gate here (not just in the sign-in callback) matters for the
+    onboarding path specifically: renderOnboarding() explicitly un-hides
+    #gate to show the wizard, and finishOnboarding() routes through here
+    afterward - without this, the finished onboarding card would just sit
+    on top of the now-loaded app forever, since nothing else ever hides it
+    again on that path (the normal sign-in path hides #gate earlier, before
+    boot() even starts, so it never needed this - but relying on that made
+    this path silently depend on gate already being hidden). */
 export function revealApp() {
   stopBootMessages();
   const bootOverlay = $("#boot-loading");
   if (bootOverlay) bootOverlay.hidden = true;
+  const gate = $("#gate");
+  if (gate) gate.hidden = true;
   const header = $("#app-header");
   if (header) header.style.visibility = "";
 }
