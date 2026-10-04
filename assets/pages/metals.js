@@ -118,6 +118,11 @@ export function priceAppreciation(holdings, priceHistory, latestPrice) {
     table, and an add-lot form. Mirrors renderDebtSection/wireDebtHandlers
     in debts.js - a returned HTML string plus a separate wiring function
     called once that HTML is actually in the DOM. */
+/** Id of the lot currently loaded into the form for editing, or null when
+    the form is adding a new lot. Module state, so it survives the
+    re-render that follows Edit/Cancel. */
+let editingLotId = null;
+
 export function renderMetalsSection(scopeOwner) {
   if (!isRemoteStore(state.store)) {
     return `
@@ -132,6 +137,8 @@ export function renderMetalsSection(scopeOwner) {
   const holdings = (state.metalHoldings || []).filter(
     (h) => !scopeOwner || h.owner === scopeOwner,
   );
+  const editing = holdings.find((h) => h.id === editingLotId) || null;
+  if (!editing) editingLotId = null;
   const latestPrice = state.goldPrice || null;
   const summary = metalsSummary(holdings, latestPrice);
   const appreciation = priceAppreciation(
@@ -188,7 +195,8 @@ export function renderMetalsSection(scopeOwner) {
         <td class="n num">${money(h.pricePerGram)}</td>
         <td class="n num muted">${money(h.weightGrams * h.pricePerGram)}</td>
         <td class="n num">${valueToday === null ? "—" : money(valueToday)}</td>
-        <td><button class="rowbtn" data-delmetal="${h.id}" title="Delete this lot">✕</button></td>
+        <td class="nowrap"><button class="rowbtn" data-editmetal="${h.id}" title="Edit this lot">Edit</button>
+          <button class="rowbtn" data-delmetal="${h.id}" title="Delete this lot">✕</button></td>
       </tr>`;
     })
     .join("");
@@ -210,21 +218,23 @@ export function renderMetalsSection(scopeOwner) {
       <label class="f"><span>Metal</span>
         <select name="metal"><option>Gold</option></select></label>
       <label class="f"><span>Purity (karat)</span>
-        <select name="purityKarat">${KARATS.map((k) => `<option value="${k}">${k}K</option>`).join("")}</select></label>
+        <select name="purityKarat">${KARATS.map((k) => `<option value="${k}"${(editing ? Number(editing.purityKarat) : 24) === k ? " selected" : ""}>${k}K</option>`).join("")}</select></label>
       <label class="f"><span>Weight (grams)</span>
-        <input type="number" name="weightGrams" id="metal-weight" step="0.001" min="0.001" required placeholder="e.g. 10"></label>
+        <input type="number" name="weightGrams" id="metal-weight" step="0.001" min="0.001" required placeholder="e.g. 10"${editing ? ` value="${editing.weightGrams}"` : ""}></label>
       <label class="f"><span>Purchase price (total)</span>
         <input type="number" name="purchasePrice" id="metal-total" step="0.01" min="0" placeholder="e.g. 850.00"></label>
       <label class="f"><span>Price paid/gram</span>
-        <input type="number" name="pricePerGram" id="metal-pergram" step="0.01" min="0" placeholder="or enter this instead"></label>
+        <input type="number" name="pricePerGram" id="metal-pergram" step="0.01" min="0" placeholder="or enter this instead"${editing ? ` value="${Number(editing.pricePerGram.toFixed(2))}"` : ""}></label>
       <label class="f"><span>Place of purchase</span>
-        <input type="text" name="placeOfPurchase" maxlength="120" placeholder="e.g. Costco, jeweller name"></label>
+        <input type="text" name="placeOfPurchase" maxlength="120" placeholder="e.g. Costco, jeweller name"${editing ? ` value="${esc(editing.placeOfPurchase || "")}"` : ""}></label>
       <label class="f"><span>Purchase date</span>
-        <input type="date" name="purchaseDate" value="${new Date().toISOString().slice(0, 10)}" required></label>
+        <input type="date" name="purchaseDate" value="${editing ? esc(editing.purchaseDate) : new Date().toISOString().slice(0, 10)}" required></label>
       <label class="f"><span>Owner</span>
-        <select name="owner">${PEOPLE.map((p) => `<option>${esc(p)}</option>`).join("")}</select></label>
-      <button class="btn" type="submit">Add lot</button>
+        <select name="owner">${PEOPLE.map((p) => `<option${editing && editing.owner === p ? " selected" : ""}>${esc(p)}</option>`).join("")}</select></label>
+      <button class="btn" type="submit">${editing ? "Save changes" : "Add lot"}</button>
+      ${editing ? '<button class="btn ghost" type="button" id="metal-cancel-edit">Cancel</button>' : ""}
     </form>
+    ${editing ? `<p class="note" style="margin:8px 0 0"><b>Editing the ${esc(editing.purchaseDate)} lot.</b> Price/gram is pre-filled; enter a total price to override it.</p>` : ""}
     <p class="note" id="metal-calc-hint" style="margin:8px 0 0"></p>
     <div class="err" id="metal-err"></div>
   </div>
@@ -282,8 +292,7 @@ export function wireMetalsHandlers() {
     if (pricePerGram === null)
       return ($("#metal-err").textContent =
         "Enter either the total purchase price or the price paid per gram (not negative).");
-    const done = await withBusy("Adding lot", async () => {
-      await state.store.addMetalHolding({
+    const lot = {
         metal: f.metal,
         weightGrams,
         pricePerGram,
@@ -291,13 +300,37 @@ export function wireMetalsHandlers() {
         placeOfPurchase: (f.placeOfPurchase || "").trim(),
         purchaseDate: f.purchaseDate,
         owner: f.owner,
-        notes: "",
-      });
+    };
+    const wasEditing = editingLotId;
+    const done = await withBusy(wasEditing ? "Saving lot" : "Adding lot", async () => {
+      if (wasEditing) await state.store.updateMetalHolding(wasEditing, lot);
+      else await state.store.addMetalHolding({ ...lot, notes: "" });
     });
     if (done) {
+      editingLotId = null;
       await reload();
-      notice(`Added ${weightGrams}g of ${f.purityKarat}K ${f.metal.toLowerCase()}.`, "ok");
+      notice(
+        wasEditing
+          ? "Lot updated."
+          : `Added ${weightGrams}g of ${f.purityKarat}K ${f.metal.toLowerCase()}.`,
+        "ok",
+      );
     }
+  });
+
+  view.querySelectorAll("[data-editmetal]").forEach(
+    (b) =>
+      (b.onclick = async () => {
+        editingLotId = Number(b.dataset.editmetal);
+        const { renderNetWorth } = await import("./networth.js");
+        renderNetWorth();
+        $("#metal-add-form")?.scrollIntoView({ block: "center" });
+      }),
+  );
+  $("#metal-cancel-edit")?.addEventListener("click", async () => {
+    editingLotId = null;
+    const { renderNetWorth } = await import("./networth.js");
+    renderNetWorth();
   });
 
   view.querySelectorAll("[data-delmetal]").forEach(

@@ -475,6 +475,23 @@ export class SupabaseStore {
     if (this.cache) this.cache.metalHoldings.push(result);
     return result.id;
   }
+  async updateMetalHolding(id, record) {
+    const r = this._toDbMetalHolding(record);
+    delete r.id; // identity column: rejected in UPDATE, same as updateDebt
+    const sb = await this._client();
+    const { data, error } = await sb
+      .from("precious_metal_holdings")
+      .update(r)
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) throw dbError(error);
+    const result = this._normMetalHolding(data);
+    if (this.cache) {
+      const i = this.cache.metalHoldings.findIndex((h) => h.id === result.id);
+      if (i !== -1) this.cache.metalHoldings[i] = result;
+    }
+  }
   async deleteMetalHolding(id) {
     const numId = Number(id);
     const sb = await this._client();
