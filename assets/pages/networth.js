@@ -164,7 +164,7 @@ export function renderNetWorth() {
   );
   const metalsValue = metalsSummary(
     metalHoldings,
-    state.goldPrice || null,
+    state.metalPrices || { Gold: state.goldPrice || null },
   ).value;
   const fixedDeposits = (state.fixedDeposits || []).filter(
     (d) => !scopeOwner || d.owner === scopeOwner,

@@ -438,7 +438,7 @@ export class SupabaseStore {
       MemoryStore, which don't exist for this feature but would still need
       to agree on a shape if they ever did. */
   _normMetalHolding(h) {
-    const { weight_grams, price_per_gram, purchase_date, purity_karat, place_of_purchase, ...rest } = h;
+    const { weight_grams, price_per_gram, purchase_date, purity_karat, place_of_purchase, purity_fineness, current_value, ...rest } = h;
     return {
       ...rest,
       id: Number(h.id) || 0,
@@ -447,13 +447,17 @@ export class SupabaseStore {
       purchaseDate: purchase_date,
       purityKarat: Number(purity_karat) || 24,
       placeOfPurchase: place_of_purchase || "",
+      purityFineness: purity_fineness === null || purity_fineness === undefined ? null : Number(purity_fineness),
+      currentValue: current_value === null || current_value === undefined ? null : Number(current_value),
     };
   }
   _toDbMetalHolding(record) {
-    const { weightGrams, pricePerGram, purchaseDate, purityKarat, placeOfPurchase, ...rest } = record;
+    const { weightGrams, pricePerGram, purchaseDate, purityKarat, placeOfPurchase, purityFineness, currentValue, ...rest } = record;
     const out = { ...rest };
     if ("purityKarat" in record) out.purity_karat = purityKarat;
     if ("placeOfPurchase" in record) out.place_of_purchase = placeOfPurchase;
+    if ("purityFineness" in record) out.purity_fineness = purityFineness;
+    if ("currentValue" in record) out.current_value = currentValue;
     if ("weightGrams" in record) out.weight_grams = weightGrams;
     if ("pricePerGram" in record) out.price_per_gram = pricePerGram;
     if ("purchaseDate" in record) out.purchase_date = purchaseDate;
@@ -576,11 +580,14 @@ export class SupabaseStore {
       );
   }
 
-  async getLatestGoldPrice() {
+  /** Latest daily spot price row for a priced metal ("Gold" or "Silver"),
+      always the pure-metal price per gram in CAD. Null if none fetched yet. */
+  async getLatestMetalPrice(metal = "Gold") {
     const sb = await this._client();
     const { data, error } = await sb
       .from("gold_price_history")
       .select("*")
+      .eq("metal", metal)
       .order("date", { ascending: false })
       .limit(1);
     if (error) throw dbError(error);
@@ -590,17 +597,24 @@ export class SupabaseStore {
       pricePerGramCad: Number(data[0].price_per_gram_cad) || 0,
     };
   }
-  async getGoldPriceHistory() {
+  async getMetalPriceHistory(metal = "Gold") {
     const sb = await this._client();
     const { data, error } = await sb
       .from("gold_price_history")
       .select("*")
+      .eq("metal", metal)
       .order("date", { ascending: true });
     if (error) throw dbError(error);
     return (data || []).map((r) => ({
       date: r.date,
       pricePerGramCad: Number(r.price_per_gram_cad) || 0,
     }));
+  }
+  getLatestGoldPrice() {
+    return this.getLatestMetalPrice("Gold");
+  }
+  getGoldPriceHistory() {
+    return this.getMetalPriceHistory("Gold");
   }
 
   /** The CAD-per-unit rate for `currency` closest to `date` - on-or-before

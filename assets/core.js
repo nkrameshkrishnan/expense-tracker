@@ -187,6 +187,14 @@ export async function refresh() {
   state.fixedDeposits = (await state.store.listFixedDeposits?.()) || [];
   state.goldPrice = (await state.store.getLatestGoldPrice?.()) || null;
   state.goldPriceHistory = (await state.store.getGoldPriceHistory?.()) || [];
+  state.metalPrices = {
+    Gold: state.goldPrice,
+    Silver: (await state.store.getLatestMetalPrice?.("Silver")) || null,
+  };
+  state.metalPriceHistory = {
+    Gold: state.goldPriceHistory,
+    Silver: (await state.store.getMetalPriceHistory?.("Silver")) || [],
+  };
   $("#foot-count").textContent = `${state.rows.length} transactions stored`;
   renderPeopleSwitch();
   renderProfileMenu();

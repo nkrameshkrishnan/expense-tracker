@@ -1,5 +1,8 @@
-name: Fetch daily gold price
+name: Fetch daily gold and silver price
 
+# Also fetches silver (see the silver step below), stored as a second row per
+# day in the same table (primary key is (date, metal)).
+#
 # Fetches the spot gold price (CAD, per troy ounce) from goldprice.dev, converts
 # to price-per-gram, and upserts today's row into gold_price_history via the
 # Supabase REST API using the project's secret key (Project Settings -> API
@@ -51,11 +54,48 @@ jobs:
 
           echo "Gold price: \$$PRICE_PER_OUNCE/oz -> \$$PRICE_PER_GRAM/g on $TODAY"
 
-          curl -sf -X POST "$SUPABASE_URL/rest/v1/gold_price_history" \
+          curl -sf -X POST "$SUPABASE_URL/rest/v1/gold_price_history?on_conflict=date,metal" \
             -H "apikey: $SUPABASE_SECRET_KEY" \
             -H "Authorization: Bearer $SUPABASE_SECRET_KEY" \
             -H "Content-Type: application/json" \
             -H "Prefer: resolution=merge-duplicates" \
             -d "{\"date\": \"$TODAY\", \"metal\": \"Gold\", \"price_per_gram_cad\": $PRICE_PER_GRAM}"
 
-          echo "Upserted successfully."
+          echo "Gold upserted successfully."
+
+          # ---- Silver ------------------------------------------------------
+          # goldprice.dev's free tier is gold-only (XAG-CAD-SPOT is plan-gated),
+          # so silver comes from gold-api.com, which quotes USD per troy ounce
+          # and needs no key. To get CAD without another feed, reuse gold: the
+          # USD->CAD rate is (gold in CAD) / (gold in USD) from the two quotes
+          # above/below taken moments apart. The stored price is pure (.999+)
+          # silver per gram; lot purity (925 sterling, ...) is applied in the app.
+          GOLD_USD=$(curl -sf "https://api.gold-api.com/price/XAU" | node -e '
+            let d = ""; process.stdin.on("data", c => d += c);
+            process.stdin.on("end", () => {
+              const p = Number(JSON.parse(d).price);
+              if (!isFinite(p) || p <= 0) throw new Error("bad XAU USD price");
+              console.log(p);
+            });')
+          SILVER_USD=$(curl -sf "https://api.gold-api.com/price/XAG" | node -e '
+            let d = ""; process.stdin.on("data", c => d += c);
+            process.stdin.on("end", () => {
+              const p = Number(JSON.parse(d).price);
+              if (!isFinite(p) || p <= 0) throw new Error("bad XAG USD price");
+              console.log(p);
+            });')
+          SILVER_PER_GRAM=$(node -e "
+            const usdToCad = $PRICE_PER_OUNCE / $GOLD_USD;
+            if (!(usdToCad > 1 && usdToCad < 2)) throw new Error('implausible USD->CAD ' + usdToCad);
+            console.log(($SILVER_USD * usdToCad / 31.1034768).toFixed(2));
+          ")
+          echo "Silver price: \$$SILVER_USD USD/oz -> \$$SILVER_PER_GRAM CAD/g on $TODAY"
+
+          curl -sf -X POST "$SUPABASE_URL/rest/v1/gold_price_history?on_conflict=date,metal" \
+            -H "apikey: $SUPABASE_SECRET_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SECRET_KEY" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: resolution=merge-duplicates" \
+            -d "{\"date\": \"$TODAY\", \"metal\": \"Silver\", \"price_per_gram_cad\": $SILVER_PER_GRAM}"
+
+          echo "Silver upserted successfully."

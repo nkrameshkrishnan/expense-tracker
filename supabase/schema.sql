@@ -221,10 +221,17 @@ create policy "household can delete debts" on debts
 -- stored running total.
 create table if not exists precious_metal_holdings (
   id bigint generated always as identity primary key,
-  metal text not null default 'Gold' check (metal in ('Gold')),
+  metal text not null default 'Gold' check (metal in ('Gold', 'Silver', 'Diamond')),
   weight_grams numeric(10, 3) not null check (weight_grams > 0),
   purity_karat numeric(4, 1) not null default 24 check (purity_karat > 0 and purity_karat <= 24),
   place_of_purchase text not null default '',
+  -- Silver purity as fineness, parts per thousand (999, 925 sterling, ...).
+  -- Gold uses purity_karat; diamonds use neither.
+  purity_fineness numeric(5, 1) check (purity_fineness > 0 and purity_fineness <= 1000),
+  -- Diamonds only: no market feed exists, so the household's own appraisal or
+  -- estimate. Null = count the diamond at what was paid. weight_grams holds
+  -- diamonds too (1 carat = 0.2 g); the app shows carats.
+  current_value numeric(12, 2) check (current_value >= 0),
   price_per_gram numeric(10, 2) not null check (price_per_gram >= 0),
   purchase_date date not null,
   owner text not null default '',
@@ -240,6 +247,19 @@ alter table precious_metal_holdings
 
 alter table precious_metal_holdings
   add column if not exists place_of_purchase text not null default '';
+
+-- Silver and diamond support, for databases created before they existed.
+alter table precious_metal_holdings
+  drop constraint if exists precious_metal_holdings_metal_check;
+alter table precious_metal_holdings
+  add constraint precious_metal_holdings_metal_check
+  check (metal in ('Gold', 'Silver', 'Diamond'));
+alter table precious_metal_holdings
+  add column if not exists purity_fineness numeric(5, 1)
+  check (purity_fineness > 0 and purity_fineness <= 1000);
+alter table precious_metal_holdings
+  add column if not exists current_value numeric(12, 2)
+  check (current_value >= 0);
 
 alter table precious_metal_holdings enable row level security;
 
@@ -263,12 +283,21 @@ create policy "household can delete metal holdings" on precious_metal_holdings
 -- zero-direct-write shape allowed_emails uses for a different reason.
 -- price_per_gram_cad is the 24K (pure) spot price; lot purity is applied at
 -- valuation time (precious_metal_holdings.purity_karat), never baked in here.
+-- (Despite the name, it holds every priced metal - Gold and Silver - one row
+-- per (date, metal). Diamonds have no feed.)
 create table if not exists gold_price_history (
-  date date primary key,
-  metal text not null default 'Gold',
+  date date not null,
+  metal text not null default 'Gold' check (metal in ('Gold', 'Silver')),
   price_per_gram_cad numeric(10, 2) not null,
-  fetched_at timestamptz not null default now()
+  fetched_at timestamptz not null default now(),
+  primary key (date, metal)
 );
+-- For databases created when the key was date alone (gold only):
+alter table gold_price_history drop constraint if exists gold_price_history_pkey;
+alter table gold_price_history add primary key (date, metal);
+alter table gold_price_history drop constraint if exists gold_price_history_metal_check;
+alter table gold_price_history add constraint gold_price_history_metal_check
+  check (metal in ('Gold', 'Silver'));
 
 alter table gold_price_history enable row level security;
 
