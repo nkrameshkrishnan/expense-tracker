@@ -240,6 +240,11 @@
   align-items: flex-end;
   flex-wrap: wrap;
 }
+/* label.f sets display:flex, which beats the UA rule behind the hidden
+   attribute - without this, fields hidden for the chosen metal still show. */
+.nw-add-row [hidden] {
+  display: none !important;
+}
 .nw-add-row .btn {
   white-space: nowrap;
 }
