@@ -223,11 +223,19 @@ create table if not exists precious_metal_holdings (
   id bigint generated always as identity primary key,
   metal text not null default 'Gold' check (metal in ('Gold')),
   weight_grams numeric(10, 3) not null check (weight_grams > 0),
+  purity_karat numeric(4, 1) not null default 24 check (purity_karat > 0 and purity_karat <= 24),
   price_per_gram numeric(10, 2) not null check (price_per_gram >= 0),
   purchase_date date not null,
   owner text not null default '',
   notes text not null default ''
 );
+
+-- For databases created before purity existed (create table if not exists
+-- above skips them). Existing lots default to 24K, i.e. valued exactly as
+-- before; edit a lot's purity_karat in the SQL editor if it was 22K/18K.
+alter table precious_metal_holdings
+  add column if not exists purity_karat numeric(4, 1) not null default 24
+  check (purity_karat > 0 and purity_karat <= 24);
 
 alter table precious_metal_holdings enable row level security;
 
@@ -249,6 +257,8 @@ create policy "household can delete metal holdings" on precious_metal_holdings
 -- this table gets a read policy for the household and deliberately no
 -- insert/update/delete policy for anon/authenticated, the same
 -- zero-direct-write shape allowed_emails uses for a different reason.
+-- price_per_gram_cad is the 24K (pure) spot price; lot purity is applied at
+-- valuation time (precious_metal_holdings.purity_karat), never baked in here.
 create table if not exists gold_price_history (
   date date primary key,
   metal text not null default 'Gold',

@@ -6,6 +6,10 @@ name: Fetch daily gold price
 # Keys -> Secret keys in Supabase's current API key system; the replacement
 # for the older service_role key, and bypasses RLS the same way - this table
 # has no insert/update policy for anon/authenticated, see supabase/schema.sql).
+# The stored price is always the 24K (pure gold) spot price. Purity is NOT
+# applied here: each holding carries its own purity_karat and the app values
+# it at price x karat/24 (22K = 22/24, 18K = 18/24, ...). Keep it that way so
+# one price row serves every lot.
 # No Supabase Edge Function is involved; this workflow is the entire pipeline.
 
 on:

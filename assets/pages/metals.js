@@ -34,6 +34,19 @@ export function resolvePricePerGram({ weightGrams, pricePerGram, purchasePrice }
   return null;
 }
 
+/** Karat options offered when adding a lot. The daily price feed is the
+    24-karat (pure) spot price, so every other purity is valued at
+    karat/24 of it (22K = 91.67%, 18K = 75%, ...). */
+export const KARATS = [24, 22, 21, 18, 14, 10];
+
+/** Fraction of a lot's weight that is actual gold. Missing/invalid purity
+    (e.g. rows saved before the column existed) is treated as 24K, which is
+    what those rows were already being valued as. */
+export function purityFraction(karat) {
+  const k = Number(karat);
+  return k > 0 && k <= 24 ? k / 24 : 1;
+}
+
 /** Value, average cost, and unrealized gain across all lots, valued at
     latestPrice. Lots are purchase transactions (see supabase/schema.sql's
     precious_metal_holdings comment) - average cost is always the
@@ -47,12 +60,18 @@ export function metalsSummary(holdings, latestPrice) {
   );
   const avgCostPerGram = totalGrams > 0 ? totalCost / totalGrams : 0;
   const pricePerGram = latestPrice ? latestPrice.pricePerGramCad : 0;
-  const value = totalGrams * pricePerGram;
+  // Value uses pure-gold weight: gross grams x karat/24 x 24K spot price.
+  const fineGrams = holdings.reduce(
+    (s, h) => s + h.weightGrams * purityFraction(h.purityKarat),
+    0,
+  );
+  const value = fineGrams * pricePerGram;
   const unrealizedGain = latestPrice ? value - totalCost : 0;
   const unrealizedGainPct =
     latestPrice && totalCost > 0 ? unrealizedGain / totalCost : 0;
   return {
     totalGrams,
+    fineGrams,
     value,
     avgCostPerGram,
     unrealizedGain,
@@ -130,7 +149,7 @@ export function renderMetalsSection(scopeOwner) {
     </div>
     <p class="note">No price data yet &mdash; the daily price fetch hasn't run.</p>`
     : `<div class="kpis">
-      ${kpi("Value", money(summary.value), `${summary.totalGrams.toFixed(1)}g @ ${money(latestPrice.pricePerGramCad)}/g`)}
+      ${kpi("Value", money(summary.value), `${summary.totalGrams.toFixed(1)}g (${summary.fineGrams.toFixed(1)}g pure) @ ${money(latestPrice.pricePerGramCad)}/g 24K`)}
       ${kpi("Avg cost/gram", money(summary.avgCostPerGram), `${holdings.length} lot${holdings.length === 1 ? "" : "s"}`)}
       ${kpi(
         "Unrealized gain",
@@ -155,11 +174,14 @@ export function renderMetalsSection(scopeOwner) {
   const rows = holdings
     .map((h) => {
       const valueToday = latestPrice
-        ? h.weightGrams * latestPrice.pricePerGramCad
+        ? h.weightGrams *
+          purityFraction(h.purityKarat) *
+          latestPrice.pricePerGramCad
         : null;
       return `<tr>
         <td class="num">${esc(h.purchaseDate)}</td>
         <td>${esc(h.metal)}</td>
+        <td class="num">${h.purityKarat ? esc(h.purityKarat) + "K" : "24K"}</td>
         <td><span class="person-chip" data-p="${esc(h.owner)}">${esc(h.owner)}</span></td>
         <td class="n num">${h.weightGrams}g</td>
         <td class="n num">${money(h.pricePerGram)}</td>
@@ -176,7 +198,7 @@ export function renderMetalsSection(scopeOwner) {
   ${
     holdings.length
       ? `<div class="tablewrap"><table><thead><tr>
-      <th>Date</th><th>Metal</th><th>Owner</th><th class="n">Weight</th>
+      <th>Date</th><th>Metal</th><th>Purity</th><th>Owner</th><th class="n">Weight</th>
       <th class="n">Price paid/g</th><th class="n">Total paid</th><th class="n">Value today</th><th></th>
     </tr></thead><tbody>${rows}</tbody></table></div>`
       : `<div class="empty">${emptyIcon()}<span>No precious metal holdings recorded. Add a purchase lot below.</span></div>`
@@ -186,6 +208,8 @@ export function renderMetalsSection(scopeOwner) {
     <form id="metal-add-form" class="nw-add-row" autocomplete="off">
       <label class="f"><span>Metal</span>
         <select name="metal"><option>Gold</option></select></label>
+      <label class="f"><span>Purity (karat)</span>
+        <select name="purityKarat">${KARATS.map((k) => `<option value="${k}">${k}K</option>`).join("")}</select></label>
       <label class="f"><span>Weight (grams)</span>
         <input type="number" name="weightGrams" id="metal-weight" step="0.001" min="0.001" required placeholder="e.g. 10"></label>
       <label class="f"><span>Purchase price (total)</span>
@@ -201,8 +225,8 @@ export function renderMetalsSection(scopeOwner) {
     <p class="note" id="metal-calc-hint" style="margin:8px 0 0"></p>
     <div class="err" id="metal-err"></div>
   </div>
-  <p class="note">Value updates automatically from the daily gold price &mdash;
-    you never need to re-enter it. This is separate from the by-account
+  <p class="note">Value updates automatically from the daily 24K gold price, scaled by each
+    lot's karat (e.g. 22K = 22/24 of pure) &mdash; you never need to re-enter it. This is separate from the by-account
     table above; it does not use a manual balance entry.</p>`;
 }
 
@@ -260,6 +284,7 @@ export function wireMetalsHandlers() {
         metal: f.metal,
         weightGrams,
         pricePerGram,
+        purityKarat: Number(f.purityKarat) || 24,
         purchaseDate: f.purchaseDate,
         owner: f.owner,
         notes: "",
@@ -267,7 +292,7 @@ export function wireMetalsHandlers() {
     });
     if (done) {
       await reload();
-      notice(`Added ${weightGrams}g of ${f.metal}.`, "ok");
+      notice(`Added ${weightGrams}g of ${f.purityKarat}K ${f.metal.toLowerCase()}.`, "ok");
     }
   });
 
