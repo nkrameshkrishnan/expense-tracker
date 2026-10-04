@@ -45,6 +45,10 @@ export const FINENESS = [999, 958, 925, 900, 800];
 /** Diamonds are bought by the carat; lots are stored in grams like every
     other metal (1 carat = 0.2 g) so the schema stays one shape. */
 export const CARAT_GRAMS = 0.2;
+/** Troy ounce, the unit gold and silver are quoted and sold in (not the
+    28.35 g everyday ounce). Weights are still stored in grams. */
+export const OZ_GRAMS = 31.1034768;
+export const gramsToOz = (g) => Number((g / OZ_GRAMS).toFixed(4));
 export const gramsToCarats = (g) => Number((g / CARAT_GRAMS).toFixed(3));
 
 /** Fraction of a gold lot's weight that is actual gold. Missing/invalid
@@ -208,7 +212,7 @@ export function renderMetalsSection(scopeOwner) {
   const lotsLabel = `${holdings.length} lot${holdings.length === 1 ? "" : "s"}`;
   const valueSub = single
     ? latestPrice
-      ? `${summary.totalGrams.toFixed(1)}g (${summary.fineGrams.toFixed(1)}g pure) @ ${money(latestPrice.pricePerGramCad)}/g pure`
+      ? `${summary.totalGrams.toFixed(1)}g / ${gramsToOz(summary.totalGrams)} oz (${summary.fineGrams.toFixed(1)}g pure) @ ${money(latestPrice.pricePerGramCad)}/g pure`
       : "no price data yet"
     : lotsLabel;
   const tiles = missingFeed
@@ -263,7 +267,7 @@ export function renderMetalsSection(scopeOwner) {
         <td class="num">${purity}</td>
         <td>${h.placeOfPurchase ? esc(h.placeOfPurchase) : '<span class="muted">—</span>'}</td>
         <td><span class="person-chip" data-p="${esc(h.owner)}">${esc(h.owner)}</span></td>
-        <td class="n num">${dia ? `${gramsToCarats(h.weightGrams)} ct` : `${h.weightGrams}g`}</td>
+        <td class="n num">${dia ? `${gramsToCarats(h.weightGrams)} ct` : `${h.weightGrams}g <span class="muted">(${gramsToOz(h.weightGrams)} oz)</span>`}</td>
         <td class="n num">${dia ? "—" : money(h.pricePerGram)}</td>
         <td class="n num muted">${money(lotCost(h))}</td>
         <td class="n num">${v === null ? "—" : money(v)}${estimated ? ' <span class="muted" title="No current value entered - showing what you paid">(at cost)</span>' : ""}</td>
@@ -305,11 +309,13 @@ export function renderMetalsSection(scopeOwner) {
         <select name="purityKarat">${KARATS.map((k) => `<option value="${k}"${sel((editing && editing.metal === "Gold" ? Number(editing.purityKarat) : 24) === k)}>${k}K</option>`).join("")}</select></label>
       <label class="f" data-for="Silver"${show("Silver")}><span>Purity (fineness)</span>
         <select name="purityFineness">${FINENESS.map((k) => `<option value="${k}"${sel((editing && editing.metal === "Silver" ? Number(editing.purityFineness) : 999) === k)}>${k}${k === 925 ? " (sterling)" : ""}</option>`).join("")}</select></label>
+      <label class="f" data-for-not="Diamond"${showNot("Diamond")}><span>Weight unit</span>
+        <select name="weightUnit" id="metal-unit"><option value="g">grams (g)</option><option value="oz">troy ounces (oz)</option></select></label>
       <label class="f"><span id="metal-weight-label">${fm === "Diamond" ? "Weight (carats)" : "Weight (grams)"}</span>
-        <input type="number" name="weightGrams" id="metal-weight" step="0.001" min="0.001" required placeholder="e.g. 10"${editing ? ` value="${editWeight}"` : ""}></label>
+        <input type="number" name="weightGrams" id="metal-weight" step="0.0001" min="0.0001" required placeholder="e.g. 10"${editing ? ` value="${editWeight}"` : ""}></label>
       <label class="f"><span>Purchase price (total)</span>
         <input type="number" name="purchasePrice" id="metal-total" step="0.01" min="0" placeholder="e.g. 850.00"></label>
-      <label class="f" data-for-not="Diamond"${showNot("Diamond")}><span>Price paid/gram</span>
+      <label class="f" data-for-not="Diamond"${showNot("Diamond")}><span id="metal-pergram-label">Price paid/gram</span>
         <input type="number" name="pricePerGram" id="metal-pergram" step="0.01" min="0" placeholder="or enter this instead"${editing && editing.metal !== "Diamond" ? ` value="${Number(editing.pricePerGram.toFixed(2))}"` : ""}></label>
       <label class="f" data-for="Diamond"${show("Diamond")}><span>Current value (estimate)</span>
         <input type="number" name="currentValue" step="0.01" min="0" placeholder="appraisal or your estimate"${editing && editing.currentValue !== null && editing.currentValue !== undefined ? ` value="${editing.currentValue}"` : ""}></label>
@@ -350,8 +356,13 @@ export function wireMetalsHandlers() {
     form.querySelectorAll("[data-for-not]").forEach((el) => {
       el.hidden = el.dataset.forNot === m;
     });
+    const oz = form.elements["weightUnit"]?.value === "oz";
     const lbl = $("#metal-weight-label");
-    if (lbl) lbl.textContent = m === "Diamond" ? "Weight (carats)" : "Weight (grams)";
+    if (lbl)
+      lbl.textContent =
+        m === "Diamond" ? "Weight (carats)" : oz ? "Weight (troy oz)" : "Weight (grams)";
+    const pl = $("#metal-pergram-label");
+    if (pl) pl.textContent = oz ? "Price paid/oz" : "Price paid/gram";
     updateCalcHint();
   };
 
@@ -365,9 +376,11 @@ export function wireMetalsHandlers() {
       hint.textContent = "";
       return;
     }
-    const weightGrams = Number($("#metal-weight")?.value);
+    const oz = form?.elements["weightUnit"]?.value === "oz";
+    const weightGrams = Number($("#metal-weight")?.value) * (oz ? OZ_GRAMS : 1);
     const purchasePrice = $("#metal-total")?.value ?? "";
-    const pricePerGramInput = $("#metal-pergram")?.value ?? "";
+    const pergramRaw = $("#metal-pergram")?.value ?? "";
+    const pricePerGramInput = oz && pergramRaw !== "" ? Number(pergramRaw) / OZ_GRAMS : pergramRaw;
     const resolved = resolvePricePerGram({
       weightGrams,
       pricePerGram: pricePerGramInput,
@@ -379,13 +392,14 @@ export function wireMetalsHandlers() {
     }
     hint.textContent =
       purchasePrice !== ""
-        ? `= ${money(resolved)}/gram (from ${money(Number(purchasePrice))} ÷ ${weightGrams}g)`
-        : `= ${money(resolved * weightGrams)} total (${weightGrams}g × ${money(resolved)}/g)`;
+        ? `= ${money(resolved)}/gram${oz ? ` (${money(resolved * OZ_GRAMS)}/oz)` : ""} (from ${money(Number(purchasePrice))} ÷ ${Number(weightGrams.toFixed(3))}g)`
+        : `= ${money(resolved * weightGrams)} total (${Number(weightGrams.toFixed(3))}g × ${money(resolved)}/g)`;
   }
   ["metal-weight", "metal-total", "metal-pergram"].forEach((id) =>
     $("#" + id)?.addEventListener("input", updateCalcHint),
   );
   $("#metal-kind")?.addEventListener("change", applyMetal);
+  $("#metal-unit")?.addEventListener("change", applyMetal);
   applyMetal();
 
   $("#metal-filter")?.addEventListener("change", async (ev) => {
@@ -401,7 +415,10 @@ export function wireMetalsHandlers() {
     const entered = Number(f.weightGrams);
     if (!(entered > 0))
       return err(`${dia ? "Weight (carats)" : "Weight"} must be greater than zero.`);
-    const weightGrams = dia ? Number((entered * CARAT_GRAMS).toFixed(3)) : entered;
+    const oz = !dia && f.weightUnit === "oz";
+    const weightGrams = dia
+      ? Number((entered * CARAT_GRAMS).toFixed(3))
+      : Number((entered * (oz ? OZ_GRAMS : 1)).toFixed(3));
     if (!(weightGrams > 0)) return err("That weight is too small to record.");
     let pricePerGram;
     let currentValue = null;
@@ -419,7 +436,9 @@ export function wireMetalsHandlers() {
     } else {
       pricePerGram = resolvePricePerGram({
         weightGrams,
-        pricePerGram: f.pricePerGram,
+        // A per-oz price is converted to the per-gram figure that's stored.
+        pricePerGram:
+          oz && f.pricePerGram !== "" ? Number(f.pricePerGram) / OZ_GRAMS : f.pricePerGram,
         purchasePrice: f.purchasePrice,
       });
       if (pricePerGram === null)
@@ -450,7 +469,7 @@ export function wireMetalsHandlers() {
       notice(
         wasEditing
           ? "Lot updated."
-          : `Added ${entered}${dia ? " ct" : "g"} of ${f.metal.toLowerCase()}.`,
+          : `Added ${entered}${dia ? " ct" : oz ? " oz" : "g"} of ${f.metal.toLowerCase()}.`,
         "ok",
       );
     }
