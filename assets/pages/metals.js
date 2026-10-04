@@ -182,6 +182,7 @@ export function renderMetalsSection(scopeOwner) {
         <td class="num">${esc(h.purchaseDate)}</td>
         <td>${esc(h.metal)}</td>
         <td class="num">${h.purityKarat ? esc(h.purityKarat) + "K" : "24K"}</td>
+        <td>${h.placeOfPurchase ? esc(h.placeOfPurchase) : '<span class="muted">—</span>'}</td>
         <td><span class="person-chip" data-p="${esc(h.owner)}">${esc(h.owner)}</span></td>
         <td class="n num">${h.weightGrams}g</td>
         <td class="n num">${money(h.pricePerGram)}</td>
@@ -198,7 +199,7 @@ export function renderMetalsSection(scopeOwner) {
   ${
     holdings.length
       ? `<div class="tablewrap"><table><thead><tr>
-      <th>Date</th><th>Metal</th><th>Purity</th><th>Owner</th><th class="n">Weight</th>
+      <th>Date</th><th>Metal</th><th>Purity</th><th>Purchased at</th><th>Owner</th><th class="n">Weight</th>
       <th class="n">Price paid/g</th><th class="n">Total paid</th><th class="n">Value today</th><th></th>
     </tr></thead><tbody>${rows}</tbody></table></div>`
       : `<div class="empty">${emptyIcon()}<span>No precious metal holdings recorded. Add a purchase lot below.</span></div>`
@@ -216,6 +217,8 @@ export function renderMetalsSection(scopeOwner) {
         <input type="number" name="purchasePrice" id="metal-total" step="0.01" min="0" placeholder="e.g. 850.00"></label>
       <label class="f"><span>Price paid/gram</span>
         <input type="number" name="pricePerGram" id="metal-pergram" step="0.01" min="0" placeholder="or enter this instead"></label>
+      <label class="f"><span>Place of purchase</span>
+        <input type="text" name="placeOfPurchase" maxlength="120" placeholder="e.g. Costco, jeweller name"></label>
       <label class="f"><span>Purchase date</span>
         <input type="date" name="purchaseDate" value="${new Date().toISOString().slice(0, 10)}" required></label>
       <label class="f"><span>Owner</span>
@@ -285,6 +288,7 @@ export function wireMetalsHandlers() {
         weightGrams,
         pricePerGram,
         purityKarat: Number(f.purityKarat) || 24,
+        placeOfPurchase: (f.placeOfPurchase || "").trim(),
         purchaseDate: f.purchaseDate,
         owner: f.owner,
         notes: "",

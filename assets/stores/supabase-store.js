@@ -438,7 +438,7 @@ export class SupabaseStore {
       MemoryStore, which don't exist for this feature but would still need
       to agree on a shape if they ever did. */
   _normMetalHolding(h) {
-    const { weight_grams, price_per_gram, purchase_date, purity_karat, ...rest } = h;
+    const { weight_grams, price_per_gram, purchase_date, purity_karat, place_of_purchase, ...rest } = h;
     return {
       ...rest,
       id: Number(h.id) || 0,
@@ -446,12 +446,14 @@ export class SupabaseStore {
       pricePerGram: Number(price_per_gram) || 0,
       purchaseDate: purchase_date,
       purityKarat: Number(purity_karat) || 24,
+      placeOfPurchase: place_of_purchase || "",
     };
   }
   _toDbMetalHolding(record) {
-    const { weightGrams, pricePerGram, purchaseDate, purityKarat, ...rest } = record;
+    const { weightGrams, pricePerGram, purchaseDate, purityKarat, placeOfPurchase, ...rest } = record;
     const out = { ...rest };
     if ("purityKarat" in record) out.purity_karat = purityKarat;
+    if ("placeOfPurchase" in record) out.place_of_purchase = placeOfPurchase;
     if ("weightGrams" in record) out.weight_grams = weightGrams;
     if ("pricePerGram" in record) out.price_per_gram = pricePerGram;
     if ("purchaseDate" in record) out.purchase_date = purchaseDate;

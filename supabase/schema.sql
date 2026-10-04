@@ -224,6 +224,7 @@ create table if not exists precious_metal_holdings (
   metal text not null default 'Gold' check (metal in ('Gold')),
   weight_grams numeric(10, 3) not null check (weight_grams > 0),
   purity_karat numeric(4, 1) not null default 24 check (purity_karat > 0 and purity_karat <= 24),
+  place_of_purchase text not null default '',
   price_per_gram numeric(10, 2) not null check (price_per_gram >= 0),
   purchase_date date not null,
   owner text not null default '',
@@ -236,6 +237,9 @@ create table if not exists precious_metal_holdings (
 alter table precious_metal_holdings
   add column if not exists purity_karat numeric(4, 1) not null default 24
   check (purity_karat > 0 and purity_karat <= 24);
+
+alter table precious_metal_holdings
+  add column if not exists place_of_purchase text not null default '';
 
 alter table precious_metal_holdings enable row level security;
 
