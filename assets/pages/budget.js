@@ -10,8 +10,13 @@ import { money, pct, monthOf } from "../xlsxio.js";
 import { listFor } from "../categories.js";
 import { $, view, esc, state, notice, withBusy, refresh } from "../core.js";
 import { iconBadge } from "../icons.js";
+import { countUp, cancelCountUp } from "../motion.js";
 
 export function renderBudget() {
+  // Entrance motion only when the page is freshly built (route entry). A
+  // re-render in place - after Save budget - finds the summary strip already
+  // showing and stays still.
+  const fresh = !view.querySelector("#b-summary");
   // Includes user-created categories, not just the built-in list.
   const allCats = listFor("category");
   // Budget is deliberately household-level: one ceiling for the two of you.
@@ -85,7 +90,7 @@ export function renderBudget() {
         hasActual || hasBudget
           ? `<div class="bcard-bar-wrap">
         <div class="bcard-bar-track">
-          <div class="bcard-bar-fill ${isOver ? "over" : ""}" style="width:${(pct * 100).toFixed(1)}%"></div>
+          <div class="bcard-bar-fill ${isOver ? "over" : ""}${fresh ? " grow" : ""}" style="width:${(pct * 100).toFixed(1)}%"></div>
         </div>
         <span class="bcard-bar-label num ${isOver ? "over" : "muted"}">${hasBudget ? (pct * 100).toFixed(0) + "%" : ""}</span>
       </div>
@@ -137,17 +142,17 @@ export function renderBudget() {
     </div>
   </div>
 
-  <div class="b-summary">
+  <div class="b-summary" id="b-summary">
     <div class="b-sum-item">
-      <span class="b-sum-val num">${money(totalBudget)}</span>
+      <span class="b-sum-val num" id="b-sum-budget">${money(totalBudget)}</span>
       <span class="b-sum-key">annual expense budget</span>
     </div>
     <div class="b-sum-item">
-      <span class="b-sum-val num ${totalSpent > totalBudget && totalBudget > 0 ? "over" : ""}">${money(totalSpent)}</span>
+      <span id="b-sum-spent" class="b-sum-val num ${totalSpent > totalBudget && totalBudget > 0 ? "over" : ""}">${money(totalSpent)}</span>
       <span class="b-sum-key">spent so far ${state.year}</span>
     </div>
     <div class="b-sum-item">
-      <span class="b-sum-val num">${budgetedCats}</span>
+      <span class="b-sum-val num" id="b-sum-cats">${budgetedCats}</span>
       <span class="b-sum-key">categories budgeted</span>
     </div>
   </div>
@@ -169,6 +174,14 @@ export function renderBudget() {
   </div>
 
   <p class="note" style="margin-top:18px">Bar shows actual spend vs this year's budget. Red = over. Nothing saves until you click <b>Save budget</b>.</p>`;
+
+  if (fresh) {
+    countUp($("#b-sum-budget"), totalBudget, money, { duration: 0.22 });
+    countUp($("#b-sum-spent"), totalSpent, money, { duration: 0.22 });
+    countUp($("#b-sum-cats"), budgetedCats, (n) => String(Math.round(n)), {
+      duration: 0.22,
+    });
+  }
 
   // --- wire up each card
   view.querySelectorAll(".bcard").forEach((card) => {
@@ -270,10 +283,16 @@ export function renderBudget() {
     view.querySelectorAll("[data-annual]").forEach((el) => {
       el.innerHTML = '<span class="muted">—</span>';
     });
-    view.querySelectorAll(".b-sum-val").forEach((el, i) => {
-      if (i < 2) el.textContent = money(0);
-    });
-    view.querySelector(".b-sum-item:nth-child(3) .b-sum-val").textContent = "0";
+    // A count-up may still be running on these (page just opened).
+    for (const [id, text] of [
+      ["#b-sum-budget", money(0)],
+      ["#b-sum-spent", money(0)],
+      ["#b-sum-cats", "0"],
+    ]) {
+      const el = $(id);
+      cancelCountUp(el);
+      el.textContent = text;
+    }
   };
 }
 

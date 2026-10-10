@@ -21,7 +21,8 @@
   display: block;
   font-size: 22px;
   font-weight: 600;
-  font-family: var(--mono);
+  font-family: var(--serif);
+  font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
   margin-bottom: 3px;
 }
@@ -75,7 +76,7 @@
 }
 .bcard:hover {
   box-shadow: var(--shadow-card-hover);
-  border-color: rgba(20, 21, 26, 0.14);
+  border-color: var(--rule-2);
 }
 .bcard:focus-within {
   box-shadow: var(--shadow-focus);
@@ -129,15 +130,34 @@
 }
 .bcard-bar-track {
   flex: 1;
-  height: 3px;
-  background: var(--rule);
+  height: 4px;
+  border-radius: 2px;
+  background: var(--paper-2);
   position: relative;
   overflow: hidden;
 }
 .bcard-bar-fill {
   height: 100%;
+  border-radius: 2px;
   background: var(--ink-2);
-  transition: width 0.3s;
+  transform-origin: left center;
+}
+/* Entrance: grow from the left once, on a fresh page build only (renderBudget
+   adds .grow just then; in-place re-renders and edits never do). Final state
+   is the element's normal, un-transformed state, so if the animation never
+   runs the bar is simply already full. */
+@media (prefers-reduced-motion: no-preference) {
+  .bcard-bar-fill.grow {
+    animation: bar-grow 480ms var(--ease-out);
+  }
+}
+@keyframes bar-grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
 }
 .bcard-bar-fill.over {
   background: var(--red);

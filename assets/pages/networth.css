@@ -361,6 +361,17 @@ tr:hover .nw-del-acct {
   line-height: 1.5;
   color: var(--ink-2);
 }
+/* The inline "remove this and re-import" button sits on the amber tint; the
+   default .rowbtn --ink-3 is 4.24:1 there in dark mode. --ink-2 is >= 7:1. */
+.debt-warn .rowbtn {
+  color: var(--ink-2);
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
+}
+.debt-warn .rowbtn:hover {
+  color: var(--red);
+}
 .debt-history {
   margin-top: 10px;
 }
