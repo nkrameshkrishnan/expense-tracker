@@ -55,6 +55,16 @@ function enter(el, delaySec) {
   }
 }
 
+/** Stops any running countUp on el (leaves its text untouched). */
+export function cancelCountUp(el) {
+  const prev = el && running.get(el);
+  if (!prev) return;
+  try {
+    prev.stop();
+  } catch {}
+  running.delete(el);
+}
+
 export function countUp(el, to, format, opts = {}) {
   if (!el) return;
   const fmt = typeof format === "function" ? format : String;

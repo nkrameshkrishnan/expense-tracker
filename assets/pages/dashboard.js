@@ -23,7 +23,7 @@ import {
   YEAR_KEY,
 } from "../core.js";
 import { go } from "../router.js";
-import { countUp, revealStagger } from "../motion.js";
+import { countUp, cancelCountUp, revealStagger } from "../motion.js";
 import { personAvatar } from "../icons.js";
 
 /** Expense card subtitle. Expense is already net of refunds (spendOf), so
@@ -103,12 +103,17 @@ function sameShape(x, y) {
     countUp (which always ends on exactly fmt(n)). Non-numeric states such as
     the em dash are written directly. Targets the inner value element only -
     never a tile that revealStagger is also animating. */
-function setValue(el, n, fmt) {
+function setValue(el, n, fmt, animate) {
   if (!el) return;
+  cancelCountUp(el); // a stale onUpdate must never overwrite what we write now
   if (n === null) {
     delete el.dataset.countTo;
     el.textContent = fmt(null);
-  } else countUp(el, n, fmt);
+  } else if (animate) countUp(el, n, fmt, { duration: 0.22 });
+  else {
+    el.dataset.countTo = String(n);
+    el.textContent = fmt(n);
+  }
 }
 const DASH = "\u2014";
 /** [numeric value or null, formatter] for each KPI, shared by both paths. */
@@ -130,9 +135,9 @@ function kpiValues(a) {
     avgmonth: [a.avgMonthly, money],
   };
 }
-function animateKpis(a) {
+function animateKpis(a, animate) {
   for (const [key, [n, fmt]] of Object.entries(kpiValues(a)))
-    setValue($(`#kpi-${key}-v`), n, fmt);
+    setValue($(`#kpi-${key}-v`), n, fmt, animate);
 }
 
 export function renderDashboard() {
@@ -155,13 +160,16 @@ export function renderDashboard() {
   // unmodified code path and stays the default whenever there is any doubt.
   const canPatch =
     view.dataset.shell === "dashboard" && sameShape(shape, state._dashShape);
+  // Count-up and reveal run ONLY on a full shell build; filter changes on the
+  // in-place patch path write final text directly (never animate filters).
   if (canPatch) updateDashboardValues(a, label, people, pSeries, showCompare);
   else {
     buildDashboardShell(a, label, people, pSeries, showCompare, shape);
     revealStagger(view.querySelectorAll(".kpis > .kpi"), { delay: 0.05 });
   }
-  animateKpis(a);
-  if (a.dividends > 0) setValue($("#dash-div-total"), a.dividends, money);
+  animateKpis(a, !canPatch);
+  if (a.dividends > 0)
+    setValue($("#dash-div-total"), a.dividends, money, !canPatch);
   state._dashShape = shape;
 
   wireDashboard(showCompare);
@@ -429,7 +437,7 @@ function updateDashboardValues(a, label, people, pSeries, showCompare) {
   const setKpi = (key, v, m) => {
     const vEl = $(`#kpi-${key}-v`),
       mEl = $(`#kpi-${key}-m`);
-    // The value itself is written (count-up animated) by animateKpis().
+    // The value itself is written (count-up animated only on a full build) by animateKpis().
     if (mEl) mEl.textContent = m;
   };
   setKpi("income", money(a.income), a.income === 0 ? "no income recorded" : "");

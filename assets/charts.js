@@ -4,7 +4,8 @@ import { chartAnimation } from "./motion.js";
    which is what stops the classic "ghost tooltip from the old chart" bug. */
 let INK = "#12161c",
   INK3 = "#6b7684",
-  RULE = "#ddd5c8";
+  RULE = "#ddd5c8",
+  CARD = "#ffffff";
 const TEAL = "#0f766e",
   AMBER = "#b45309",
   RED = "#b3261e",
@@ -24,6 +25,7 @@ function readTheme() {
   INK = v("--ink", INK);
   INK3 = v("--ink-3", INK3);
   RULE = v("--rule", RULE);
+  CARD = v("--card-bg", CARD);
   gridY.grid.color = RULE;
   gridX.border.color = RULE;
 }
@@ -122,7 +124,7 @@ export function incomeVsExpense(series) {
           data: series.map((s) => s.income),
           backgroundColor: TEAL,
           hoverBackgroundColor: lighten(TEAL, 0.3),
-          hoverBorderColor: "#fff",
+          hoverBorderColor: CARD,
           hoverBorderWidth: 2,
         },
         {
@@ -130,7 +132,7 @@ export function incomeVsExpense(series) {
           data: series.map((s) => s.expense),
           backgroundColor: AMBER,
           hoverBackgroundColor: lighten(AMBER, 0.3),
-          hoverBorderColor: "#fff",
+          hoverBorderColor: CARD,
           hoverBorderWidth: 2,
         },
       ],
@@ -158,7 +160,7 @@ export function netByMonth(series) {
           hoverBackgroundColor: series.map((s) =>
             lighten(s.net < 0 ? RED : TEAL, 0.3),
           ),
-          hoverBorderColor: "#fff",
+          hoverBorderColor: CARD,
           hoverBorderWidth: 2,
         },
       ],
@@ -192,7 +194,7 @@ export function trend(series) {
           // doughnut/bar hover states above, so every chart in the dashboard
           // pops its highlighted element the same way.
           pointHoverRadius: 6,
-          pointHoverBackgroundColor: "#fff",
+          pointHoverBackgroundColor: CARD,
           pointHoverBorderColor: INK,
           pointHoverBorderWidth: 2,
         },
@@ -235,7 +237,7 @@ export function actualVsBudget(catRows) {
           hoverBackgroundColor: rows.map((r) =>
             lighten(r.budget > 0 && r.actual > r.budget ? RED : INK, 0.3),
           ),
-          hoverBorderColor: "#fff",
+          hoverBorderColor: CARD,
           hoverBorderWidth: 2,
         },
         {
@@ -243,7 +245,7 @@ export function actualVsBudget(catRows) {
           data: rows.map((r) => r.budget),
           backgroundColor: SAND,
           hoverBackgroundColor: lighten(SAND, 0.3),
-          hoverBorderColor: "#fff",
+          hoverBorderColor: CARD,
           hoverBorderWidth: 2,
         },
       ],
@@ -276,7 +278,7 @@ export function topFive(top5) {
           data: top5.map((t) => t.actual),
           backgroundColor: INK,
           hoverBackgroundColor: lighten(INK, 0.3),
-          hoverBorderColor: "#fff",
+          hoverBorderColor: CARD,
           hoverBorderWidth: 2,
         },
       ],
@@ -300,7 +302,7 @@ export function paymentSplit(byPayment) {
         {
           data: byPayment.map((p) => p.amount),
           backgroundColor: PIE,
-          borderColor: "#fff",
+          borderColor: CARD,
           borderWidth: 2,
           // The hovered slice pushes outward by this many px - Chart.js's
           // built-in doughnut/pie hover affordance, not a custom animation;
@@ -343,7 +345,7 @@ export function personSplit(breakdown) {
         {
           data: breakdown.map((b) => b.expense),
           backgroundColor: breakdown.map((b) => colorFor(b.person)),
-          borderColor: "#fff",
+          borderColor: CARD,
           borderWidth: 2,
           hoverOffset: 14,
         },
@@ -374,7 +376,7 @@ export function personByMonth(series, months) {
         data: s.data,
         backgroundColor: colorFor(s.person),
         hoverBackgroundColor: lighten(colorFor(s.person), 0.3),
-        hoverBorderColor: "#fff",
+        hoverBorderColor: CARD,
         hoverBorderWidth: 2,
       })),
     },
@@ -484,7 +486,8 @@ export function categoryByMonth(
             backgroundColor: "rgba(255, 255, 255, 0.9)",
             borderRadius: 3,
             padding: 4,
-            color: INK,
+            // Fixed dark ink: the chip stays light in both themes.
+            color: "#12161c",
             font: { size: 11, weight: "600" },
           },
         },
@@ -518,7 +521,7 @@ export function personVsBudget(rows) {
             data: rows.map((r) => r.byPerson[p] || 0),
             backgroundColor: colorFor(p),
             hoverBackgroundColor: lighten(colorFor(p), 0.3),
-            hoverBorderColor: "#fff",
+            hoverBorderColor: CARD,
             hoverBorderWidth: 2,
           }))
         : [],
@@ -557,7 +560,7 @@ export function netWorthTrend(series) {
           tension: 0.25,
           pointRadius: 4,
           pointHoverRadius: 7,
-          pointHoverBackgroundColor: "#fff",
+          pointHoverBackgroundColor: CARD,
           pointHoverBorderColor: INK,
           pointHoverBorderWidth: 2,
         },
@@ -601,7 +604,7 @@ export function assetSplit(assets) {
         {
           data: rows.map((a) => Number(a.balance)),
           backgroundColor: PIE,
-          borderColor: "#fff",
+          borderColor: CARD,
           borderWidth: 2,
           hoverOffset: 14,
         },
@@ -638,7 +641,7 @@ export function dividendsTrend(series) {
           data: series.map((s) => s.dividends || 0),
           backgroundColor: AMBER,
           hoverBackgroundColor: lighten(AMBER, 0.3),
-          hoverBorderColor: "#fff",
+          hoverBorderColor: CARD,
           hoverBorderWidth: 2,
         },
       ],
