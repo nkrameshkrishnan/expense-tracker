@@ -23,7 +23,15 @@ import {
   hasOnboarded,
   markOnboarded,
 } from "./store.js";
-import { $, esc, state, notice, withBusy, refresh, updateBrandCurrency } from "./core.js";
+import {
+  $,
+  esc,
+  state,
+  notice,
+  withBusy,
+  refresh,
+  updateBrandCurrency,
+} from "./core.js";
 import { go, VIEWS } from "./router.js";
 import { renderDashboard } from "./pages/dashboard.js";
 import { renderOnboarding } from "./pages/onboarding.js";
@@ -79,8 +87,7 @@ let gsiPrompted = false;
 function mountGoogleSignIn(container, { buttonText = "signin_with" } = {}) {
   const cid = getClientId();
   if (!cid) {
-    container.innerHTML =
-      `<p class="gate-error">No Google client ID configured. Set GOOGLE_CLIENT_ID in
+    container.innerHTML = `<p class="gate-error">No Google client ID configured. Set GOOGLE_CLIENT_ID in
        assets/config.js, then reload.</p>`;
     return;
   }

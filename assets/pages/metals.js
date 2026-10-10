@@ -21,13 +21,25 @@ import { emptyIcon } from "../icons.js";
     stale or misremembered rate; the total is what was actually paid).
     Returns null if neither a usable price/gram nor a usable total was
     given, so the caller can refuse to save rather than guess. */
-export function resolvePricePerGram({ weightGrams, pricePerGram, purchasePrice }) {
+export function resolvePricePerGram({
+  weightGrams,
+  pricePerGram,
+  purchasePrice,
+}) {
   if (!(weightGrams > 0)) return null;
-  if (purchasePrice !== null && purchasePrice !== undefined && purchasePrice !== "") {
+  if (
+    purchasePrice !== null &&
+    purchasePrice !== undefined &&
+    purchasePrice !== ""
+  ) {
     const total = Number(purchasePrice);
     return total >= 0 ? total / weightGrams : null;
   }
-  if (pricePerGram !== null && pricePerGram !== undefined && pricePerGram !== "") {
+  if (
+    pricePerGram !== null &&
+    pricePerGram !== undefined &&
+    pricePerGram !== ""
+  ) {
     const perGram = Number(pricePerGram);
     return perGram >= 0 ? perGram : null;
   }
@@ -260,7 +272,8 @@ export function renderMetalsSection(scopeOwner) {
         : h.metal === "Silver"
           ? `${esc(h.purityFineness || 999)}`
           : `${esc(h.purityKarat || 24)}K`;
-      const estimated = dia && (h.currentValue === null || h.currentValue === undefined);
+      const estimated =
+        dia && (h.currentValue === null || h.currentValue === undefined);
       return `<tr>
         <td class="num">${esc(h.purchaseDate)}</td>
         <td>${esc(h.metal)}</td>
@@ -289,7 +302,10 @@ export function renderMetalsSection(scopeOwner) {
   <div class="eyebrow">Precious metals</div>
   <label class="f" style="max-width:200px;margin-bottom:10px"><span>Show</span>
     <select id="metal-filter">${["All", ...METALS]
-      .map((m) => `<option value="${m}"${sel(metalFilter === m)}>${m === "All" ? "All metals" : m}</option>`)
+      .map(
+        (m) =>
+          `<option value="${m}"${sel(metalFilter === m)}>${m === "All" ? "All metals" : m}</option>`,
+      )
       .join("")}</select></label>
   ${tiles}
   ${
@@ -360,7 +376,11 @@ export function wireMetalsHandlers() {
     const lbl = $("#metal-weight-label");
     if (lbl)
       lbl.textContent =
-        m === "Diamond" ? "Weight (carats)" : oz ? "Weight (troy oz)" : "Weight (grams)";
+        m === "Diamond"
+          ? "Weight (carats)"
+          : oz
+            ? "Weight (troy oz)"
+            : "Weight (grams)";
     const pl = $("#metal-pergram-label");
     if (pl) pl.textContent = oz ? "Price paid/oz" : "Price paid/gram";
     updateCalcHint();
@@ -380,7 +400,8 @@ export function wireMetalsHandlers() {
     const weightGrams = Number($("#metal-weight")?.value) * (oz ? OZ_GRAMS : 1);
     const purchasePrice = $("#metal-total")?.value ?? "";
     const pergramRaw = $("#metal-pergram")?.value ?? "";
-    const pricePerGramInput = oz && pergramRaw !== "" ? Number(pergramRaw) / OZ_GRAMS : pergramRaw;
+    const pricePerGramInput =
+      oz && pergramRaw !== "" ? Number(pergramRaw) / OZ_GRAMS : pergramRaw;
     const resolved = resolvePricePerGram({
       weightGrams,
       pricePerGram: pricePerGramInput,
@@ -414,7 +435,9 @@ export function wireMetalsHandlers() {
     const dia = f.metal === "Diamond";
     const entered = Number(f.weightGrams);
     if (!(entered > 0))
-      return err(`${dia ? "Weight (carats)" : "Weight"} must be greater than zero.`);
+      return err(
+        `${dia ? "Weight (carats)" : "Weight"} must be greater than zero.`,
+      );
     const oz = !dia && f.weightUnit === "oz";
     const weightGrams = dia
       ? Number((entered * CARAT_GRAMS).toFixed(3))
@@ -431,14 +454,17 @@ export function wireMetalsHandlers() {
       });
       if (f.currentValue !== "" && f.currentValue !== undefined) {
         currentValue = Number(f.currentValue);
-        if (!(currentValue >= 0)) return err("Current value can't be negative.");
+        if (!(currentValue >= 0))
+          return err("Current value can't be negative.");
       }
     } else {
       pricePerGram = resolvePricePerGram({
         weightGrams,
         // A per-oz price is converted to the per-gram figure that's stored.
         pricePerGram:
-          oz && f.pricePerGram !== "" ? Number(f.pricePerGram) / OZ_GRAMS : f.pricePerGram,
+          oz && f.pricePerGram !== ""
+            ? Number(f.pricePerGram) / OZ_GRAMS
+            : f.pricePerGram,
         purchasePrice: f.purchasePrice,
       });
       if (pricePerGram === null)
@@ -459,10 +485,13 @@ export function wireMetalsHandlers() {
       owner: f.owner,
     };
     const wasEditing = editingLotId;
-    const done = await withBusy(wasEditing ? "Saving lot" : "Adding lot", async () => {
-      if (wasEditing) await state.store.updateMetalHolding(wasEditing, lot);
-      else await state.store.addMetalHolding({ ...lot, notes: "" });
-    });
+    const done = await withBusy(
+      wasEditing ? "Saving lot" : "Adding lot",
+      async () => {
+        if (wasEditing) await state.store.updateMetalHolding(wasEditing, lot);
+        else await state.store.addMetalHolding({ ...lot, notes: "" });
+      },
+    );
     if (done) {
       editingLotId = null;
       await reload();

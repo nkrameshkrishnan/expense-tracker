@@ -596,7 +596,9 @@
   line-height: 1;
   cursor: pointer;
   border-radius: var(--radius-xs);
-  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
 }
 .l-modal-close:hover {
   background: var(--paper-2);

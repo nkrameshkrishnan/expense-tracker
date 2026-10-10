@@ -23,7 +23,13 @@ const money0 = (v) =>
     else rather than snapping instantly. */
 function lighten(hex, amt) {
   const h = hex.replace("#", "");
-  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  const full =
+    h.length === 3
+      ? h
+          .split("")
+          .map((c) => c + c)
+          .join("")
+      : h;
   const num = parseInt(full, 16);
   const mix = (channel) => Math.round(channel + (255 - channel) * amt);
   const r = mix((num >> 16) & 255);

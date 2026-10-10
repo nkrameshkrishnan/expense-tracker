@@ -246,10 +246,22 @@ function renderFeatures() {
     instead, per the anti-slop rule against invented social proof. */
 function renderValues() {
   const items = [
-    ["Private by default", "Your own Supabase project. No ads, no third-party trackers, nothing sold."],
-    ["Two people, one ledger", "Switch between a household view and each person's own, any time."],
-    ["Open format", "Export to .xlsx or a plain JSON backup whenever you want &mdash; nothing is locked in."],
-    ["No subscription", "It's a deployment you own, not a plan you pay for every month."],
+    [
+      "Private by default",
+      "Your own Supabase project. No ads, no third-party trackers, nothing sold.",
+    ],
+    [
+      "Two people, one ledger",
+      "Switch between a household view and each person's own, any time.",
+    ],
+    [
+      "Open format",
+      "Export to .xlsx or a plain JSON backup whenever you want &mdash; nothing is locked in.",
+    ],
+    [
+      "No subscription",
+      "It's a deployment you own, not a plan you pay for every month.",
+    ],
   ];
   return `
     <section class="l-values">

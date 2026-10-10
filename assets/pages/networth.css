@@ -142,7 +142,9 @@
   background: var(--card-bg);
   width: 210px;
   margin-left: auto;
-  transition: border-color var(--motion-fast) var(--ease-out), box-shadow var(--motion-fast) var(--ease-out);
+  transition:
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
 }
 .nw-ccy-select {
   border: 0;

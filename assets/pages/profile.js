@@ -13,7 +13,15 @@ import {
   setDisplayRate,
 } from "../store.js";
 import { CURRENCY_LABEL, CURRENCY_SYMBOL, CURRENCY_FLAG } from "../prefs.js";
-import { $, view, esc, state, notice, withBusy, updateBrandCurrency } from "../core.js";
+import {
+  $,
+  view,
+  esc,
+  state,
+  notice,
+  withBusy,
+  updateBrandCurrency,
+} from "../core.js";
 import { isRemoteStore, signOut } from "../auth.js";
 import { themeIcon } from "../icons.js";
 
@@ -250,12 +258,11 @@ async function loadAccessPanel(myEmail) {
             // button; a non-primary viewer sees nothing per-row (the one
             // note below the table already explains why, once, rather than
             // repeating a disabled ✕ on every row).
-            const removeCell =
-              r.is_primary
-                ? ""
-                : iAmPrimary
-                  ? `<button class="rowbtn" data-remove-email="${esc(r.email)}">✕</button>`
-                  : "";
+            const removeCell = r.is_primary
+              ? ""
+              : iAmPrimary
+                ? `<button class="rowbtn" data-remove-email="${esc(r.email)}">✕</button>`
+                : "";
             return `<tr>
               <td>${esc(r.email)}${tags ? " " + tags : ""}</td>
               <td class="n">${removeCell}</td>

@@ -1,5 +1,12 @@
 /* Transactions list page - search/filter, inline edit, delete. */
-import { TYPES, MONTHS, UNASSIGNED, spendOf, amountCad, getHomeCurrency } from "../store.js";
+import {
+  TYPES,
+  MONTHS,
+  UNASSIGNED,
+  spendOf,
+  amountCad,
+  getHomeCurrency,
+} from "../store.js";
 import { money, moneyIn, monthOf } from "../xlsxio.js";
 import { listFor } from "../categories.js";
 import {

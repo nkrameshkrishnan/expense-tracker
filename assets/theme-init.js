@@ -16,8 +16,10 @@
     var t = localStorage.getItem("ledger.theme") || "system";
     var dark =
       t === "dark" ||
-      (t === "system" &&
-        matchMedia("(prefers-color-scheme: dark)").matches);
-    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+      (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute(
+      "data-theme",
+      dark ? "dark" : "light",
+    );
   } catch (e) {}
 })();

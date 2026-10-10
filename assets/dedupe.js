@@ -91,7 +91,11 @@ function classify(s, e) {
   if (!(gap <= DATE_WINDOW)) return null; // NaN-safe
   const sameDesc = normDesc(s.description) === normDesc(e.description);
   if (gap === 0 && sameDesc) return "exact";
-  if (sameDesc || gap === 0 || similarity(s.description, e.description) >= SIMILARITY)
+  if (
+    sameDesc ||
+    gap === 0 ||
+    similarity(s.description, e.description) >= SIMILARITY
+  )
     return "likely";
   return null;
 }
@@ -134,7 +138,12 @@ export function findDuplicates(staged, existing) {
       // matched to a stored row is the known copy, not a second purchase.
       if (result[k]) continue;
       if (classify(s, staged[k]) === "exact" && !pairedWith(result, k)) {
-        result[i] = { kind: "likely", source: "file", match: staged[k], index: k };
+        result[i] = {
+          kind: "likely",
+          source: "file",
+          match: staged[k],
+          index: k,
+        };
         return;
       }
     }

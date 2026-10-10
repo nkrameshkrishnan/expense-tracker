@@ -235,7 +235,12 @@ export function wireFixedDepositsHandlers() {
     const compounding = $("#fd-compounding")?.value;
     const startDate = $("#fd-start")?.value;
     const maturityDate = $("#fd-maturity-date")?.value;
-    if (!(principal > 0) || !startDate || !maturityDate || maturityDate <= startDate) {
+    if (
+      !(principal > 0) ||
+      !startDate ||
+      !maturityDate ||
+      maturityDate <= startDate
+    ) {
       hint.textContent = "";
       return;
     }

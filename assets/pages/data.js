@@ -409,7 +409,13 @@ function wireStaging() {
 }
 
 /** Fields the duplicate check compares - editing one re-runs the check. */
-const MATCH_FIELDS = new Set(["date", "amount", "description", "account", "person"]);
+const MATCH_FIELDS = new Set([
+  "date",
+  "amount",
+  "description",
+  "account",
+  "person",
+]);
 
 /** Patch the flag cells, Import ticks and totals in place after an edit,
     instead of re-rendering the table - a full render would throw away the

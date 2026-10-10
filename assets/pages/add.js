@@ -1,5 +1,13 @@
 /* Add/Edit transaction page. */
-import { TYPES, MONTHS, currentYear, spendOf, CURRENCIES, toCad, getHomeCurrency } from "../store.js";
+import {
+  TYPES,
+  MONTHS,
+  currentYear,
+  spendOf,
+  CURRENCIES,
+  toCad,
+  getHomeCurrency,
+} from "../store.js";
 import { money, monthOf } from "../xlsxio.js";
 import {
   listFor,

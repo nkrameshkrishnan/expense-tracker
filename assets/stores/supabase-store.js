@@ -438,7 +438,16 @@ export class SupabaseStore {
       MemoryStore, which don't exist for this feature but would still need
       to agree on a shape if they ever did. */
   _normMetalHolding(h) {
-    const { weight_grams, price_per_gram, purchase_date, purity_karat, place_of_purchase, purity_fineness, current_value, ...rest } = h;
+    const {
+      weight_grams,
+      price_per_gram,
+      purchase_date,
+      purity_karat,
+      place_of_purchase,
+      purity_fineness,
+      current_value,
+      ...rest
+    } = h;
     return {
       ...rest,
       id: Number(h.id) || 0,
@@ -447,12 +456,27 @@ export class SupabaseStore {
       purchaseDate: purchase_date,
       purityKarat: Number(purity_karat) || 24,
       placeOfPurchase: place_of_purchase || "",
-      purityFineness: purity_fineness === null || purity_fineness === undefined ? null : Number(purity_fineness),
-      currentValue: current_value === null || current_value === undefined ? null : Number(current_value),
+      purityFineness:
+        purity_fineness === null || purity_fineness === undefined
+          ? null
+          : Number(purity_fineness),
+      currentValue:
+        current_value === null || current_value === undefined
+          ? null
+          : Number(current_value),
     };
   }
   _toDbMetalHolding(record) {
-    const { weightGrams, pricePerGram, purchaseDate, purityKarat, placeOfPurchase, purityFineness, currentValue, ...rest } = record;
+    const {
+      weightGrams,
+      pricePerGram,
+      purchaseDate,
+      purityKarat,
+      placeOfPurchase,
+      purityFineness,
+      currentValue,
+      ...rest
+    } = record;
     const out = { ...rest };
     if ("purityKarat" in record) out.purity_karat = purityKarat;
     if ("placeOfPurchase" in record) out.place_of_purchase = placeOfPurchase;

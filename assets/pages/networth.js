@@ -529,7 +529,8 @@ function renderBalanceForm(copyFrom) {
     nwAccounts()
       .filter((a) => a.owner === owner)
       .map((a) => {
-        const ccy = existing.find((x) => x.account === a.account)?.currency ||
+        const ccy =
+          existing.find((x) => x.account === a.account)?.currency ||
           lastCurrencyFor(a.account);
         return `
     <tr>
@@ -645,7 +646,8 @@ function renderBalanceForm(copyFrom) {
       // field is blank/not yet entered, same fallback normalise() uses)
       // converts it before it's added in, so an INR balance never gets
       // added to a CAD one as if they were the same unit.
-      const v = ccy === "CAD" ? native : toCad(native, rateFor(i.dataset.account));
+      const v =
+        ccy === "CAD" ? native : toCad(native, rateFor(i.dataset.account));
       if (i.dataset.kind === "Liability") {
         L += v;
         perOwner[i.dataset.owner] -= v;
@@ -669,9 +671,9 @@ function renderBalanceForm(copyFrom) {
   view
     .querySelectorAll(".nw-input")
     .forEach((i) => i.addEventListener("input", recalc));
-  view.querySelectorAll(".nw-fx-input").forEach((i) =>
-    i.addEventListener("input", recalc),
-  );
+  view
+    .querySelectorAll(".nw-fx-input")
+    .forEach((i) => i.addEventListener("input", recalc));
   view.querySelectorAll(".nw-ccy-select").forEach((sel) =>
     sel.addEventListener("change", async () => {
       const acct = sel.dataset.ccyFor;
@@ -821,10 +823,7 @@ function renderBalanceForm(copyFrom) {
       // defaulted to 1 (which would book a foreign balance as if it were
       // already CAD).
       const badRate = rows.find(
-        (r) =>
-          r.currency &&
-          r.currency !== "CAD" &&
-          !(Number(r.fx_rate) > 0),
+        (r) => r.currency && r.currency !== "CAD" && !(Number(r.fx_rate) > 0),
       );
       if (badRate) {
         out.innerHTML = `<b class="over">"${esc(badRate.account)}" is in ${esc(badRate.currency)} but has no valid fx_rate column value — add one and re-import.</b>`;

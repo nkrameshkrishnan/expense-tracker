@@ -89,7 +89,9 @@
   border-radius: var(--radius-xs);
   background: var(--card-bg);
   margin-bottom: 6px;
-  transition: border-color var(--motion-fast) var(--ease-out), box-shadow var(--motion-fast) var(--ease-out);
+  transition:
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
 }
 .add-amount-wrap:focus-within {
   border-color: var(--amber);

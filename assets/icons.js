@@ -177,11 +177,17 @@ export function emptyIcon() {
 const SUN_ICON = svg(
   '<circle cx="12" cy="12" r="4"/><path d="M12 2v2.5M12 19.5V22M4.2 4.2l1.8 1.8M18 18l1.8 1.8M2 12h2.5M19.5 12H22M4.2 19.8 6 18M18 6l1.8-1.8"/>',
 );
-const MOON_ICON = svg('<path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/>');
+const MOON_ICON = svg(
+  '<path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/>',
+);
 const SYSTEM_ICON = svg(
   '<rect x="2" y="4" width="20" height="13" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>',
 );
 
 export function themeIcon(theme) {
-  return theme === "dark" ? MOON_ICON : theme === "light" ? SUN_ICON : SYSTEM_ICON;
+  return theme === "dark"
+    ? MOON_ICON
+    : theme === "light"
+      ? SUN_ICON
+      : SYSTEM_ICON;
 }
