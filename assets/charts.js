@@ -1,6 +1,8 @@
+import { chartAnimation } from "./motion.js";
+
 /* Chart.js wrappers. Each call destroys the previous instance on that canvas,
    which is what stops the classic "ghost tooltip from the old chart" bug. */
-const INK = "#12161c",
+let INK = "#12161c",
   INK3 = "#6b7684",
   RULE = "#ddd5c8";
 const TEAL = "#0f766e",
@@ -11,6 +13,20 @@ const TEAL = "#0f766e",
 const PIE = [TEAL, AMBER, BLUE, RED, "#7c3aed", "#0891b2", SAND];
 
 const registry = new Map();
+
+/** Re-reads ink / ink-3 / rule from the active theme's CSS variables so
+    gridlines, ticks and ink-coloured marks follow light/dark. Called at the
+    top of every builder (before its config is assembled). Category hues are
+    deliberately left as constants. */
+function readTheme() {
+  const cs = getComputedStyle(document.documentElement);
+  const v = (name, fallback) => cs.getPropertyValue(name).trim() || fallback;
+  INK = v("--ink", INK);
+  INK3 = v("--ink-3", INK3);
+  RULE = v("--rule", RULE);
+  gridY.grid.color = RULE;
+  gridX.border.color = RULE;
+}
 const money0 = (v) =>
   "$" + Number(v).toLocaleString("en-CA", { maximumFractionDigits: 0 });
 
@@ -41,6 +57,8 @@ function lighten(hex, amt) {
 function mount(id, config) {
   const el = document.getElementById(id);
   if (!el) return;
+  config.options = config.options || {};
+  config.options.animation = chartAnimation();
   const existing = registry.get(id);
   // If the canvas element is the SAME DOM node as last time, Chart.js can
   // update its data/options in place - much cheaper than tearing down and
@@ -93,6 +111,7 @@ const legendTop = {
 };
 
 export function incomeVsExpense(series) {
+  readTheme();
   mount("c-ie", {
     type: "bar",
     data: {
@@ -126,6 +145,7 @@ export function incomeVsExpense(series) {
 }
 
 export function netByMonth(series) {
+  readTheme();
   mount("c-net", {
     type: "bar",
     data: {
@@ -153,6 +173,7 @@ export function netByMonth(series) {
 }
 
 export function trend(series) {
+  readTheme();
   mount("c-trend", {
     type: "line",
     data: {
@@ -198,6 +219,7 @@ export function trend(series) {
 }
 
 export function actualVsBudget(catRows) {
+  readTheme();
   const rows = catRows.filter((r) => r.actual > 0 || r.budget > 0);
   mount("c-cat", {
     type: "bar",
@@ -244,6 +266,7 @@ export function actualVsBudget(catRows) {
 }
 
 export function topFive(top5) {
+  readTheme();
   mount("c-top", {
     type: "bar",
     data: {
@@ -268,6 +291,7 @@ export function topFive(top5) {
 }
 
 export function paymentSplit(byPayment) {
+  readTheme();
   mount("c-pay", {
     type: "doughnut",
     data: {
@@ -310,6 +334,7 @@ const PERSON_COLORS = {
 const colorFor = (p) => PERSON_COLORS[p] || SAND;
 
 export function personSplit(breakdown) {
+  readTheme();
   mount("c-person-split", {
     type: "doughnut",
     data: {
@@ -339,6 +364,7 @@ export function personSplit(breakdown) {
 }
 
 export function personByMonth(series, months) {
+  readTheme();
   mount("c-person-month", {
     type: "bar",
     data: {
@@ -382,6 +408,7 @@ export function categoryByMonth(
   filterMonth = 0,
   orientation = "horizontal",
 ) {
+  readTheme();
   // Sankey needs flat {from, to, flow} triples rather than the per-category
   // monthly-array shape the rest of the dashboard uses, and skips exact
   // zeros (a zero-flow link still draws as a visible sliver in this plugin).
@@ -480,6 +507,7 @@ export function categoryByMonth(
 }
 
 export function personVsBudget(rows) {
+  readTheme();
   mount("c-person-cat", {
     type: "bar",
     data: {
@@ -515,6 +543,7 @@ export function personVsBudget(rows) {
 
 /* ---- net worth ------------------------------------------------------------ */
 export function netWorthTrend(series) {
+  readTheme();
   mount("c-nw-trend", {
     type: "line",
     data: {
@@ -560,6 +589,7 @@ export function netWorthTrend(series) {
 }
 
 export function assetSplit(assets) {
+  readTheme();
   const rows = assets
     .filter((a) => Number(a.balance) > 0)
     .sort((a, b) => b.balance - a.balance);
@@ -597,6 +627,7 @@ export function assetSplit(assets) {
 }
 
 export function dividendsTrend(series) {
+  readTheme();
   mount("c-dividends", {
     type: "bar",
     data: {

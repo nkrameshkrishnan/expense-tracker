@@ -23,6 +23,7 @@ import {
   YEAR_KEY,
 } from "../core.js";
 import { go } from "../router.js";
+import { countUp, revealStagger } from "../motion.js";
 import { personAvatar } from "../icons.js";
 
 /** Expense card subtitle. Expense is already net of refunds (spendOf), so
@@ -98,6 +99,42 @@ function sameShape(x, y) {
   );
 }
 
+/** Sets a KPI/figure's text and, when it is a real number, animates it with
+    countUp (which always ends on exactly fmt(n)). Non-numeric states such as
+    the em dash are written directly. Targets the inner value element only -
+    never a tile that revealStagger is also animating. */
+function setValue(el, n, fmt) {
+  if (!el) return;
+  if (n === null) {
+    delete el.dataset.countTo;
+    el.textContent = fmt(null);
+  } else countUp(el, n, fmt);
+}
+const DASH = "\u2014";
+/** [numeric value or null, formatter] for each KPI, shared by both paths. */
+function kpiValues(a) {
+  return {
+    income: [a.income, money],
+    expense: [a.expense, money],
+    net: [a.net, money],
+    savings: [
+      a.income > 0 ? a.savingsRate : null,
+      (n) => (n === null ? DASH : pct(n)),
+    ],
+    budgetused: [
+      a.expenseBudget > 0 ? a.budgetUsed : null,
+      (n) => (n === null ? DASH : pct(n)),
+    ],
+    avgday: [a.avgDaily, money],
+    avgweek: [a.avgWeekly, money],
+    avgmonth: [a.avgMonthly, money],
+  };
+}
+function animateKpis(a) {
+  for (const [key, [n, fmt]] of Object.entries(kpiValues(a)))
+    setValue($(`#kpi-${key}-v`), n, fmt);
+}
+
 export function renderDashboard() {
   const a = aggregate(scoped(), state.budget, state.month, state.year);
   const label =
@@ -119,7 +156,12 @@ export function renderDashboard() {
   const canPatch =
     view.dataset.shell === "dashboard" && sameShape(shape, state._dashShape);
   if (canPatch) updateDashboardValues(a, label, people, pSeries, showCompare);
-  else buildDashboardShell(a, label, people, pSeries, showCompare, shape);
+  else {
+    buildDashboardShell(a, label, people, pSeries, showCompare, shape);
+    revealStagger(view.querySelectorAll(".kpis > .kpi"), { delay: 0.05 });
+  }
+  animateKpis(a);
+  if (a.dividends > 0) setValue($("#dash-div-total"), a.dividends, money);
   state._dashShape = shape;
 
   wireDashboard(showCompare);
@@ -387,7 +429,7 @@ function updateDashboardValues(a, label, people, pSeries, showCompare) {
   const setKpi = (key, v, m) => {
     const vEl = $(`#kpi-${key}-v`),
       mEl = $(`#kpi-${key}-m`);
-    if (vEl) vEl.textContent = v;
+    // The value itself is written (count-up animated) by animateKpis().
     if (mEl) mEl.textContent = m;
   };
   setKpi("income", money(a.income), a.income === 0 ? "no income recorded" : "");
@@ -418,8 +460,6 @@ function updateDashboardValues(a, label, people, pSeries, showCompare) {
   setKpi("avgmonth", money(a.avgMonthly), label);
 
   if (a.dividends > 0) {
-    const t = $("#dash-div-total");
-    if (t) t.textContent = money(a.dividends);
     const l = $("#dash-div-label");
     if (l) l.textContent = label;
   }
