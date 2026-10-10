@@ -60,6 +60,9 @@
      swap for everything else. */
   --rail-bg: #14151a;
   --rail-fg: #f6f7f9;
+  /* Accent for marks/underlines on the rail: the dark-theme --amber, fixed,
+     since the themed light --amber is only 2.9:1 on the dark rail. */
+  --rail-accent: #e68a70;
   /* Tells the browser which palette native chrome (date pickers, the
      scrollbar track, form-control defaults) should draw in - without this,
      those stay light-themed even after every custom token above goes dark. */
@@ -164,7 +167,7 @@ th.n {
   gap: 9px;
 }
 .brand-mark {
-  color: var(--amber);
+  color: var(--rail-accent);
   font-size: 18px;
   line-height: 1;
 }
@@ -203,7 +206,7 @@ th.n {
 }
 .tabs button.on {
   color: var(--rail-fg);
-  border-bottom-color: var(--amber);
+  border-bottom-color: var(--rail-accent);
 }
 .profile-wrap {
   position: relative;
@@ -225,7 +228,7 @@ th.n {
   line-height: 1;
 }
 .profile-btn:hover {
-  border-color: var(--amber);
+  border-color: var(--rail-accent);
 }
 .profile-menu {
   position: absolute;
@@ -860,11 +863,11 @@ code {
   border-right: 0;
 }
 .person-btn:hover {
-  color: var(--paper);
+  color: var(--rail-fg);
 }
 .person-btn.on {
-  background: var(--paper);
-  color: var(--ink);
+  background: var(--rail-fg);
+  color: var(--rail-bg);
   font-weight: 700;
 }
 /* Between roughly 760-1180px (docked DevTools, split-screen, tablet
