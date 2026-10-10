@@ -25,7 +25,7 @@
   flex-wrap: wrap;
   margin-bottom: 20px;
   border: 1px solid var(--rule-2);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   overflow: hidden;
   width: fit-content;
   max-width: 100%;
@@ -86,7 +86,7 @@
   align-items: center;
   gap: 0;
   border: 1px solid var(--rule-2);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   background: var(--card-bg);
   margin-bottom: 6px;
   transition:
@@ -153,7 +153,7 @@ select.add-currency-code:focus {
 .add-fx-row input {
   width: 130px;
   border: 1px solid var(--rule-2);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   padding: 6px 8px;
   font-family: var(--mono);
   font-size: 13px;
@@ -200,12 +200,19 @@ select.add-currency-code:focus {
 .add-field input,
 .add-field select {
   border: 1px solid var(--rule-2);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   padding: 8px 10px;
   font-family: var(--disp);
   font-size: 13px;
   background: var(--card-bg);
   color: var(--ink);
+}
+.add-field input:focus,
+.add-field select:focus,
+.add-fx-row input:focus {
+  outline: none;
+  border-color: var(--amber);
+  box-shadow: var(--shadow-focus);
 }
 .add-field input[type="date"] {
   font-family: var(--mono);
@@ -328,6 +335,7 @@ details[open] .add-details-toggle::before {
   background: var(--red);
 }
 .add-ctx-row {
+  font-variant-numeric: tabular-nums;
   display: flex;
   justify-content: space-between;
   font-size: 12.5px;
@@ -363,6 +371,7 @@ details[open] .add-details-toggle::before {
   font-size: 10.5px;
 }
 .add-recent-amt {
+  font-variant-numeric: tabular-nums;
   font-size: 13px;
   font-weight: 600;
   white-space: nowrap;

@@ -18,6 +18,7 @@
   border-right: 0;
 }
 .tx-sum-item.muted-block .tx-sum-val {
+  font-variant-numeric: tabular-nums;
   color: var(--ink-3);
 }
 .tx-sum-label {
@@ -29,6 +30,7 @@
   margin-bottom: 4px;
 }
 .tx-sum-val {
+  font-variant-numeric: tabular-nums;
   font-family: var(--mono);
   font-size: 18px;
   font-weight: 600;
@@ -82,6 +84,7 @@
   display: flex;
   align-items: center;
   border: 1px solid var(--rule-2);
+  border-radius: var(--radius-sm);
   background: var(--card-bg);
 }
 .tx-search-icon {
@@ -107,8 +110,9 @@
   outline: none;
 }
 .tx-search-wrap:focus-within {
-  outline: 2px solid var(--ink);
-  outline-offset: -1px;
+  outline: none;
+  border-color: var(--ink-3);
+  box-shadow: var(--shadow-focus);
 }
 .tx-search-clear {
   position: absolute;
@@ -158,7 +162,8 @@
   border: 1px solid var(--ink);
 }
 .fpill:hover {
-  background: #000;
+  background: var(--ink-2);
+  border-color: var(--ink-2);
 }
 
 /* grouped list */
@@ -179,7 +184,7 @@
   align-items: center;
   width: 100%;
   padding: 7px 12px;
-  background: var(--paper-2);
+  background: var(--paper);
   border-bottom: 1px solid var(--rule);
   border-radius: var(--radius-md) var(--radius-md) 0 0;
   position: sticky;
@@ -193,7 +198,7 @@
   text-align: left;
 }
 .tx-group-header:hover {
-  background: var(--rule);
+  background: var(--paper-2);
 }
 .tx-group.closed .tx-group-header {
   border-bottom: 0;
@@ -218,11 +223,13 @@
   color: var(--ink-2);
 }
 .tx-group-count {
+  font-variant-numeric: tabular-nums;
   font-size: 11px;
   margin-left: 8px;
   font-family: var(--mono);
 }
 .tx-group-stats {
+  font-variant-numeric: tabular-nums;
   font-size: 12px;
   color: var(--ink-3);
   display: flex;
@@ -286,20 +293,20 @@
   box-shadow: var(--shadow-card);
 }
 .tx-row.tx-income {
-  background: #e9f6ec;
+  background: color-mix(in srgb, var(--green) 10%, var(--card-bg));
 }
 .tx-row.tx-income:hover {
-  background: #ddf0e1;
+  background: color-mix(in srgb, var(--green) 16%, var(--card-bg));
   box-shadow: var(--shadow-card);
 }
 .tx-row.tx-transfer {
   opacity: 0.7;
 }
 .tx-row.tx-refund {
-  background: #f1faf8;
+  background: color-mix(in srgb, var(--teal) 8%, var(--card-bg));
 }
 .tx-row.tx-refund:hover {
-  background: #e6f6f3;
+  background: color-mix(in srgb, var(--teal) 14%, var(--card-bg));
   box-shadow: var(--shadow-card);
 }
 
@@ -307,7 +314,8 @@
   font-family: var(--mono);
   font-size: 18px;
   font-weight: 600;
-  color: var(--rule-2);
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
   text-align: right;
   line-height: 1;
 }
@@ -364,7 +372,7 @@
 .tx-pay .icon-badge {
   width: 14px;
   height: 14px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
 }
 .tx-cat .icon-badge svg,
 .tx-pay .icon-badge svg {
@@ -381,29 +389,29 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   padding: 1px 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   margin-right: 4px;
   vertical-align: middle;
 }
 .tx-type-badge-expense {
   color: var(--red);
-  background: rgba(183, 57, 61, 0.12);
+  background: color-mix(in srgb, var(--red) 12%, transparent);
 }
 .tx-type-badge-income {
   color: var(--green);
-  background: rgba(26, 127, 55, 0.12);
+  background: color-mix(in srgb, var(--green) 12%, transparent);
 }
 .tx-type-badge-transfer {
   color: var(--ink-3);
-  background: rgba(20, 21, 26, 0.08);
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
 }
 .tx-type-badge-refund {
   color: var(--blue);
-  background: rgba(47, 104, 196, 0.12);
+  background: color-mix(in srgb, var(--blue) 12%, transparent);
 }
 .tx-type-badge-dividends {
   color: var(--purple);
-  background: rgba(126, 63, 185, 0.12);
+  background: color-mix(in srgb, var(--purple) 12%, transparent);
 }
 
 .tx-badge {
@@ -419,6 +427,7 @@
 }
 
 .tx-amount {
+  font-variant-numeric: tabular-nums;
   font-size: 14px;
   font-weight: 600;
   white-space: nowrap;
@@ -429,6 +438,7 @@
   align-items: flex-end;
 }
 .tx-cad-equiv {
+  font-variant-numeric: tabular-nums;
   font-size: 10.5px;
   font-weight: 500;
 }
@@ -452,7 +462,8 @@
   opacity: 0;
   transition: opacity 0.15s;
 }
-.tx-row:hover .tx-actions {
+.tx-row:hover .tx-actions,
+.tx-row:focus-within .tx-actions {
   opacity: 1;
 }
 .txbtn {
@@ -463,7 +474,7 @@
   padding: 4px 6px;
   color: var(--ink-3);
   line-height: 1;
-  border-radius: 0;
+  border-radius: var(--radius-xs);
 }
 .txbtn.edit:hover {
   color: var(--blue);
