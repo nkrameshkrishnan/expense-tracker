@@ -14,12 +14,12 @@
   --paper-2: #efeae0;
   --rule: #e6e0d4;
   --rule-2: #d6cfc0;
-  --teal: #006959;
-  --green: #1a7f37;
-  --amber: #b24a33;
-  --red: #b7393d;
-  --blue: #2f68c4;
-  --purple: #7e3fb9;
+  --teal: #006050;
+  --green: #156a2d;
+  --amber: #a3412b;
+  --red: #a8312f;
+  --blue: #2459b0;
+  --purple: #7436ad;
   --mono: "Inter", ui-monospace, SFMono-Regular, Menlo, monospace;
   --disp: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --serif: "Fraunces", Georgia, "Times New Roman", serif;
@@ -71,11 +71,11 @@
    value and sets this attribute on <html> - CSS never has to resolve
    prefers-color-scheme itself, which is what lets a manual override always
    win over the OS setting. Only the base ink/paper/rule/shadow tokens
-   change; category/account accent hues (--cat-color-*, --teal/--green/
-   --amber/--red/--blue/--purple) stay the same in both modes; they're
-   already mid-saturation colours that read fine on either background, and
-   keeping them fixed means a category's colour never shifts when someone
-   toggles the theme. --ink/--paper intentionally SWAP roles rather than
+   and the semantic text colours (--teal/--green/--amber/--red/--blue/
+   --purple) change: the semantic colours are text on paper/cards/tints, so
+   dark mode gets lighter same-hue variants (and light mode slightly darker
+   ones) to keep >= 4.5:1 contrast. Category colours (--cat-color-*) stay
+   identical in both modes so a category's colour never shifts on toggle. --ink/--paper intentionally SWAP roles rather than
    both just getting lighter/darker: `button.btn`'s solid style is
    `background: var(--ink); color: var(--paper)`, so swapping them turns a
    dark-on-light button into a light-on-dark one for free, without a
@@ -89,6 +89,15 @@
   --rule: #2e2a20;
   --rule-2: #3d382b;
   --card-bg: #1c1a13;
+  /* Semantic text colours: the light-mode values are darkened to >= 4.5:1 on
+     paper/card/tinted rows; these are the lighter same-hue variants for dark
+     surfaces (also >= 4.5:1, incl. on color-mix() badge/row tints). */
+  --teal: #3fb9a3;
+  --green: #4cc26a;
+  --amber: #e68a70;
+  --red: #f27a7e;
+  --blue: #7ba5f0;
+  --purple: #b786e6;
   --border-card: 1px solid rgba(255, 248, 230, 0.09);
   --shadow-card: none;
   --shadow-card-hover: none;

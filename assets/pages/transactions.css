@@ -299,9 +299,6 @@
   background: color-mix(in srgb, var(--green) 16%, var(--card-bg));
   box-shadow: var(--shadow-card);
 }
-.tx-row.tx-transfer {
-  opacity: 0.7;
-}
 .tx-row.tx-refund {
   background: color-mix(in srgb, var(--teal) 8%, var(--card-bg));
 }
@@ -395,23 +392,23 @@
 }
 .tx-type-badge-expense {
   color: var(--red);
-  background: color-mix(in srgb, var(--red) 12%, transparent);
+  background: color-mix(in srgb, var(--red) 8%, transparent);
 }
 .tx-type-badge-income {
   color: var(--green);
-  background: color-mix(in srgb, var(--green) 12%, transparent);
+  background: color-mix(in srgb, var(--green) 8%, transparent);
 }
 .tx-type-badge-transfer {
-  color: var(--ink-3);
+  color: var(--ink-2);
   background: color-mix(in srgb, var(--ink) 8%, transparent);
 }
 .tx-type-badge-refund {
   color: var(--blue);
-  background: color-mix(in srgb, var(--blue) 12%, transparent);
+  background: color-mix(in srgb, var(--blue) 8%, transparent);
 }
 .tx-type-badge-dividends {
   color: var(--purple);
-  background: color-mix(in srgb, var(--purple) 12%, transparent);
+  background: color-mix(in srgb, var(--purple) 8%, transparent);
 }
 
 .tx-badge {
