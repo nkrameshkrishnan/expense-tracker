@@ -1239,11 +1239,16 @@ code {
   justify-content: center;
   flex-shrink: 0;
   border-radius: 50%;
-  background: var(--rule-2);
+  background: var(--ink-3);
   color: #fff;
   font-weight: 700;
   font-family: var(--disp);
   line-height: 1;
+}
+/* Dark mode: the person fills are the lighter semantic variants, so the
+   initials flip from white to the dark paper tone to stay >= 4.5:1. */
+:root[data-theme="dark"] .avatar {
+  color: var(--paper);
 }
 .avatar-sm {
   width: 20px;
