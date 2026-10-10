@@ -17,6 +17,7 @@ import {
   setTheme,
 } from "../prefs.js";
 import { themeIcon } from "../icons.js";
+import { revealStagger } from "../motion.js";
 
 /** Same reasoning as profile.js's currencySymbolHtml(): a flag for "which
     country", plus the currency's own symbol underneath when it's an actual
@@ -46,7 +47,9 @@ export function renderOnboarding({ onFinish }) {
   let currency = "CAD";
   let theme = getTheme();
 
-  function stepShell(stepLabel, heading, sub, body, actionsHtml) {
+  // Gentle stagger only the first time each step is shown (arriving via
+  // Continue/Back/initial), never when picking an option re-renders it.
+  function stepShell(stepLabel, heading, sub, body, actionsHtml, reveal) {
     gate.innerHTML = `
       <div class="gate-card ob-card">
         <div class="gate-mark">&#8214;</div>
@@ -57,9 +60,10 @@ export function renderOnboarding({ onFinish }) {
         ${body}
         ${actionsHtml}
       </div>`;
+    if (reveal) revealStagger(gate.querySelectorAll(".gate-card > *"));
   }
 
-  function renderStep1() {
+  function renderStep1(fresh = true) {
     const body = `
       <div class="ob-options" role="radiogroup" aria-label="Primary currency">
         ${CURRENCIES.map(
@@ -78,17 +82,19 @@ export function renderOnboarding({ onFinish }) {
       "Dashboard, budget and net worth totals will be shown in this currency — you can change it anytime from Profile.",
       body,
       actions,
+      fresh,
     );
     gate.querySelectorAll("[data-currency]").forEach((btn) => {
       btn.onclick = () => {
         currency = btn.dataset.currency;
-        renderStep1();
+        renderStep1(false);
       };
     });
-    document.getElementById("ob-next").onclick = renderStep2;
+    document.getElementById("ob-next").onclick = (e) =>
+      renderStep2(e.detail !== 0); // detail 0 = keyboard: no motion
   }
 
-  function renderStep2() {
+  function renderStep2(fresh = true) {
     const body = `
       <div class="ob-options" role="radiogroup" aria-label="Appearance">
         ${THEME_OPTIONS.map(
@@ -111,15 +117,17 @@ export function renderOnboarding({ onFinish }) {
       "Pick a theme, or follow this device's setting — you can change this anytime from Profile.",
       body,
       actions,
+      fresh,
     );
     gate.querySelectorAll("[data-theme-choice]").forEach((btn) => {
       btn.onclick = () => {
         theme = btn.dataset.themeChoice;
         setTheme(theme); // live preview - see it change immediately, not just on Finish
-        renderStep2();
+        renderStep2(false);
       };
     });
-    document.getElementById("ob-back").onclick = renderStep1;
+    document.getElementById("ob-back").onclick = (e) =>
+      renderStep1(e.detail !== 0);
     document.getElementById("ob-finish").onclick = () =>
       onFinish(currency, theme);
   }

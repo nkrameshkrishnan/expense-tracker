@@ -176,7 +176,7 @@ th.n {
 .brand-year {
   font-family: var(--mono);
   font-size: 11px;
-  color: #8d97a5;
+  color: color-mix(in srgb, var(--rail-fg) 58%, var(--rail-bg));
   letter-spacing: 0.06em;
 }
 .tabs {
@@ -189,7 +189,7 @@ th.n {
   background: none;
   border: 0;
   border-bottom: 2px solid transparent;
-  color: #98a2b0;
+  color: color-mix(in srgb, var(--rail-fg) 62%, var(--rail-bg));
   font-family: var(--disp);
   font-size: 12.5px;
   font-weight: 500;
@@ -212,7 +212,7 @@ th.n {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  border: 1px solid #3a3d47;
+  border: 1px solid color-mix(in srgb, var(--rail-fg) 22%, var(--rail-bg));
   background: var(--rail-fg);
   color: var(--rail-bg);
   font-family: var(--disp);
@@ -234,8 +234,8 @@ th.n {
   min-width: 200px;
   background: var(--card-bg);
   color: var(--ink);
-  border: 1px solid rgba(20, 21, 26, 0.1);
-  border-radius: 12px;
+  border: 1px solid var(--rule-2);
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow-card-hover);
   padding: 14px;
   z-index: 50;
@@ -753,16 +753,19 @@ tbody tr:hover {
   /* Light tints derived from --amber/--teal/--red rather than the old
      mustard-yellow warning scheme, which was tuned for the old brownish
      --amber and no longer matches this palette. */
-  background: #fff0ed;
-  color: #733021;
+  background: color-mix(in srgb, var(--amber) 10%, var(--paper));
+  color: var(--ink);
+  box-shadow: inset 3px 0 0 var(--amber);
 }
 .banner.ok {
-  background: #e6f6f3;
-  color: #006a59;
+  background: color-mix(in srgb, var(--teal) 10%, var(--paper));
+  color: var(--ink);
+  box-shadow: inset 3px 0 0 var(--teal);
 }
 .banner.bad {
-  background: #fceded;
-  color: #952f32;
+  background: color-mix(in srgb, var(--red) 10%, var(--paper));
+  color: var(--ink);
+  box-shadow: inset 3px 0 0 var(--red);
 }
 
 /* ---------- footer ---------- */
@@ -828,7 +831,7 @@ code {
 /* header rail switch */
 .people {
   display: flex;
-  border: 1px solid #39434f;
+  border: 1px solid color-mix(in srgb, var(--rail-fg) 20%, var(--rail-bg));
   margin-left: 12px;
   flex-shrink: 0;
 }
@@ -838,8 +841,8 @@ code {
   gap: 6px;
   background: none;
   border: 0;
-  border-right: 1px solid #39434f;
-  color: #98a2b0;
+  border-right: 1px solid color-mix(in srgb, var(--rail-fg) 20%, var(--rail-bg));
+  color: color-mix(in srgb, var(--rail-fg) 62%, var(--rail-bg));
   font-family: var(--disp);
   font-size: 11px;
   font-weight: 500;

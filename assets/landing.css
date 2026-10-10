@@ -7,7 +7,7 @@
   position: sticky;
   top: 0;
   z-index: 5;
-  background: rgba(246, 247, 249, 0.92);
+  background: color-mix(in srgb, var(--paper) 92%, transparent);
   backdrop-filter: none; /* anti-slop: no glass blur on a high-contrast bar */
   border-bottom: 1px solid var(--rule);
 }
@@ -59,7 +59,8 @@
     box-shadow var(--motion-fast) var(--ease-out);
 }
 .l-btn:hover {
-  background: #000;
+  background: var(--ink-2);
+  border-color: var(--ink-2);
   transform: translateY(-1px);
 }
 .l-btn:focus-visible {
@@ -110,8 +111,9 @@
   text-align: center;
 }
 .l-h1 {
-  font-size: 38px;
-  font-weight: 800;
+  font-family: var(--serif);
+  font-size: 40px;
+  font-weight: 600;
   letter-spacing: -0.02em;
   line-height: 1.15;
   margin: 0 0 16px;
@@ -173,8 +175,9 @@
   margin: 0 0 8px;
 }
 .l-feature-title {
+  font-family: var(--serif);
   font-size: 25px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: -0.01em;
   line-height: 1.25;
   margin: 0 0 12px;
@@ -569,6 +572,7 @@
 .l-modal-scrim {
   position: absolute;
   inset: 0;
+  /* Fixed dark scrim in both themes (modal dimmer, not a themed surface). */
   background: rgba(20, 21, 26, 0.45);
   animation: l-scrim-in var(--motion-fast) var(--ease-out);
 }
