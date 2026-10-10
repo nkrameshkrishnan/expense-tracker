@@ -8,6 +8,7 @@ import { money, pct } from "../xlsxio.js";
 import { $, view, esc, state, kpi, notice, withBusy } from "../core.js";
 import { isRemoteStore } from "../auth.js";
 import { emptyIcon } from "../icons.js";
+import { countUp, cancelCountUp, revealOnView } from "../motion.js";
 
 /** A purchase receipt usually shows a total amount paid, not a price/gram -
     that division is on you to do by hand, which is exactly the kind of
@@ -177,6 +178,32 @@ const rerenderNetWorth = async () => {
   const { renderNetWorth } = await import("./networth.js");
   renderNetWorth();
 };
+/** Count-up targets recorded by the most recent renderMetalsSection():
+    [tile label, number, formatter]. Consumed by animateMetalsSection(), which
+    renderNetWorth calls only when the tab is freshly built - never for
+    filter/edit re-renders. */
+let pendingTotals = [];
+
+/** Counts each named KPI tile's value up to its number. Targets the inner
+    .v element only (never the tile), always ends on exactly fmt(n), and
+    cancels any running count-up first so stale frames can't overwrite. */
+export function countKpiTiles(specs) {
+  for (const [label, n, fmt] of specs) {
+    const tile = [...view.querySelectorAll(".kpis .kpi")].find(
+      (t) => t.querySelector(".k")?.textContent === label,
+    );
+    const el = tile?.querySelector(".v");
+    if (!el) continue;
+    cancelCountUp(el);
+    countUp(el, n, fmt, { duration: 0.22 });
+  }
+}
+
+/** Fresh-build-only entrance for the Precious metals tab. */
+export function animateMetalsSection() {
+  countKpiTiles(pendingTotals);
+  revealOnView(view.querySelectorAll(".tablewrap"));
+}
 const sel = (cond) => (cond ? " selected" : "");
 
 /** "Precious metals" section on the Net Worth page: KPI tiles, a lots table,
@@ -221,6 +248,16 @@ export function renderMetalsSection(scopeOwner) {
     pct(summary.unrealizedGainPct),
     summary.unrealizedGain < 0 ? "neg" : "pos",
   );
+  const signed = (n) => (n >= 0 ? "+" : "") + money(n);
+  pendingTotals = missingFeed
+    ? []
+    : [
+        ["Value", summary.value, money],
+        single
+          ? ["Avg cost/gram", summary.avgCostPerGram, money]
+          : ["Total paid", summary.totalCost, money],
+        ["Unrealized gain", summary.unrealizedGain, signed],
+      ];
   const lotsLabel = `${holdings.length} lot${holdings.length === 1 ? "" : "s"}`;
   const valueSub = single
     ? latestPrice

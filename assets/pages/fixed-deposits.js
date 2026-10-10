@@ -11,6 +11,8 @@ import { money, moneyIn } from "../xlsxio.js";
 import { $, view, esc, state, kpi, notice, withBusy } from "../core.js";
 import { isRemoteStore } from "../auth.js";
 import { emptyIcon } from "../icons.js";
+import { countKpiTiles } from "./metals.js";
+import { revealOnView } from "../motion.js";
 
 // The feature is scoped to India fixed deposits for now - every deposit is
 // entered and displayed in its own currency (never converted in place, same
@@ -125,6 +127,15 @@ const fmtTenure = (startDate, maturityDate) => {
     table, and an add-deposit form. Mirrors renderMetalsSection/
     wireMetalsHandlers in metals.js - a returned HTML string plus a separate
     wiring function called once that HTML is actually in the DOM. */
+/** Count-up targets from the most recent renderFixedDepositsSection(). */
+let pendingTotals = [];
+
+/** Fresh-build-only entrance for the Fixed Deposits tab. */
+export function animateFixedDepositsSection() {
+  countKpiTiles(pendingTotals);
+  revealOnView(view.querySelectorAll(".tablewrap"));
+}
+
 export function renderFixedDepositsSection(scopeOwner) {
   if (!isRemoteStore(state.store)) {
     return `
@@ -142,6 +153,16 @@ export function renderFixedDepositsSection(scopeOwner) {
   );
   const summary = fixedDepositsSummary(deposits, today);
 
+  const fdMoney = (n) => moneyIn(n, FD_CURRENCY);
+  pendingTotals = [
+    ["Principal", summary.totalPrincipal, fdMoney],
+    ["Value today", summary.totalValueToday, fdMoney],
+    [
+      "Interest earned",
+      summary.totalInterestEarned,
+      (n) => (n >= 0 ? "+" : "") + fdMoney(n),
+    ],
+  ];
   const tiles = `<div class="kpis">
     ${kpi("Principal", moneyIn(summary.totalPrincipal, FD_CURRENCY), `${deposits.length} deposit${deposits.length === 1 ? "" : "s"}`)}
     ${kpi("Value today", moneyIn(summary.totalValueToday, FD_CURRENCY), `≈ ${money(summary.totalValueCad)} ${getHomeCurrency()}`)}

@@ -24,17 +24,21 @@ import {
   withBusy,
 } from "../core.js";
 import { go } from "../router.js";
+import { revealOnView } from "../motion.js";
 import { backendLabel, isRemoteStore } from "../auth.js";
 import { emptyIcon } from "../icons.js";
 import { debtNetWorth, renderDebtSection, wireDebtHandlers } from "./debts.js";
 import {
   metalsSummary,
+  animateMetalsSection,
+  countKpiTiles,
   renderMetalsSection,
   wireMetalsHandlers,
 } from "./metals.js";
 import {
   fixedDepositsSummary,
   renderFixedDepositsSection,
+  animateFixedDepositsSection,
   wireFixedDepositsHandlers,
 } from "./fixed-deposits.js";
 
@@ -239,6 +243,12 @@ export function renderNetWorth() {
     }
   };
 
+  // Entrance motion only when this tab is freshly built (route entry or tab
+  // switch). Re-renders in place - scope/filter changes, edits, FX refresh -
+  // find the same tab already showing and stay still.
+  const freshTab =
+    view.querySelector(".nw-tab-btn.on")?.dataset.nwtab !== activeTab;
+
   view.innerHTML = `
   <div class="head">
     <div><h1>Net worth</h1>
@@ -404,6 +414,7 @@ export function renderNetWorth() {
 
   if (activeTab === "fixeddeposits") {
     wireFixedDepositsHandlers();
+    if (freshTab) animateFixedDepositsSection();
     return;
   }
   if (activeTab === "debts") {
@@ -412,10 +423,23 @@ export function renderNetWorth() {
   }
   if (activeTab === "metals") {
     wireMetalsHandlers();
+    if (freshTab) animateMetalsSection();
     return;
   }
 
   $("#nw-record").onclick = () => renderBalanceForm(latest);
+
+  if (freshTab && latest) {
+    countKpiTiles([
+      ["Assets", assets, money],
+      ["Liabilities", liabs, money],
+      ["Net worth", net, money],
+      ...(delta === null
+        ? []
+        : [["Change", delta, (n) => (n >= 0 ? "+" : "") + money(n)]]),
+    ]);
+    revealOnView(view.querySelectorAll(".tablewrap"));
+  }
 
   if (canRefreshFx) {
     $("#nw-refresh-fx").onclick = async () => {

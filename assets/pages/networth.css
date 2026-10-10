@@ -84,7 +84,7 @@
   border: 1px solid var(--rule-2);
   border-left: 3px solid var(--amber);
   border-radius: var(--radius-xs);
-  background: #fff0ed;
+  background: color-mix(in srgb, var(--amber) 10%, var(--card-bg));
   padding: 10px 15px;
   margin-bottom: 14px;
   font-size: 12.5px;
@@ -287,7 +287,7 @@ tr:hover .nw-del-acct {
 }
 .debt-card:hover {
   box-shadow: var(--shadow-card-hover);
-  border-color: rgba(20, 21, 26, 0.14);
+  border-color: var(--rule-2);
 }
 .debt-card.settled {
   opacity: 0.62;
@@ -315,7 +315,8 @@ tr:hover .nw-del-acct {
 }
 .debt-outstanding {
   display: block;
-  font-family: var(--mono);
+  font-family: var(--serif);
+  font-variant-numeric: tabular-nums;
   font-size: 20px;
   font-weight: 600;
   letter-spacing: -0.02em;
@@ -353,7 +354,7 @@ tr:hover .nw-del-acct {
 
 .debt-warn {
   border-left: 3px solid var(--amber);
-  background: #fff0ed;
+  background: color-mix(in srgb, var(--amber) 10%, var(--card-bg));
   padding: 8px 12px;
   margin-top: 10px;
   font-size: 12px;
