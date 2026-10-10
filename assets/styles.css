@@ -3,17 +3,17 @@
    the person-colour system (swatches/chips used across every page and
    chart), and the inline "+ New" dropdown entry. Loaded on every page. */
 
-/* Monarch-style palette (ported from Expense_tracker_New): cards get
-   elevation/radius, but tables, forms, tags and banners stay flat/hairline -
-   see that app's assets/styles.css for the source of truth on this split. */
+/* Editorial palette: warm paper and ink, hairline-bordered flat cards (no
+   drop shadows), Fraunces serif for page titles and hero figures, Inter for
+   everything else. Tables, forms, tags and banners stay flat/hairline too. */
 :root {
-  --ink: #14151a;
-  --ink-2: #4b4d57;
-  --ink-3: #585b66;
-  --paper: #f6f7f9;
-  --paper-2: #eef0f3;
-  --rule: #e7e8ed;
-  --rule-2: #d7d9e0;
+  --ink: #1a1814;
+  --ink-2: #4f4a40;
+  --ink-3: #5c564a;
+  --paper: #f7f4ee;
+  --paper-2: #efeae0;
+  --rule: #e6e0d4;
+  --rule-2: #d6cfc0;
   --teal: #006959;
   --green: #1a7f37;
   --amber: #b24a33;
@@ -21,19 +21,17 @@
   --blue: #2f68c4;
   --purple: #7e3fb9;
   --mono: "Inter", ui-monospace, SFMono-Regular, Menlo, monospace;
-  --disp: "Sora", system-ui, -apple-system, Segoe UI, sans-serif;
-  --radius-xs: 8px;
-  --radius-sm: 10px;
-  --radius-md: 18px;
-  --card-bg: #ffffff;
-  /* Elevation: a hairline border carries the separation, box-shadow is a
-     soft, low-alpha add-on - never the only thing marking a surface raised
-     (keeps flat-looking screenshots honest about where the card edge is). */
-  --border-card: 1px solid rgba(20, 21, 26, 0.08);
-  --shadow-card:
-    0 1px 2px rgba(20, 21, 26, 0.04), 0 8px 20px -10px rgba(20, 21, 26, 0.12);
-  --shadow-card-hover:
-    0 2px 6px rgba(20, 21, 26, 0.06), 0 16px 32px -12px rgba(20, 21, 26, 0.16);
+  --disp: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --serif: "Fraunces", Georgia, "Times New Roman", serif;
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --card-bg: #fffdf9;
+  /* Elevation: a hairline border carries the separation; cards are flat
+     (no resting shadow), with only a faint 1px bottom edge on hover. */
+  --border-card: 1px solid rgba(26, 24, 20, 0.09);
+  --shadow-card: none;
+  --shadow-card-hover: 0 1px 0 rgba(26, 24, 20, 0.04);
   --shadow-focus: 0 0 0 3px rgba(178, 74, 51, 0.3);
   --motion-fast: 150ms;
   --motion-base: 250ms;
@@ -83,19 +81,17 @@
    dark-on-light button into a light-on-dark one for free, without a
    separate dark-mode button rule. */
 :root[data-theme="dark"] {
-  --ink: #eceef2;
-  --ink-2: #b7bac4;
-  --ink-3: #8c8f9b;
-  --paper: #15161b;
-  --paper-2: #1d1f26;
-  --rule: #2b2d36;
-  --rule-2: #393c47;
-  --card-bg: #1b1d24;
-  --border-card: 1px solid rgba(255, 255, 255, 0.09);
-  --shadow-card:
-    0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 20px -10px rgba(0, 0, 0, 0.5);
-  --shadow-card-hover:
-    0 2px 6px rgba(0, 0, 0, 0.35), 0 16px 32px -12px rgba(0, 0, 0, 0.6);
+  --ink: #efe9dc;
+  --ink-2: #bdb5a4;
+  --ink-3: #908874;
+  --paper: #17150f;
+  --paper-2: #1f1c15;
+  --rule: #2e2a20;
+  --rule-2: #3d382b;
+  --card-bg: #1c1a13;
+  --border-card: 1px solid rgba(255, 248, 230, 0.09);
+  --shadow-card: none;
+  --shadow-card-hover: none;
   --shadow-focus: 0 0 0 3px rgba(178, 74, 51, 0.45);
   color-scheme: dark;
 }
@@ -252,8 +248,9 @@ main {
   margin-bottom: 18px;
 }
 h1 {
+  font-family: var(--serif);
   font-size: 22px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: -0.01em;
   margin: 0;
 }
@@ -417,7 +414,7 @@ label.f > textarea {
 }
 .kpi:hover {
   box-shadow: var(--shadow-card-hover);
-  border-color: rgba(20, 21, 26, 0.14);
+  border-color: rgba(26, 24, 20, 0.14);
   transform: translateY(-1px);
 }
 .kpi .k {
@@ -427,7 +424,8 @@ label.f > textarea {
   color: var(--ink-3);
 }
 .kpi .v {
-  font-family: var(--mono);
+  font-family: var(--serif);
+  font-variant-numeric: tabular-nums;
   font-size: 20px;
   font-weight: 600;
   margin-top: 5px;

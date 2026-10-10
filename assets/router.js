@@ -6,6 +6,7 @@
    (a click handler), never read at module top-level. Verified via a real
    import() resolution, not just reasoned about. */
 import * as charts from "./charts.js";
+import { revealPage } from "./motion.js";
 import { view, state, renderPeopleSwitch } from "./core.js";
 import { renderDashboard } from "./pages/dashboard.js";
 import { renderAdd } from "./pages/add.js";
@@ -53,6 +54,11 @@ export function go(tab) {
   renderPeopleSwitch();
   location.hash = tab;
   (VIEWS[tab] || renderDashboard)();
+  try {
+    revealPage();
+  } catch {
+    /* animation must never break navigation */
+  }
   window.scrollTo(0, 0);
 }
 

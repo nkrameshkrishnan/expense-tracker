@@ -124,7 +124,8 @@
 }
 .nw-running-val {
   display: block;
-  font-family: var(--mono);
+  font-family: var(--serif);
+  font-variant-numeric: tabular-nums;
   font-size: 22px;
   font-weight: 600;
   letter-spacing: -0.02em;

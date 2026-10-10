@@ -28,7 +28,8 @@
   color: var(--ink-3);
 }
 .div-kpi-val {
-  font-family: var(--mono);
+  font-family: var(--serif);
+  font-variant-numeric: tabular-nums;
   font-size: 26px;
   font-weight: 600;
   letter-spacing: -0.02em;
