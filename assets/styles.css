@@ -1214,14 +1214,15 @@ code {
   animation-delay: 140ms;
 }
 @media (prefers-reduced-motion: reduce) {
-  .kpi,
-  .panel,
-  .person-card,
-  .bcard,
-  .tx-row,
-  .networth-card,
-  .metal-card,
-  .debt-card,
+  /* Same specificity as the entrance rules above, so this actually wins. */
+  #view.is-entering .kpi,
+  #view.is-entering .panel,
+  #view.is-entering .person-card,
+  #view.is-entering .bcard,
+  #view.is-entering .tx-row,
+  #view.is-entering .networth-card,
+  #view.is-entering .metal-card,
+  #view.is-entering .debt-card,
   .profile-menu {
     animation: none;
   }
