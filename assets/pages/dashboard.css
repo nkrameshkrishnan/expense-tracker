@@ -29,7 +29,7 @@
 }
 .div-kpi-val {
   font-family: var(--serif);
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: lining-nums tabular-nums;
   font-size: 26px;
   font-weight: 600;
   letter-spacing: -0.02em;

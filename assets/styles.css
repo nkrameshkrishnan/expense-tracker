@@ -32,7 +32,7 @@
   --border-card: 1px solid rgba(26, 24, 20, 0.09);
   --shadow-card: none;
   --shadow-card-hover: 0 1px 0 rgba(26, 24, 20, 0.04);
-  --shadow-focus: 0 0 0 3px rgba(178, 74, 51, 0.3);
+  --shadow-focus: 0 0 0 3px color-mix(in srgb, var(--amber) 30%, transparent);
   --motion-fast: 150ms;
   --motion-base: 250ms;
   --motion-slow: 600ms;
@@ -104,17 +104,12 @@
   --border-card: 1px solid rgba(255, 248, 230, 0.09);
   --shadow-card: none;
   --shadow-card-hover: none;
-  --shadow-focus: 0 0 0 3px rgba(178, 74, 51, 0.45);
+  --shadow-focus: 0 0 0 3px color-mix(in srgb, var(--amber) 45%, transparent);
   color-scheme: dark;
 }
-/* button.btn/.l-btn's hover darkens toward literal black in light mode,
-   which is correct there (button is already near-black) but would vanish
-   a light-mode-inverted dark-mode button into the page background - see
-   the comment above. Lightens toward the (now light) --ink instead. */
-:root[data-theme="dark"] button.btn:hover,
-:root[data-theme="dark"] .l-btn:hover {
-  background: var(--ink-2);
-}
+/* (A dark-only button.btn/.l-btn hover override used to live here. Both
+   hovers are --ink-2 in either theme now, and its higher specificity was
+   also overriding the ghost/danger hovers in dark mode, so it is gone.) */
 * {
   box-sizing: border-box;
 }
@@ -201,8 +196,16 @@ th.n {
   cursor: pointer;
   text-transform: uppercase;
 }
+.tabs button {
+  transition:
+    color var(--motion-fast),
+    background-color var(--motion-fast);
+}
+/* Hover: full --rail-fg text on a faint rail-fg wash (fixed rail tokens, so
+   identical in both themes). .on below keeps its accent underline. */
 .tabs button:hover {
   color: var(--rail-fg);
+  background: color-mix(in srgb, var(--rail-fg) 14%, var(--rail-bg));
 }
 .tabs button.on {
   color: var(--rail-fg);
@@ -330,8 +333,11 @@ button.btn {
   letter-spacing: 0.03em;
   padding: 8px 15px;
 }
+/* --ink-2 in both themes: a slightly softer near-black in light mode, a
+   slightly dimmer near-white in dark mode, --paper text stays >= 4.5:1. */
 button.btn:hover {
-  background: #000;
+  background: var(--ink-2);
+  border-color: var(--ink-2);
   transform: translateY(-1px);
 }
 button.btn:active {
@@ -347,6 +353,7 @@ button.btn.ghost {
 }
 button.btn.ghost:hover {
   background: var(--paper-2);
+  border-color: var(--rule-2);
 }
 button.btn.danger {
   background: var(--card-bg);
@@ -354,7 +361,8 @@ button.btn.danger {
   border-color: var(--red);
 }
 button.btn.danger:hover {
-  background: #fceded;
+  background: color-mix(in srgb, var(--red) 10%, var(--card-bg));
+  border-color: var(--red);
 }
 button.btn:disabled {
   opacity: 0.45;
@@ -426,7 +434,7 @@ label.f > textarea {
 }
 .kpi:hover {
   box-shadow: var(--shadow-card-hover);
-  border-color: rgba(26, 24, 20, 0.14);
+  border-color: var(--rule-2);
   transform: translateY(-1px);
 }
 .kpi .k {
@@ -437,7 +445,7 @@ label.f > textarea {
 }
 .kpi .v {
   font-family: var(--serif);
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: lining-nums tabular-nums;
   font-size: 20px;
   font-weight: 600;
   margin-top: 5px;
@@ -635,15 +643,15 @@ tbody tr:hover {
 }
 .stg-flag-exact {
   color: var(--red);
-  background: rgba(183, 57, 61, 0.1);
+  background: color-mix(in srgb, var(--red) 10%, transparent);
 }
 .stg-flag-likely {
   color: var(--amber);
-  background: rgba(178, 74, 51, 0.1);
+  background: color-mix(in srgb, var(--amber) 10%, transparent);
 }
 .stg-flag-file {
   color: var(--blue);
-  background: rgba(47, 104, 196, 0.1);
+  background: color-mix(in srgb, var(--blue) 10%, transparent);
 }
 .stg-match {
   display: block;
@@ -854,7 +862,9 @@ code {
   cursor: pointer;
   text-transform: uppercase;
   white-space: nowrap;
-  transition: color var(--motion-fast);
+  transition:
+    color var(--motion-fast),
+    background-color var(--motion-fast);
 }
 .person-btn .avatar {
   font-size: 9px;
@@ -864,8 +874,12 @@ code {
 }
 .person-btn:hover {
   color: var(--rail-fg);
+  background: color-mix(in srgb, var(--rail-fg) 16%, var(--rail-bg));
 }
-.person-btn.on {
+/* After :hover on purpose (same specificity): the selected pill stays a
+   solid --rail-fg fill with --rail-bg text while hovered. */
+.person-btn.on,
+.person-btn.on:hover {
   background: var(--rail-fg);
   color: var(--rail-bg);
   font-weight: 700;
@@ -1075,7 +1089,8 @@ code {
   border-color: var(--ink);
 }
 .newopt-ok:hover {
-  background: #000;
+  background: var(--ink-2);
+  border-color: var(--ink-2);
 }
 .newopt-cancel:hover {
   background: var(--paper-2);
@@ -1094,7 +1109,7 @@ code {
   vertical-align: middle;
 }
 .banner-action:hover {
-  background: rgba(0, 0, 0, 0.06);
+  background: color-mix(in srgb, currentColor 10%, transparent);
 }
 
 /* ---------- card hover-lift (added for the card/motion revamp) ---------- */
@@ -1117,10 +1132,11 @@ code {
 }
 
 /* ---------- entrance motion ---------- */
-/* Plays automatically whenever one of these elements is first inserted -
-   every page render replaces view.innerHTML wholesale, so this needs no JS
-   trigger: the browser animates any freshly-created node that matches.
-   transform/opacity only, 150-200ms, ease-out - see the motion skill. */
+/* Only while #view carries .is-entering - added by router.js go() (via
+   motion.js runEntrance) for a real page entrance and removed again right
+   after it, so filter/search/person re-renders, which rebuild the same
+   nodes later, never replay it (spec: never animate filters or rows on
+   change). transform/opacity only, 200ms, ease-out. */
 @keyframes fade-in-up {
   from {
     opacity: 0;
@@ -1149,52 +1165,52 @@ code {
     transform: translateY(0) scale(1);
   }
 }
-.kpi,
-.panel,
-.person-card,
-.bcard,
-.tx-row,
-.networth-card,
-.metal-card,
-.debt-card {
+#view.is-entering .kpi,
+#view.is-entering .panel,
+#view.is-entering .person-card,
+#view.is-entering .bcard,
+#view.is-entering .tx-row,
+#view.is-entering .networth-card,
+#view.is-entering .metal-card,
+#view.is-entering .debt-card {
   animation: fade-in-up 200ms var(--ease-out) both;
 }
 /* A short, capped stagger on the first screenful of a grid/list - rows past
    the 8th all still fade in, just without the extra per-item delay. */
-.kpis > .kpi:nth-child(1),
-.person-cards > .person-card:nth-child(1),
-.tx-group-body > .tx-row:nth-child(1) {
+#view.is-entering .kpis > .kpi:nth-child(1),
+#view.is-entering .person-cards > .person-card:nth-child(1),
+#view.is-entering .tx-group-body > .tx-row:nth-child(1) {
   animation-delay: 0ms;
 }
-.kpis > .kpi:nth-child(2),
-.person-cards > .person-card:nth-child(2),
-.tx-group-body > .tx-row:nth-child(2) {
+#view.is-entering .kpis > .kpi:nth-child(2),
+#view.is-entering .person-cards > .person-card:nth-child(2),
+#view.is-entering .tx-group-body > .tx-row:nth-child(2) {
   animation-delay: 20ms;
 }
-.kpis > .kpi:nth-child(3),
-.person-cards > .person-card:nth-child(3),
-.tx-group-body > .tx-row:nth-child(3) {
+#view.is-entering .kpis > .kpi:nth-child(3),
+#view.is-entering .person-cards > .person-card:nth-child(3),
+#view.is-entering .tx-group-body > .tx-row:nth-child(3) {
   animation-delay: 40ms;
 }
-.kpis > .kpi:nth-child(4),
-.person-cards > .person-card:nth-child(4),
-.tx-group-body > .tx-row:nth-child(4) {
+#view.is-entering .kpis > .kpi:nth-child(4),
+#view.is-entering .person-cards > .person-card:nth-child(4),
+#view.is-entering .tx-group-body > .tx-row:nth-child(4) {
   animation-delay: 60ms;
 }
-.kpis > .kpi:nth-child(5),
-.tx-group-body > .tx-row:nth-child(5) {
+#view.is-entering .kpis > .kpi:nth-child(5),
+#view.is-entering .tx-group-body > .tx-row:nth-child(5) {
   animation-delay: 80ms;
 }
-.kpis > .kpi:nth-child(6),
-.tx-group-body > .tx-row:nth-child(6) {
+#view.is-entering .kpis > .kpi:nth-child(6),
+#view.is-entering .tx-group-body > .tx-row:nth-child(6) {
   animation-delay: 100ms;
 }
-.kpis > .kpi:nth-child(7),
-.tx-group-body > .tx-row:nth-child(7) {
+#view.is-entering .kpis > .kpi:nth-child(7),
+#view.is-entering .tx-group-body > .tx-row:nth-child(7) {
   animation-delay: 120ms;
 }
-.kpis > .kpi:nth-child(8),
-.tx-group-body > .tx-row:nth-child(8) {
+#view.is-entering .kpis > .kpi:nth-child(8),
+#view.is-entering .tx-group-body > .tx-row:nth-child(8) {
   animation-delay: 140ms;
 }
 @media (prefers-reduced-motion: reduce) {

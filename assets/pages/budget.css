@@ -22,7 +22,7 @@
   font-size: 22px;
   font-weight: 600;
   font-family: var(--serif);
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: lining-nums tabular-nums;
   letter-spacing: -0.02em;
   margin-bottom: 3px;
 }

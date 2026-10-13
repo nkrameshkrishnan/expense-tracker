@@ -125,7 +125,7 @@
 .nw-running-val {
   display: block;
   font-family: var(--serif);
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: lining-nums tabular-nums;
   font-size: 22px;
   font-weight: 600;
   letter-spacing: -0.02em;
@@ -316,7 +316,7 @@ tr:hover .nw-del-acct {
 .debt-outstanding {
   display: block;
   font-family: var(--serif);
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: lining-nums tabular-nums;
   font-size: 20px;
   font-weight: 600;
   letter-spacing: -0.02em;

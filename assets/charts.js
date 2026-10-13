@@ -79,7 +79,12 @@ function mount(id, config) {
     return;
   }
   existing?.destroy();
-  Chart.defaults.font.family = "'JetBrains Mono', ui-monospace, monospace";
+  // The app's UI face (Inter, from styles.css --disp). Canvas text can't
+  // resolve CSS variables, so read the computed stack; system-ui if unset.
+  Chart.defaults.font.family =
+    getComputedStyle(document.documentElement)
+      .getPropertyValue("--disp")
+      .trim() || "system-ui, sans-serif";
   Chart.defaults.font.size = 11;
   Chart.defaults.color = INK3;
   // Chart.js re-animates an element whenever it becomes "active" (hovered),
