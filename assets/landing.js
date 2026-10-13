@@ -11,7 +11,7 @@
    anti-slop rule, and because they are honest about being illustrative
    rather than live data. */
 import { iconBadge } from "./icons.js";
-import { revealOnView } from "./motion.js";
+import { motionReady, revealOnView } from "./motion.js";
 
 const esc = (s) =>
   String(s ?? "").replace(
@@ -292,21 +292,18 @@ function renderFooter() {
 
 /** Scroll reveals for the below-the-fold sections of a freshly built landing
     page. The landing page is not rendered through the router, so it triggers
-    its own. The hero is deliberately not animated: it is already on screen
-    when the page paints, so fading it in would only flash visible content.
-    motion.js's helpers silently skip until the vendored module has loaded,
-    which on a first visit is usually after this markup is built, so wait for
-    that same (cached) module before asking for reveals. If it fails to load
-    nothing is touched and every section simply stays visible. */
+    its own. motion.js's helpers silently skip until the vendored module has
+    loaded, so wait for motionReady (true/false, never rejects). revealOnView
+    only hides sections that are still below the fold at that moment, so
+    nothing already on screen ever flashes; if motion failed to load nothing
+    is touched and every section simply stays visible. */
 function scheduleReveals() {
-  import("./vendor/framer-motion-dom.js")
-    .then(() => new Promise((r) => setTimeout(r))) // let motion.js's own .then(fm = m) run first
-    .then(() => {
-      const gate = document.getElementById("gate");
-      if (!gate || !gate.classList.contains("gate-landing")) return;
-      revealOnView(gate.querySelectorAll(".l-feature, .l-values-grid > *"));
-    })
-    .catch(() => {});
+  motionReady.then((ok) => {
+    if (!ok) return;
+    const gate = document.getElementById("gate");
+    if (!gate || !gate.classList.contains("gate-landing")) return;
+    revealOnView(gate.querySelectorAll(".l-feature, .l-values-grid > *"));
+  });
 }
 
 export function renderLandingIntro() {

@@ -10,13 +10,12 @@ import { money, pct, monthOf } from "../xlsxio.js";
 import { listFor } from "../categories.js";
 import { $, view, esc, state, notice, withBusy, refresh } from "../core.js";
 import { iconBadge } from "../icons.js";
-import { countUp, cancelCountUp } from "../motion.js";
+import { countUp, cancelCountUp, isEntering } from "../motion.js";
 
 export function renderBudget() {
-  // Entrance motion only when the page is freshly built (route entry). A
-  // re-render in place - after Save budget - finds the summary strip already
-  // showing and stays still.
-  const fresh = !view.querySelector("#b-summary");
+  // Entrance motion (bar grow, count-up) only on a page entrance through
+  // go(). Re-renders in place - after Save budget, person switch - stay still.
+  const fresh = isEntering();
   // Includes user-created categories, not just the built-in list.
   const allCats = listFor("category");
   // Budget is deliberately household-level: one ceiling for the two of you.
@@ -176,11 +175,9 @@ export function renderBudget() {
   <p class="note" style="margin-top:18px">Bar shows actual spend vs this year's budget. Red = over. Nothing saves until you click <b>Save budget</b>.</p>`;
 
   if (fresh) {
-    countUp($("#b-sum-budget"), totalBudget, money, { duration: 0.22 });
-    countUp($("#b-sum-spent"), totalSpent, money, { duration: 0.22 });
-    countUp($("#b-sum-cats"), budgetedCats, (n) => String(Math.round(n)), {
-      duration: 0.22,
-    });
+    countUp($("#b-sum-budget"), totalBudget, money);
+    countUp($("#b-sum-spent"), totalSpent, money);
+    countUp($("#b-sum-cats"), budgetedCats, (n) => String(Math.round(n)));
   }
 
   // --- wire up each card

@@ -24,14 +24,18 @@ import {
   withBusy,
 } from "../core.js";
 import { go } from "../router.js";
-import { revealOnView } from "../motion.js";
+import { countKpiTiles, isEntering, revealOnView } from "../motion.js";
 import { backendLabel, isRemoteStore } from "../auth.js";
 import { emptyIcon } from "../icons.js";
-import { debtNetWorth, renderDebtSection, wireDebtHandlers } from "./debts.js";
+import {
+  animateDebtSection,
+  debtNetWorth,
+  renderDebtSection,
+  wireDebtHandlers,
+} from "./debts.js";
 import {
   metalsSummary,
   animateMetalsSection,
-  countKpiTiles,
   renderMetalsSection,
   wireMetalsHandlers,
 } from "./metals.js";
@@ -243,11 +247,13 @@ export function renderNetWorth() {
     }
   };
 
-  // Entrance motion only when this tab is freshly built (route entry or tab
-  // switch). Re-renders in place - scope/filter changes, edits, FX refresh -
-  // find the same tab already showing and stay still.
+  // Entrance motion only on a page entrance through go() (isEntering()) or
+  // a switch between this page's own tabs. Everything else - person switch,
+  // filters, edits, FX refresh, returning from the Record-balances form or a
+  // debt dialog (no tab bar showing then) - stays still.
+  const shownTab = view.querySelector(".nw-tab-btn.on")?.dataset.nwtab;
   const freshTab =
-    view.querySelector(".nw-tab-btn.on")?.dataset.nwtab !== activeTab;
+    isEntering() || (shownTab !== undefined && shownTab !== activeTab);
 
   view.innerHTML = `
   <div class="head">
@@ -307,14 +313,15 @@ export function renderNetWorth() {
   </div>
 
   <div class="kpis">
-    ${kpi("Assets", money(assets), `${at(latest).filter((b) => b.kind === "Asset" && (!scopeOwner || b.owner === scopeOwner)).length} accounts`)}
-    ${kpi("Liabilities", money(liabs), liabs > 0 ? "owed" : "nothing owed")}
-    ${kpi("Net worth", money(net), "", net < 0 ? "neg" : "pos")}
+    ${kpi("Assets", money(assets), `${at(latest).filter((b) => b.kind === "Asset" && (!scopeOwner || b.owner === scopeOwner)).length} accounts`, "", "nw-assets")}
+    ${kpi("Liabilities", money(liabs), liabs > 0 ? "owed" : "nothing owed", "", "nw-liabs")}
+    ${kpi("Net worth", money(net), "", net < 0 ? "neg" : "pos", "nw-net")}
     ${kpi(
       "Change",
       delta === null ? "\u2014" : (delta >= 0 ? "+" : "") + money(delta),
       prev ? `since ${prev}` : "need a second snapshot",
       delta === null ? "" : delta < 0 ? "neg" : "pos",
+      "nw-change",
     )}
   </div>
 
@@ -419,6 +426,7 @@ export function renderNetWorth() {
   }
   if (activeTab === "debts") {
     wireDebtHandlers();
+    if (freshTab) animateDebtSection();
     return;
   }
   if (activeTab === "metals") {
@@ -431,12 +439,12 @@ export function renderNetWorth() {
 
   if (freshTab && latest) {
     countKpiTiles([
-      ["Assets", assets, money],
-      ["Liabilities", liabs, money],
-      ["Net worth", net, money],
+      ["nw-assets", assets, money],
+      ["nw-liabs", liabs, money],
+      ["nw-net", net, money],
       ...(delta === null
         ? []
-        : [["Change", delta, (n) => (n >= 0 ? "+" : "") + money(n)]]),
+        : [["nw-change", delta, (n) => (n >= 0 ? "+" : "") + money(n)]]),
     ]);
     revealOnView(view.querySelectorAll(".tablewrap"));
   }

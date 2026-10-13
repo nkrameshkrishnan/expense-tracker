@@ -8,7 +8,7 @@ import { money, pct } from "../xlsxio.js";
 import { $, view, esc, state, kpi, notice, withBusy } from "../core.js";
 import { isRemoteStore } from "../auth.js";
 import { emptyIcon } from "../icons.js";
-import { countUp, cancelCountUp, revealOnView } from "../motion.js";
+import { countKpiTiles, revealOnView } from "../motion.js";
 
 /** A purchase receipt usually shows a total amount paid, not a price/gram -
     that division is on you to do by hand, which is exactly the kind of
@@ -179,27 +179,12 @@ const rerenderNetWorth = async () => {
   renderNetWorth();
 };
 /** Count-up targets recorded by the most recent renderMetalsSection():
-    [tile label, number, formatter]. Consumed by animateMetalsSection(), which
-    renderNetWorth calls only when the tab is freshly built - never for
-    filter/edit re-renders. */
+    [kpi key, number, formatter]. Consumed by animateMetalsSection(), which
+    renderNetWorth calls only on an entrance (route entry or tab switch) -
+    never for filter/edit re-renders. */
 let pendingTotals = [];
 
-/** Counts each named KPI tile's value up to its number. Targets the inner
-    .v element only (never the tile), always ends on exactly fmt(n), and
-    cancels any running count-up first so stale frames can't overwrite. */
-export function countKpiTiles(specs) {
-  for (const [label, n, fmt] of specs) {
-    const tile = [...view.querySelectorAll(".kpis .kpi")].find(
-      (t) => t.querySelector(".k")?.textContent === label,
-    );
-    const el = tile?.querySelector(".v");
-    if (!el) continue;
-    cancelCountUp(el);
-    countUp(el, n, fmt, { duration: 0.22 });
-  }
-}
-
-/** Fresh-build-only entrance for the Precious metals tab. */
+/** Entrance-only motion for the Precious metals tab. */
 export function animateMetalsSection() {
   countKpiTiles(pendingTotals);
   revealOnView(view.querySelectorAll(".tablewrap"));
@@ -247,16 +232,17 @@ export function renderMetalsSection(scopeOwner) {
     (summary.unrealizedGain >= 0 ? "+" : "") + money(summary.unrealizedGain),
     pct(summary.unrealizedGainPct),
     summary.unrealizedGain < 0 ? "neg" : "pos",
+    "metal-gain",
   );
   const signed = (n) => (n >= 0 ? "+" : "") + money(n);
   pendingTotals = missingFeed
     ? []
     : [
-        ["Value", summary.value, money],
+        ["metal-value", summary.value, money],
         single
-          ? ["Avg cost/gram", summary.avgCostPerGram, money]
-          : ["Total paid", summary.totalCost, money],
-        ["Unrealized gain", summary.unrealizedGain, signed],
+          ? ["metal-cost", summary.avgCostPerGram, money]
+          : ["metal-cost", summary.totalCost, money],
+        ["metal-gain", summary.unrealizedGain, signed],
       ];
   const lotsLabel = `${holdings.length} lot${holdings.length === 1 ? "" : "s"}`;
   const valueSub = single
@@ -273,11 +259,23 @@ export function renderMetalsSection(scopeOwner) {
     </div>
     <p class="note">No ${esc(metalFilter.toLowerCase())} price data yet &mdash; the daily price fetch hasn't run.</p>`
     : `<div class="kpis">
-      ${kpi("Value", money(summary.value), valueSub)}
+      ${kpi("Value", money(summary.value), valueSub, "", "metal-value")}
       ${
         single
-          ? kpi("Avg cost/gram", money(summary.avgCostPerGram), lotsLabel)
-          : kpi("Total paid", money(summary.totalCost), lotsLabel)
+          ? kpi(
+              "Avg cost/gram",
+              money(summary.avgCostPerGram),
+              lotsLabel,
+              "",
+              "metal-cost",
+            )
+          : kpi(
+              "Total paid",
+              money(summary.totalCost),
+              lotsLabel,
+              "",
+              "metal-cost",
+            )
       }
       ${gainTile}
       ${

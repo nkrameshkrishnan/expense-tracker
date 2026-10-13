@@ -2,7 +2,8 @@
    Every helper is a safe no-op when the user prefers reduced motion or the
    vendored module failed to load, and is safe to call repeatedly. Nothing
    here is required for the app to work: content is always left in its final,
-   visible state (never stuck at opacity 0). */
+   visible state (never stuck at opacity 0). This is the ONLY module that
+   imports the vendored file. */
 
 let fm = null; // { animate, stagger, inView } once loaded
 // Started at import time so the module is normally ready before the first
@@ -10,9 +11,51 @@ let fm = null; // { animate, stagger, inView } once loaded
 const ready = import("./vendor/framer-motion-dom.js")
   .then((m) => (fm = m))
   .catch(() => null);
-void ready;
+/** Resolves true once the vendored module has loaded, false if it failed.
+    Never rejects. For callers outside the router (the landing page) that
+    schedule an entrance only once motion is actually available. */
+export const motionReady = ready.then(() => !!fm);
 
-const running = new WeakMap(); // el -> animation controls
+const entering = new WeakMap(); // el -> entrance animation controls
+const counting = new WeakMap(); // el -> count-up animation controls
+
+const DURATION = 0.22; // spec: 150-220ms
+const EASE = [0.16, 1, 0.3, 1];
+
+/* ---- page-entrance intent ----
+   ONE shared flag for "this render is a page entrance". router.js's go()
+   runs the page's render function through runEntrance(): animate=true for a
+   nav-tab/route entry, false for a person switch or any other reload of the
+   same page. Every render NOT wrapped that way - filter/selector changes,
+   saves, returning from a form or dialog, background data reloads - sees
+   false. Page modules ask isEntering() instead of guessing from leftover DOM
+   whether they were "freshly built". */
+let pageEntering = false;
+let enterClassTimer = 0;
+
+export function isEntering() {
+  return pageEntering;
+}
+
+/** Runs render() with isEntering() reporting `animate`. When animating, also
+    puts .is-entering on host for the CSS card entrance in styles.css, and
+    takes it off again once that entrance (<=140ms delay + 200ms) is over so
+    later in-place re-renders (filters, search) never replay it. */
+export function runEntrance(host, animate, render) {
+  clearTimeout(enterClassTimer);
+  if (host) host.classList.toggle("is-entering", !!animate);
+  pageEntering = !!animate;
+  try {
+    render();
+  } finally {
+    pageEntering = false;
+  }
+  if (host && animate)
+    enterClassTimer = setTimeout(
+      () => host.classList.remove("is-entering"),
+      450,
+    );
+}
 
 export function reducedMotion() {
   try {
@@ -34,7 +77,7 @@ function settle(el) {
   el.style.removeProperty("opacity");
   el.style.removeProperty("transform");
   delete el.dataset.motion;
-  running.delete(el);
+  entering.delete(el);
 }
 
 function enter(el, delaySec) {
@@ -44,9 +87,9 @@ function enter(el, delaySec) {
     const c = fm.animate(
       el,
       { opacity: [0, 1], transform: ["translateY(6px)", "translateY(0px)"] },
-      { duration: 0.28, delay: delaySec, ease: [0.16, 1, 0.3, 1] },
+      { duration: DURATION, delay: delaySec, ease: EASE },
     );
-    running.set(el, c);
+    entering.set(el, c);
     const done = () => settle(el);
     if (c && typeof c.then === "function") c.then(done, done);
     else done();
@@ -57,12 +100,12 @@ function enter(el, delaySec) {
 
 /** Stops any running countUp on el (leaves its text untouched). */
 export function cancelCountUp(el) {
-  const prev = el && running.get(el);
+  const prev = el && counting.get(el);
   if (!prev) return;
   try {
     prev.stop();
   } catch {}
-  running.delete(el);
+  counting.delete(el);
 }
 
 export function countUp(el, to, format, opts = {}) {
@@ -71,13 +114,7 @@ export function countUp(el, to, format, opts = {}) {
   const final = () => {
     el.textContent = fmt(to);
   };
-  const prev = running.get(el);
-  if (prev) {
-    try {
-      prev.stop();
-    } catch {}
-    running.delete(el);
-  }
+  cancelCountUp(el);
   const from =
     el.dataset.countTo === undefined ? 0 : Number(el.dataset.countTo);
   if (!Number.isFinite(to)) {
@@ -91,22 +128,32 @@ export function countUp(el, to, format, opts = {}) {
   }
   try {
     const c = fm.animate(Number.isFinite(from) ? from : 0, to, {
-      duration: opts.duration ?? 0.6,
-      ease: [0.16, 1, 0.3, 1],
+      duration: opts.duration ?? DURATION,
+      ease: EASE,
       onUpdate: (n) => {
         el.textContent = fmt(n);
       },
     });
-    running.set(el, c);
+    counting.set(el, c);
     const done = () => {
-      if (running.get(el) !== c) return; // superseded by a newer call
-      running.delete(el);
+      if (counting.get(el) !== c) return; // superseded by a newer call
+      counting.delete(el);
       final();
     };
     if (c && typeof c.then === "function") c.then(done, done);
     else done();
   } catch {
     final();
+  }
+}
+
+/** Counts KPI tiles up by core.js kpi() key: specs are [key, number,
+    formatter] and target #kpi-<key>-v (the value element, never the tile).
+    Always ends on exactly fmt(n). */
+export function countKpiTiles(specs) {
+  for (const [key, n, fmt] of specs || []) {
+    const el = document.getElementById(`kpi-${key}-v`);
+    if (el) countUp(el, n, fmt);
   }
 }
 
@@ -117,36 +164,40 @@ export function revealStagger(els, opts = {}) {
   list.forEach((el, i) => enter(el, base + i * 0.04));
 }
 
+/** Fades elements in as they scroll into view. Only elements entirely below
+    the fold right now are touched - anything already on screen stays as it
+    is (hiding it would flash visible -> hidden -> visible). */
 export function revealOnView(els) {
   if (!canAnimate()) return;
-  const list = toList(els).filter((el) => !el.dataset.motion);
-  if (!list.length) return;
-  try {
-    // Hide up front only what is about to be observed; inView reveals it.
-    list.forEach((el) => {
+  const fold = window.innerHeight || document.documentElement.clientHeight;
+  const list = toList(els).filter(
+    (el) => !el.dataset.motion && el.getBoundingClientRect().top >= fold,
+  );
+  for (const el of list) {
+    try {
       el.dataset.motion = "pending";
       el.style.opacity = "0";
-    });
-    list.forEach((el) => {
       fm.inView(
         el,
         () => {
+          // Something else settled it meanwhile: never re-hide it.
+          if (el.dataset.motion !== "pending") return;
           delete el.dataset.motion;
           enter(el, 0);
         },
         { amount: 0.1 },
       );
-    });
-    // Safety net: never leave anything hidden if the observer never fires.
-    setTimeout(() => {
-      list.forEach((el) => {
-        if (el.dataset.motion === "pending") settle(el);
-      });
-    }, 2500);
-  } catch {
-    list.forEach(settle);
+    } catch {
+      settle(el); // no observer: just stay visible
+    }
   }
 }
+
+/** Blocks styles.css animates itself under #view.is-entering (plus their
+    containers) - revealPage leaves these, and anything holding one, alone
+    so nothing enters twice (nested fades would compound). */
+const CSS_ENTRANCE =
+  ".kpis, .person-cards, .kpi, .panel, .person-card, .bcard, .tx-row, .networth-card, .metal-card, .debt-card";
 
 export function revealPage(root) {
   try {
@@ -155,6 +206,11 @@ export function revealPage(root) {
     if (!host) return;
     let kids = [...host.children];
     if (kids.length === 1) kids = [...kids[0].children];
+    kids = kids.filter(
+      (k) =>
+        !k.matches(CSS_ENTRANCE) &&
+        !k.querySelector(`${CSS_ENTRANCE}, [data-motion]`),
+    );
     revealStagger(kids.slice(0, 12));
   } catch {
     /* motion must never break navigation */

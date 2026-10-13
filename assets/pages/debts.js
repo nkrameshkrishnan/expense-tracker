@@ -6,7 +6,7 @@ import { $, view, esc, state, notice, withBusy, kpi } from "../core.js";
 import { go } from "../router.js";
 import { renderNetWorth } from "./networth.js";
 import { emptyIcon } from "../icons.js";
-import { countUp, cancelCountUp } from "../motion.js";
+import { countKpiTiles } from "../motion.js";
 
 let pdfLibsReady = null;
 function loadPdfLibs() {
@@ -175,22 +175,19 @@ export function relatedTransactions(counterparty) {
   );
 }
 
-// Set by renderDebtSection (which runs before view.innerHTML is replaced, so
-// the previous DOM is still there to compare against); consumed once by
-// wireDebtHandlers. Count-up only when the Debts tab is freshly built (route
-// entry or tab switch), never on in-place re-renders or on returning from the
-// add/edit/payment dialogs (add/edit/pay/delete).
-let pendingKpiCount = null;
+/** Count-up targets ([kpi key, number, formatter]) recorded by the most
+    recent renderDebtSection(). Consumed by animateDebtSection(), which
+    renderNetWorth calls only on an entrance (route entry or tab switch) -
+    never for in-place re-renders or returning from the add/edit/payment
+    dialogs. */
+let pendingKpiCount = [];
+
+/** Entrance-only motion for the Debts tab. */
+export function animateDebtSection() {
+  countKpiTiles(pendingKpiCount);
+}
 
 export function wireDebtHandlers() {
-  if (pendingKpiCount) {
-    for (const [id, n] of pendingKpiCount) {
-      const el = $(id);
-      cancelCountUp(el);
-      countUp(el, n, money, { duration: 0.22 });
-    }
-    pendingKpiCount = null;
-  }
   const reload = async () => {
     state.debts = await state.store.getDebts();
     renderNetWorth();
@@ -453,7 +450,7 @@ function debtDialog(existing) {
     "Other",
   ];
   view.innerHTML = `
-  <div class="head" data-debts-dialog>
+  <div class="head">
     <div><h1>${existing ? "Edit" : "Add"} debt or loan</h1>
       <p class="sub">Records a balance-sheet position. It does not create a transaction.</p></div>
     <div class="spacer"></div><button class="btn ghost" id="debt-back">&larr; Back</button>
@@ -599,7 +596,7 @@ function paymentDialog(debtId) {
   if (!d) return;
   const today = new Date().toISOString().slice(0, 10);
   view.innerHTML = `
-  <div class="head" data-debts-dialog>
+  <div class="head">
     <div><h1>Record payment</h1>
       <p class="sub">${esc(d.counterparty)} &middot; ${money(d.outstanding)} outstanding of ${money(d.principal)}</p></div>
     <div class="spacer"></div><button class="btn ghost" id="pay-back">&larr; Back</button>
@@ -820,19 +817,13 @@ export function renderDebtSection(scopeOwner) {
     </div>`;
   };
 
-  // The add/edit and payment dialogs replace the whole view and carry
-  // data-debts-dialog; returning from them (save or back) is not a fresh build.
-  const freshTab =
-    view.querySelector(".nw-tab-btn.on")?.dataset.nwtab !== "debts" &&
-    !view.querySelector("[data-debts-dialog]");
-  pendingKpiCount =
-    freshTab && rows.length
-      ? [
-          ["#kpi-debt-owed-v", owedTotal],
-          ["#kpi-debt-lent-v", lentTotal],
-          ["#kpi-debt-net-v", lentTotal - owedTotal],
-        ]
-      : null;
+  pendingKpiCount = rows.length
+    ? [
+        ["debt-owed", owedTotal, money],
+        ["debt-lent", lentTotal, money],
+        ["debt-net", lentTotal - owedTotal, money],
+      ]
+    : [];
 
   return `
   <div class="eyebrow">Debts &amp; loans</div>

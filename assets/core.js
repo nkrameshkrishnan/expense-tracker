@@ -112,7 +112,7 @@ export function renderPeopleSwitch() {
       (b.onclick = () => {
         state.person = b.dataset.person;
         localStorage.setItem(PERSON_KEY, state.person);
-        go(state.tab);
+        go(state.tab, { animate: false }); // a filter, not a navigation
       }),
   );
 }

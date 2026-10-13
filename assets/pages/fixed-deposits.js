@@ -11,8 +11,7 @@ import { money, moneyIn } from "../xlsxio.js";
 import { $, view, esc, state, kpi, notice, withBusy } from "../core.js";
 import { isRemoteStore } from "../auth.js";
 import { emptyIcon } from "../icons.js";
-import { countKpiTiles } from "./metals.js";
-import { revealOnView } from "../motion.js";
+import { countKpiTiles, revealOnView } from "../motion.js";
 
 // The feature is scoped to India fixed deposits for now - every deposit is
 // entered and displayed in its own currency (never converted in place, same
@@ -130,7 +129,8 @@ const fmtTenure = (startDate, maturityDate) => {
 /** Count-up targets from the most recent renderFixedDepositsSection(). */
 let pendingTotals = [];
 
-/** Fresh-build-only entrance for the Fixed Deposits tab. */
+/** Entrance-only motion for the Fixed Deposits tab (route entry or tab
+    switch; never filter/edit re-renders). */
 export function animateFixedDepositsSection() {
   countKpiTiles(pendingTotals);
   revealOnView(view.querySelectorAll(".tablewrap"));
@@ -155,23 +155,24 @@ export function renderFixedDepositsSection(scopeOwner) {
 
   const fdMoney = (n) => moneyIn(n, FD_CURRENCY);
   pendingTotals = [
-    ["Principal", summary.totalPrincipal, fdMoney],
-    ["Value today", summary.totalValueToday, fdMoney],
+    ["fd-principal", summary.totalPrincipal, fdMoney],
+    ["fd-value", summary.totalValueToday, fdMoney],
     [
-      "Interest earned",
+      "fd-interest",
       summary.totalInterestEarned,
       (n) => (n >= 0 ? "+" : "") + fdMoney(n),
     ],
   ];
   const tiles = `<div class="kpis">
-    ${kpi("Principal", moneyIn(summary.totalPrincipal, FD_CURRENCY), `${deposits.length} deposit${deposits.length === 1 ? "" : "s"}`)}
-    ${kpi("Value today", moneyIn(summary.totalValueToday, FD_CURRENCY), `≈ ${money(summary.totalValueCad)} ${getHomeCurrency()}`)}
+    ${kpi("Principal", moneyIn(summary.totalPrincipal, FD_CURRENCY), `${deposits.length} deposit${deposits.length === 1 ? "" : "s"}`, "", "fd-principal")}
+    ${kpi("Value today", moneyIn(summary.totalValueToday, FD_CURRENCY), `≈ ${money(summary.totalValueCad)} ${getHomeCurrency()}`, "", "fd-value")}
     ${kpi(
       "Interest earned",
       (summary.totalInterestEarned >= 0 ? "+" : "") +
         moneyIn(summary.totalInterestEarned, FD_CURRENCY),
       "so far",
       summary.totalInterestEarned < 0 ? "neg" : "pos",
+      "fd-interest",
     )}
   </div>`;
 

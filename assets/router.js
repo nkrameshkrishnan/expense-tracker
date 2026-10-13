@@ -6,7 +6,7 @@
    (a click handler), never read at module top-level. Verified via a real
    import() resolution, not just reasoned about. */
 import * as charts from "./charts.js";
-import { revealPage } from "./motion.js";
+import { revealPage, runEntrance } from "./motion.js";
 import { view, state, renderPeopleSwitch } from "./core.js";
 import { renderDashboard } from "./pages/dashboard.js";
 import { renderAdd } from "./pages/add.js";
@@ -31,7 +31,10 @@ export const VIEWS = {
   profile: renderProfile,
 };
 
-export function go(tab) {
+/** animate=false reloads the page in place without any entrance motion -
+    used when only the data behind the current page changed (person switch,
+    Dashboard person-card jump), never for a real navigation. */
+export function go(tab, { animate = true } = {}) {
   state.tab = tab;
   charts.destroyAll();
   // dataset.shell lives on the #view ELEMENT, not its children - reassigning
@@ -53,12 +56,13 @@ export function go(tab) {
   // so it always matches state.person, not just the tab buttons.
   renderPeopleSwitch();
   location.hash = tab;
-  (VIEWS[tab] || renderDashboard)();
-  try {
-    revealPage();
-  } catch {
-    /* animation must never break navigation */
-  }
+  runEntrance(view, animate, VIEWS[tab] || renderDashboard);
+  if (animate)
+    try {
+      revealPage();
+    } catch {
+      /* animation must never break navigation */
+    }
   window.scrollTo(0, 0);
 }
 

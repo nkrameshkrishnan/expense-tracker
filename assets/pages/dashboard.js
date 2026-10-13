@@ -23,7 +23,7 @@ import {
   YEAR_KEY,
 } from "../core.js";
 import { go } from "../router.js";
-import { countUp, cancelCountUp, revealStagger } from "../motion.js";
+import { countUp, cancelCountUp, isEntering } from "../motion.js";
 import { personAvatar } from "../icons.js";
 
 /** Expense card subtitle. Expense is already net of refunds (spendOf), so
@@ -102,14 +102,14 @@ function sameShape(x, y) {
 /** Sets a KPI/figure's text and, when it is a real number, animates it with
     countUp (which always ends on exactly fmt(n)). Non-numeric states such as
     the em dash are written directly. Targets the inner value element only -
-    never a tile that revealStagger is also animating. */
+    never the tile itself (the tile has its own CSS entrance). */
 function setValue(el, n, fmt, animate) {
   if (!el) return;
   cancelCountUp(el); // a stale onUpdate must never overwrite what we write now
   if (n === null) {
     delete el.dataset.countTo;
     el.textContent = fmt(null);
-  } else if (animate) countUp(el, n, fmt, { duration: 0.22 });
+  } else if (animate) countUp(el, n, fmt);
   else {
     el.dataset.countTo = String(n);
     el.textContent = fmt(n);
@@ -160,16 +160,17 @@ export function renderDashboard() {
   // unmodified code path and stays the default whenever there is any doubt.
   const canPatch =
     view.dataset.shell === "dashboard" && sameShape(shape, state._dashShape);
-  // Count-up and reveal run ONLY on a full shell build; filter changes on the
-  // in-place patch path write final text directly (never animate filters).
+  // Count-up runs ONLY on a page entrance through go() (isEntering()) that
+  // builds the shell. Selector/person changes - including ones that change
+  // the shape and so take the full rebuild - write final text directly
+  // (never animate filters). The tile entrance itself is the CSS card
+  // stagger in styles.css (#view.is-entering), so tiles enter once.
   if (canPatch) updateDashboardValues(a, label, people, pSeries, showCompare);
-  else {
-    buildDashboardShell(a, label, people, pSeries, showCompare, shape);
-    revealStagger(view.querySelectorAll(".kpis > .kpi"), { delay: 0.05 });
-  }
-  animateKpis(a, !canPatch);
+  else buildDashboardShell(a, label, people, pSeries, showCompare, shape);
+  const animate = !canPatch && isEntering();
+  animateKpis(a, animate);
   if (a.dividends > 0)
-    setValue($("#dash-div-total"), a.dividends, money, !canPatch);
+    setValue($("#dash-div-total"), a.dividends, money, animate);
   state._dashShape = shape;
 
   wireDashboard(showCompare);
@@ -279,7 +280,7 @@ function wireDashboard(showCompare) {
         const p = el.dataset.jump;
         state.person = state.person === p ? "" : p;
         localStorage.setItem(PERSON_KEY, state.person);
-        go("dashboard");
+        go("dashboard", { animate: false }); // a filter, not a navigation
       }),
   );
 }
