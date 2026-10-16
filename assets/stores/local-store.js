@@ -194,6 +194,13 @@ export class LocalStore {
     await this._wrap(this._tx("meta", "readwrite").put(all, "budgetsByYear"));
     return b;
   }
+  async deleteBudgetCategory(category) {
+    const all =
+      (await this._wrap(this._tx("meta", "readonly").get("budgetsByYear"))) ||
+      {};
+    for (const y of Object.keys(all)) delete all[y][category];
+    await this._wrap(this._tx("meta", "readwrite").put(all, "budgetsByYear"));
+  }
   async isEmpty() {
     return (
       (await this._wrap(this._tx("transactions", "readonly").count())) === 0

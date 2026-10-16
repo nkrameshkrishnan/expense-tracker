@@ -357,13 +357,45 @@ export class SupabaseStore {
       for (let month = 1; month <= 12; month++)
         if (budget[category][month])
           rows.push({ year, category, month, amount: budget[category][month] });
-    const { error } = await sb
-      .from("budget")
-      .upsert(rows, { onConflict: "year,category,month" });
-    if (error) throw dbError(error);
+    if (rows.length) {
+      const { error } = await sb
+        .from("budget")
+        .upsert(rows, { onConflict: "year,category,month" });
+      if (error) throw dbError(error);
+    }
+    // Months set back to zero must be removed too, otherwise the old amount
+    // is read back on the next load.
+    // Only months that held an amount before need a delete (when we know the
+    // previous values), so a save doesn't fire one request per category.
+    const prev =
+      this.cache && year === this.cache.budgetYear ? this.cache.budget : null;
+    for (const category of Object.keys(budget)) {
+      const zeros = [];
+      for (let month = 1; month <= 12; month++)
+        if (
+          !budget[category][month] &&
+          (!prev || Number(prev[category]?.[month]) > 0)
+        )
+          zeros.push(month);
+      if (!zeros.length) continue;
+      const { error } = await sb
+        .from("budget")
+        .delete()
+        .eq("year", year)
+        .eq("category", category)
+        .in("month", zeros);
+      if (error) throw dbError(error);
+    }
     if (this.cache && year === this.cache.budgetYear)
       this.cache.budget = budget;
     return budget;
+  }
+  /** Removes a category's budget rows for every year. */
+  async deleteBudgetCategory(category) {
+    const sb = await this._client();
+    const { error } = await sb.from("budget").delete().eq("category", category);
+    if (error) throw dbError(error);
+    if (this.cache?.budget) delete this.cache.budget[category];
   }
 
   async setBalances(date, entries) {

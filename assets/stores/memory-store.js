@@ -50,6 +50,11 @@ export class MemoryStore {
     this.budgetsByYear[y] = b;
     return b;
   }
+  async deleteBudgetCategory(category) {
+    for (const y of Object.keys(this.budgetsByYear || {}))
+      delete this.budgetsByYear[y][category];
+    if (this.budget) delete this.budget[category];
+  }
   async getBalances() {
     return this.balances || (this.balances = []);
   }

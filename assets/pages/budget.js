@@ -7,7 +7,7 @@ import {
   spendOf,
 } from "../store.js";
 import { money, pct, monthOf } from "../xlsxio.js";
-import { listFor, addCustom, removeCustom } from "../categories.js";
+import { listFor, addCustom, removeCustom, loadCustom } from "../categories.js";
 import { $, view, esc, state, notice, withBusy, refresh, confirmDialog } from "../core.js";
 import { iconBadge } from "../icons.js";
 import { countUp, cancelCountUp, isEntering } from "../motion.js";
@@ -22,9 +22,12 @@ export function renderBudget() {
   const budgeted = Object.keys(state.budget || {}).filter((c) =>
     Object.values(state.budget[c] || {}).some((v) => Number(v) > 0),
   );
-  const allCats = [...new Set([...listFor("category"), ...budgeted])].sort(
-    (a, b) => a.localeCompare(b),
-  );
+  // Categories the person deleted from the budget stay hidden (this device)
+  // until they add a budget for them again.
+  const hidden = loadCustom().hiddenBudget || [];
+  const allCats = [...new Set([...listFor("category"), ...budgeted])]
+    .filter((c) => !hidden.includes(c))
+    .sort((a, b) => a.localeCompare(b));
   const expenseCats = allCats.filter((c) => CAT_TYPE[c] !== "Income");
   const isCustom = (c) => !(c in CAT_TYPE);
   // Budget is deliberately household-level: one ceiling for the two of you.
@@ -87,7 +90,7 @@ export function renderBudget() {
         <div class="bcard-name">
           ${iconBadge(c, "category", "sm")}
           ${esc(c)}
-          ${isCustom(c) && !hasBudget && !hasActual ? `<button type="button" class="rowbtn" data-rmcat="${esc(c)}" title="Remove this category">\u2715</button>` : ""}
+          <button type="button" class="rowbtn" data-rmcat="${esc(c)}" title="Delete this category" aria-label="Delete ${esc(c)}">\u2715</button>
         </div>
         <div class="bcard-annual">
           <span class="bcard-total num" data-annual>${hasBudget ? money(annualBudget) : '<span class="muted">—</span>'}</span>
@@ -290,8 +293,12 @@ export function renderBudget() {
       <form id="b-dlg-form" class="formgrid" autocomplete="off">
         <label class="f wide"><span>Category *</span>
           <input id="b-dlg-name" list="b-dlg-cats" placeholder="Pick one or type a new name, e.g. Pets" maxlength="40" required>
-          <datalist id="b-dlg-cats">${expenseCats
-            .filter((c) => !Object.values(state.budget[c] || {}).some((v) => Number(v) > 0))
+          <datalist id="b-dlg-cats">${[
+            ...expenseCats.filter(
+              (c) => !Object.values(state.budget[c] || {}).some((v) => Number(v) > 0),
+            ),
+            ...hidden.filter((c) => CAT_TYPE[c] !== "Income"),
+          ]
             .map((c) => `<option value="${esc(c)}">`)
             .join("")}</datalist></label>
         <label class="f"><span>Monthly budget *</span>
@@ -328,7 +335,9 @@ export function renderBudget() {
       const err = scrim.querySelector("#b-dlg-err");
       if (!name) return (err.textContent = "Enter a category.");
       if (!(amt >= 0)) return (err.textContent = "Enter a monthly amount.");
-      const existing = allCats.find((c) => c.toLowerCase() === name.toLowerCase());
+      const existing = [...allCats, ...hidden].find(
+        (c) => c.toLowerCase() === name.toLowerCase(),
+      );
       if (existing && CAT_TYPE[existing] === "Income")
         return (err.textContent = "Income categories aren't added here.");
       if (
@@ -339,6 +348,7 @@ export function renderBudget() {
       const cat = existing || name;
       state.budget = { ...state.budget, ...collect() }; // keep unsaved edits
       if (!existing) addCustom("category", cat);
+      removeCustom("hiddenBudget", cat);
       state.budget[cat] = Object.fromEntries(
         Array.from({ length: 12 }, (_, i) => [i + 1, amt]),
       );
@@ -349,11 +359,28 @@ export function renderBudget() {
   }
   view.querySelectorAll("[data-rmcat]").forEach(
     (b) =>
-      (b.onclick = () => {
-        state.budget = { ...state.budget, ...collect() };
-        removeCustom("category", b.dataset.rmcat);
-        delete state.budget[b.dataset.rmcat];
-        renderBudget();
+      (b.onclick = async () => {
+        const cat = b.dataset.rmcat;
+        if (
+          !(await confirmDialog(
+            `Delete the "${cat}" budget category? Its budget amounts (all years) are removed and it disappears from this page. Transactions keep their category.`,
+          ))
+        )
+          return;
+        const pending = collect(); // keep unsaved edits on the other cards
+        const done = await withBusy("Deleting category", async () => {
+          await state.store.deleteBudgetCategory?.(cat);
+          addCustom("hiddenBudget", cat);
+          removeCustom("category", cat);
+          await refresh();
+        });
+        if (done) {
+          delete pending[cat];
+          state.budget = { ...state.budget, ...pending };
+          delete state.budget[cat];
+          notice(`Deleted ${cat}.`, "ok");
+          renderBudget();
+        }
       }),
   );
 
