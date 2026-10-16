@@ -574,7 +574,7 @@ function debtDialog(existing) {
       ${
         existing
           ? ""
-          : `<p class="note" id="debt-merge-note" style="display:none">A <b>Family</b> debt (or one at <b>0% interest</b>) merges into your existing Family debt as an itemized entry under "How this debt built up" instead of starting a new card - uncheck below to add it as its own card anyway.
+          : `<p class="note" id="debt-merge-note" style="display:none">A <b>Family</b> debt (or one at <b>0% interest</b>) merges into your existing Family debt as an itemized entry under "How this debt built up" instead of starting a new card - uncheck below to add it as its own card anyway. If the currency differs, the amount is converted into the existing debt's currency (CAD) at the rate you enter.
               <label style="display:block;margin-top:6px"><input type="checkbox" id="debt-merge-toggle" checked> Add as an item under the existing Family debt</label></p>`
       }
       <div class="actions">
@@ -637,7 +637,6 @@ function debtDialog(existing) {
     const f = Object.fromEntries(new FormData($("#debt-form")));
     const wouldMerge =
       familyAgreement &&
-      (familyAgreement.currency || "CAD") === (f.currency || curNow()) &&
       (f.debtType === "Family" || Number(f.interestRate) === 0);
     $("#debt-merge-note").style.display = wouldMerge ? "block" : "none";
   };
@@ -669,21 +668,33 @@ function debtDialog(existing) {
     const wantsMerge =
       !existing &&
       familyAgreement &&
-      (familyAgreement.currency || "CAD") === f.currency &&
       (f.debtType === "Family" || Number(f.interestRate) === 0) &&
       $("#debt-merge-toggle")?.checked;
 
+    // A merged item lands in the existing agreement's currency (CAD for the
+    // Family debt): convert at the rate entered, and keep the original
+    // amount in the description so nothing is lost.
+    const pCur = wantsMerge ? familyAgreement.currency || "CAD" : f.currency;
+    const pRate = wantsMerge ? debtRateCad(familyAgreement) : fxRate;
+    const mergedAmt =
+      wantsMerge && pCur !== f.currency
+        ? Math.round(((Number(f.amount) * fxRate) / pRate) * 100) / 100
+        : Number(f.amount);
+    const origNote =
+      wantsMerge && pCur !== f.currency
+        ? ` (${moneyIn(Number(f.amount), f.currency)} @ ${fxRate})`
+        : "";
     const rec = wantsMerge
       ? {
           kind: "Receipt",
           parentId: familyAgreement.id,
           counterparty: familyAgreement.counterparty,
           direction: familyAgreement.direction,
-          description: f.description || f.counterparty.trim(),
+          description: (f.description || f.counterparty.trim()) + origNote,
           date: f.date,
-          amount: Number(f.amount),
-          currency: f.currency,
-          fxRate,
+          amount: mergedAmt,
+          currency: pCur,
+          fxRate: pRate,
           owner: f.owner,
           notes: "",
         }
