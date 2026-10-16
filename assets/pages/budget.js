@@ -90,12 +90,12 @@ export function renderBudget() {
         <div class="bcard-name">
           ${iconBadge(c, "category", "sm")}
           ${esc(c)}
-          <button type="button" class="rowbtn" data-rmcat="${esc(c)}" title="Delete this category" aria-label="Delete ${esc(c)}">\u2715</button>
         </div>
         <div class="bcard-annual">
           <span class="bcard-total num" data-annual>${hasBudget ? money(annualBudget) : '<span class="muted">—</span>'}</span>
           <span class="bcard-label">/yr</span>
         </div>
+        <button type="button" class="rowbtn bcard-del" data-rmcat="${esc(c)}" title="Delete this category" aria-label="Delete ${esc(c)}">\u2715</button>
       </div>
 
       ${

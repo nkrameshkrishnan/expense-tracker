@@ -330,3 +330,21 @@
   width: 100%;
   box-sizing: border-box;
 }
+
+/* Delete-category button: pinned to the card's top-right corner, after the
+   annual total, instead of floating beside the title. */
+.bcard-name {
+  flex: 1;
+  min-width: 0;
+}
+.bcard-annual {
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+.bcard-del {
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin: -2px -4px 0 4px;
+  padding: 2px 6px;
+  line-height: 1;
+}
