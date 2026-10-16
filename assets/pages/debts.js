@@ -460,6 +460,10 @@ export function wireDebtHandlers() {
       }),
   );
 
+  view
+    .querySelectorAll("[data-editchild]")
+    .forEach((b) => (b.onclick = () => childDialog(Number(b.dataset.editchild))));
+
   view.querySelectorAll("[data-delreceipt]").forEach(
     (b) =>
       (b.onclick = async () => {
@@ -479,6 +483,75 @@ export function wireDebtHandlers() {
         }
       }),
   );
+}
+
+/** Edit one payment or one "how this debt built up" item. */
+function childDialog(id) {
+  const row = (state.debts || []).find((x) => Number(x.id) === Number(id));
+  if (!row) return;
+  const parent = debtSummary(state.debts || []).find(
+    (x) => Number(x.id) === Number(row.parentId),
+  );
+  const cur = row.currency || parent?.currency || "CAD";
+  const isPay = row.kind === "Payment";
+  const label = isPay ? "payment" : "item";
+  view.innerHTML = `
+  <div class="head">
+    <div><h1>Edit ${label}</h1>
+      <p class="sub">${esc(row.counterparty)} &middot; amounts in ${esc(cur)}</p></div>
+    <div class="spacer"></div><button class="btn ghost" id="ch-back">&larr; Back</button>
+  </div>
+  <form id="ch-form" class="formgrid" autocomplete="off">
+    <label class="f"><span>Amount (${esc(cur)}) *</span>
+      <input type="number" name="amount" step="0.01" min="0.01" required value="${row.amount}"></label>
+    <label class="f"><span>Date *</span><input type="date" name="date" required value="${esc(row.date)}"></label>
+    ${
+      cur !== "CAD"
+        ? `<label class="f"><span>1 ${esc(cur)} = ? CAD *</span>
+      <input type="number" name="fxRate" step="0.000001" min="0.000001" required value="${row.fxRate ?? ""}"></label>`
+        : ""
+    }
+    <label class="f wide"><span>${isPay ? "Note" : "Description"}</span>
+      <input name="description" value="${esc(row.description || "")}"></label>
+    ${
+      isPay && row.paidCurrency && row.paidAmount != null
+        ? `<p class="note full">Paid as ${moneyIn(row.paidAmount, row.paidCurrency)}; that is kept as recorded.</p>`
+        : ""
+    }
+    <div class="full">
+      <div class="err" id="ch-err"></div>
+      <div class="actions">
+        <button class="btn" type="submit">Save changes</button>
+        <button class="btn ghost" type="button" id="ch-cancel">Cancel</button>
+      </div>
+    </div>
+  </form>`;
+  $("#ch-back").onclick = () => renderNetWorth();
+  $("#ch-cancel").onclick = () => renderNetWorth();
+  $("#ch-form").onsubmit = async (ev) => {
+    ev.preventDefault();
+    const f = Object.fromEntries(new FormData(ev.target));
+    if (!(Number(f.amount) > 0))
+      return ($("#ch-err").textContent = "Amount must be greater than zero.");
+    if (cur !== "CAD" && !(Number(f.fxRate) > 0))
+      return ($("#ch-err").textContent = `Enter the rate: 1 ${cur} = ? CAD.`);
+    const rec = {
+      ...row,
+      amount: Number(f.amount),
+      date: f.date,
+      description: f.description,
+      currency: cur,
+      fxRate: cur === "CAD" ? 1 : Number(f.fxRate),
+    };
+    const done = await withBusy("Saving", async () => {
+      await state.store.updateDebt(row.id, rec);
+      state.debts = await state.store.getDebts();
+    });
+    if (done) {
+      notice("Updated.", "ok");
+      renderNetWorth();
+    }
+  };
 }
 
 /** Looks up the stored CAD rate for `cur` on `date` and fills `input` unless
@@ -991,7 +1064,8 @@ export function renderDebtSection(scopeOwner) {
             <td class="num">${esc(r.date)}</td>
             <td>${esc(r.description) || '<span class="muted">\u2014</span>'}</td>
             <td class="n num">${fm(r.amount)}</td>
-            <td><button class="rowbtn" data-delreceipt="${r.id}" title="Delete this item">\u2715</button></td>
+            <td><button class="rowbtn" data-editchild="${r.id}" title="Edit this item">\u270E</button>
+              <button class="rowbtn" data-delreceipt="${r.id}" title="Delete this item">\u2715</button></td>
           </tr>`,
             )
             .join("")}
@@ -1011,7 +1085,8 @@ export function renderDebtSection(scopeOwner) {
             <td class="num">${esc(p.date)}</td>
             <td>${esc(p.description) || '<span class="muted">\u2014</span>'}</td>
             <td class="n num">${fm(p.amount)}${p.paidCurrency && p.paidAmount != null ? ` <span class="muted">(paid ${moneyIn(p.paidAmount, p.paidCurrency)})</span>` : ""}</td>
-            <td><button class="rowbtn" data-delpay="${p.id}" title="Delete this payment">\u2715</button></td>
+            <td><button class="rowbtn" data-editchild="${p.id}" title="Edit this payment">\u270E</button>
+              <button class="rowbtn" data-delpay="${p.id}" title="Delete this payment">\u2715</button></td>
           </tr>`,
             )
             .join("")}
