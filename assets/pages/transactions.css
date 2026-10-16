@@ -479,6 +479,18 @@
 .txbtn.del:hover {
   color: var(--red);
 }
+/* Touch-sized row actions on narrow screens and on any coarse pointer
+   (tablets, landscape phones); mouse desktops keep the compact buttons. */
+@media (max-width: 640px), (pointer: coarse) {
+  .tx-actions {
+    gap: 6px;
+  }
+  .txbtn {
+    min-width: 40px;
+    min-height: 40px;
+    padding: 0;
+  }
+}
 /* Touch devices have no hover: never hide the row actions, at any width. */
 @media (hover: none) {
   .tx-actions {
@@ -513,11 +525,6 @@
   .tx-collapse-btn {
     padding: 15px 6px;
     margin: -15px -6px;
-  }
-  .txbtn {
-    min-width: 40px;
-    min-height: 40px;
-    padding: 0;
   }
   /* Month header: label + count on the first line, totals wrap beneath so
      nothing can push the page wider than the viewport. */
