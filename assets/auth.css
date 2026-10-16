@@ -267,3 +267,14 @@
     animation-duration: 2.4s;
   }
 }
+
+/* Terms & Privacy link inside the gate card: browser-default link colour is
+   off-palette (and low-contrast on the dark card). */
+.gate-note a {
+  color: var(--ink-2);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.gate-note a:hover {
+  color: var(--ink);
+}
