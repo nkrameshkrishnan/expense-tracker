@@ -20,8 +20,7 @@ import {
   state,
   notice,
   withBusy,
-  updateBrandCurrency,
-} from "../core.js";
+  updateBrandCurrency, confirmDialog } from "../core.js";
 import { isRemoteStore, signOut } from "../auth.js";
 import { themeIcon } from "../icons.js";
 
@@ -286,9 +285,9 @@ async function loadAccessPanel(myEmail) {
         (b.onclick = async () => {
           const target = b.dataset.removeEmail;
           if (
-            !confirm(
+            !(await confirmDialog(
               `Remove ${target}? They will no longer be able to sign in.`,
-            )
+            ))
           )
             return;
           const done = await withBusy(`Removing ${target}`, async () => {

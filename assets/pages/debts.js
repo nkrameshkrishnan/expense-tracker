@@ -3,7 +3,7 @@
 import { PEOPLE, CURRENCIES, toCad, amountCad } from "../store.js";
 import { money, moneyIn, pct } from "../xlsxio.js";
 import { CURRENCY_SYMBOL } from "../prefs.js";
-import { $, view, esc, state, notice, withBusy, kpi } from "../core.js";
+import { $, view, esc, state, notice, withBusy, kpi, confirmDialog } from "../core.js";
 import { go } from "../router.js";
 import { renderNetWorth } from "./networth.js";
 import { emptyIcon } from "../icons.js";
@@ -292,11 +292,11 @@ export function wireDebtHandlers() {
       const principal = debts.reduce((a, r) => a + r.amount, 0),
         repaid = pays.reduce((a, r) => a + r.amount, 0);
       if (
-        !confirm(
+        !(await confirmDialog(
           `Import ${debts.length} agreement(s) and ${pays.length} payment(s)?\n\n` +
             `Principal ${money(principal)}\nRepaid ${money(repaid)}\n` +
             `Outstanding ${money(Math.max(0, principal - repaid))}`,
-        )
+        ))
       ) {
         out.textContent = "Cancelled.";
         return;
@@ -395,10 +395,10 @@ export function wireDebtHandlers() {
         const d = debtSummary(state.debts || []).find((x) => x.id === id);
         if (!d) return;
         if (
-          !confirm(
+          !(await confirmDialog(
             `Delete "${d.counterparty}" and its ${d.payments.length} payment(s), so you can ` +
               `re-import the full ledger cleanly?\n\nThis cannot be undone.`,
-          )
+          ))
         )
           return;
         if (
@@ -424,9 +424,9 @@ export function wireDebtHandlers() {
           ? `\n\nIts ${d.payments.length} recorded payment(s) will be deleted too.`
           : "";
         if (
-          !confirm(
+          !(await confirmDialog(
             `Delete "${d.counterparty}" (${moneyIn(d.principal, d.currency)})?${extra}\n\nTransactions are not affected.`,
-          )
+          ))
         )
           return;
         if (
@@ -444,9 +444,9 @@ export function wireDebtHandlers() {
     (b) =>
       (b.onclick = async () => {
         if (
-          !confirm(
+          !(await confirmDialog(
             "Delete this payment? The outstanding balance will go back up.",
-          )
+          ))
         )
           return;
         if (
@@ -468,9 +468,9 @@ export function wireDebtHandlers() {
     (b) =>
       (b.onclick = async () => {
         if (
-          !confirm(
+          !(await confirmDialog(
             "Delete this item? The principal and outstanding balance will go down.",
-          )
+          ))
         )
           return;
         if (
@@ -996,9 +996,9 @@ function paymentDialog(debtId) {
         "Enter how much this counts toward the debt.");
     if (
       amt - d.outstanding > 0.005 &&
-      !confirm(
+      !(await confirmDialog(
         `${fm(amt)} is more than the ${fm(d.outstanding)} outstanding. Record it anyway?`,
-      )
+      ))
     )
       return;
     const rec = {

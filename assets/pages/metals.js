@@ -5,7 +5,7 @@
    of any DOM. */
 import { PEOPLE } from "../constants.js";
 import { money, pct } from "../xlsxio.js";
-import { $, view, esc, state, kpi, notice, withBusy } from "../core.js";
+import { $, view, esc, state, kpi, notice, withBusy, confirmDialog } from "../core.js";
 import { isRemoteStore } from "../auth.js";
 import { emptyIcon } from "../icons.js";
 import { countKpiTiles, revealOnView } from "../motion.js";
@@ -568,7 +568,7 @@ export function wireMetalsHandlers() {
   view.querySelectorAll("[data-delmetal]").forEach(
     (b) =>
       (b.onclick = async () => {
-        if (!confirm("Delete this precious metal lot?")) return;
+        if (!(await confirmDialog("Delete this precious metal lot?"))) return;
         const done = await withBusy("Deleting lot", async () => {
           await state.store.deleteMetalHolding(Number(b.dataset.delmetal));
         });

@@ -8,7 +8,7 @@
    mirrors renderMetalsSection/wireMetalsHandlers in that same file. */
 import { PEOPLE, toCad, getHomeCurrency } from "../store.js";
 import { money, moneyIn } from "../xlsxio.js";
-import { $, view, esc, state, kpi, notice, withBusy } from "../core.js";
+import { $, view, esc, state, kpi, notice, withBusy, confirmDialog } from "../core.js";
 import { isRemoteStore } from "../auth.js";
 import { emptyIcon } from "../icons.js";
 import { countKpiTiles, revealOnView } from "../motion.js";
@@ -359,7 +359,7 @@ export function wireFixedDepositsHandlers() {
   view.querySelectorAll("[data-delfd]").forEach(
     (b) =>
       (b.onclick = async () => {
-        if (!confirm("Delete this fixed deposit?")) return;
+        if (!(await confirmDialog("Delete this fixed deposit?"))) return;
         const done = await withBusy("Deleting deposit", async () => {
           await state.store.deleteFixedDeposit(Number(b.dataset.delfd));
         });

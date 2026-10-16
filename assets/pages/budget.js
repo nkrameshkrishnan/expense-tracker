@@ -8,7 +8,7 @@ import {
 } from "../store.js";
 import { money, pct, monthOf } from "../xlsxio.js";
 import { listFor, addCustom, removeCustom } from "../categories.js";
-import { $, view, esc, state, notice, withBusy, refresh } from "../core.js";
+import { $, view, esc, state, notice, withBusy, refresh, confirmDialog } from "../core.js";
 import { iconBadge } from "../icons.js";
 import { countUp, cancelCountUp, isEntering } from "../motion.js";
 
@@ -371,8 +371,8 @@ export function renderBudget() {
   };
 
   // clear all
-  $("#b-clear-all").onclick = () => {
-    if (!confirm("Reset every budget amount to zero?")) return;
+  $("#b-clear-all").onclick = async () => {
+    if (!(await confirmDialog("Reset every budget amount to zero?"))) return;
     view.querySelectorAll("input[type=number]").forEach((i) => {
       i.value = 0;
     });

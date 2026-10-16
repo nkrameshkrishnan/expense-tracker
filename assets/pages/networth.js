@@ -21,8 +21,7 @@ import {
   personLabel,
   kpi,
   notice,
-  withBusy,
-} from "../core.js";
+  withBusy, confirmDialog } from "../core.js";
 import { go } from "../router.js";
 import { countKpiTiles, isEntering, revealOnView } from "../motion.js";
 import { backendLabel, isRemoteStore } from "../auth.js";
@@ -508,7 +507,7 @@ export function renderNetWorth() {
   view.querySelectorAll("[data-delsnap]").forEach(
     (b) =>
       (b.onclick = async () => {
-        if (!confirm(`Delete the whole snapshot dated ${b.dataset.delsnap}?`))
+        if (!(await confirmDialog(`Delete the whole snapshot dated ${b.dataset.delsnap}?`)))
           return;
         const done = await withBusy("Deleting snapshot", async () => {
           await state.store.deleteBalanceDate(b.dataset.delsnap);
@@ -763,7 +762,7 @@ function renderBalanceForm(copyFrom) {
         const warning = used.length
           ? ` This deletes ${used.length} recorded balance${used.length > 1 ? "s" : ""} for it across ${new Set(used.map((x) => x.date)).size} snapshot${new Set(used.map((x) => x.date)).size > 1 ? "s" : ""}.`
           : "";
-        if (!confirm(`Delete "${name}" from the account list?${warning}`))
+        if (!(await confirmDialog(`Delete "${name}" from the account list?${warning}`)))
           return;
         const done = await withBusy(`Deleting "${name}"`, async () => {
           if (used.length) {
@@ -876,18 +875,18 @@ function renderBalanceForm(copyFrom) {
       }
       const dateList = Object.keys(byDate).sort();
       if (
-        !confirm(
+        !(await confirmDialog(
           `Import ${rows.length} balances across ${dateList.length} date(s)?\n\n${dateList.join(", ")}\n\nAny existing snapshot on these dates is replaced.`,
-        )
+        ))
       )
         return;
       const target = backendLabel(state.store);
       if (
         !isRemoteStore(state.store) &&
-        !confirm(
+        !(await confirmDialog(
           `Not connected to Supabase right now. This import will go to ${target}.\n\n` +
             `Connect first under Data \u2192 Supabase if you want it saved there instead. Continue anyway?`,
-        )
+        ))
       ) {
         out.textContent = "Cancelled.";
         return;
@@ -948,16 +947,16 @@ function renderBalanceForm(copyFrom) {
     if (!entries.length) return notice("Enter at least one balance.", "bad");
     if (
       dates.includes(date) &&
-      !confirm(`A snapshot for ${date} already exists. Replace it?`)
+      !(await confirmDialog(`A snapshot for ${date} already exists. Replace it?`))
     )
       return;
     const target = backendLabel(state.store);
     if (
       !isRemoteStore(state.store) &&
-      !confirm(
+      !(await confirmDialog(
         `Not connected to Supabase right now. This will save to ${target}.\n\n` +
           `Connect first under Data \u2192 Supabase if you want it saved there instead. Continue anyway?`,
-      )
+      ))
     )
       return;
     const done = await withBusy(

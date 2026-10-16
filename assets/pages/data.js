@@ -2,7 +2,7 @@
 import { PEOPLE, TYPES, UNASSIGNED } from "../store.js";
 import { exportWorkbook, importFile, money } from "../xlsxio.js";
 import { listFor } from "../categories.js";
-import { $, view, esc, state, notice, withBusy, refresh } from "../core.js";
+import { $, view, esc, state, notice, withBusy, refresh, confirmDialog } from "../core.js";
 import { go } from "../router.js";
 import { backendLabel } from "../auth.js";
 import { extractPdfItems, extractPdfText } from "../pdfio.js";
@@ -213,9 +213,9 @@ export function renderData() {
         const who = b.dataset.assign;
         const todo = state.rows.filter((r) => !r.person);
         if (
-          !confirm(
+          !(await confirmDialog(
             `Assign ${todo.length} unassigned entries to ${who}?\n\nThis updates ${todo.length} rows one at a time and may take a moment.`,
-          )
+          ))
         )
           return;
         const done = await withBusy(
@@ -375,7 +375,7 @@ function wireStaging() {
     const replaceFirst = staging.replaceFirst;
     const skipped = staging.rows.length - rowsToWrite.length;
     if (
-      !confirm(
+      !(await confirmDialog(
         `Import ${rowsToWrite.length} rows into ${dest}?` +
           (skipped
             ? `\n\n${skipped} row${skipped === 1 ? "" : "s"} marked as duplicate${skipped === 1 ? "" : "s"} will be left out.`
@@ -383,7 +383,7 @@ function wireStaging() {
           (replaceFirst
             ? "\n\nThis will first delete every existing row."
             : ""),
-      )
+      ))
     )
       return;
     const done = await withBusy(

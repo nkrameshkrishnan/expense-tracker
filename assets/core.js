@@ -150,6 +150,57 @@ export async function withBusy(label, fn) {
   }
 }
 
+/** In-app replacement for window.confirm(): an overlay dialog that resolves
+    true on confirm, false on Cancel / Escape / click outside. Message text is
+    set via textContent (never HTML), so it is safe with user-supplied names. */
+export function confirmDialog(message, { okLabel, title = "Please confirm" } = {}) {
+  const text = String(message);
+  const danger = /delete|remove|reset|replace|discard/i.test(text);
+  const ok = okLabel || (danger ? (/replace/i.test(text) ? "Replace" : /reset/i.test(text) ? "Reset" : "Delete") : "Confirm");
+  return new Promise((resolve) => {
+    const scrim = document.createElement("div");
+    scrim.className = "dlg-scrim";
+    scrim.innerHTML = `<div class="dlg" role="alertdialog" aria-modal="true" aria-labelledby="dlg-title" aria-describedby="dlg-msg">
+      <h2 id="dlg-title"></h2>
+      <p id="dlg-msg" class="dlg-msg"></p>
+      <div class="actions">
+        <button type="button" class="btn${danger ? " danger" : ""}" data-ok></button>
+        <button type="button" class="btn ghost" data-cancel>Cancel</button>
+      </div></div>`;
+    scrim.querySelector("#dlg-title").textContent = title;
+    scrim.querySelector("#dlg-msg").textContent = text;
+    scrim.querySelector("[data-ok]").textContent = ok;
+    const prevFocus = document.activeElement;
+    const done = (v) => {
+      document.removeEventListener("keydown", onKey, true);
+      scrim.remove();
+      prevFocus?.focus?.();
+      resolve(v);
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        done(false);
+      } else if (e.key === "Tab") {
+        const btns = [...scrim.querySelectorAll("button")];
+        const i = btns.indexOf(document.activeElement);
+        e.preventDefault();
+        btns[(i + (e.shiftKey ? btns.length - 1 : 1)) % btns.length].focus();
+      }
+    };
+    document.addEventListener("keydown", onKey, true);
+    scrim.addEventListener("mousedown", (e) => {
+      if (e.target === scrim) done(false);
+    });
+    scrim.querySelector("[data-ok]").onclick = () => done(true);
+    scrim.querySelector("[data-cancel]").onclick = () => done(false);
+    document.body.appendChild(scrim);
+    // Destructive actions default focus to Cancel so Enter can't delete by accident.
+    scrim.querySelector(danger ? "[data-cancel]" : "[data-ok]").focus();
+  });
+}
+
 /** action, when given, is {label, onClick} - rendered as a real button after
     the (still escaped, still safe) message text. Not exposed to raw HTML
     injection from msg itself; the button only ever comes from a caller
