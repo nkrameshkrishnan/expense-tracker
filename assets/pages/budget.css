@@ -282,3 +282,36 @@
 .bmonth-actual.over {
   color: var(--red);
 }
+
+/* Add-budget overlay */
+.b-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(26, 24, 20, 0.45);
+}
+.b-dialog {
+  width: min(480px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  padding: 20px;
+  border-radius: var(--radius-md);
+  border: var(--border-card);
+  background: var(--card-bg);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
+.b-dlg-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.b-dlg-head h2 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 20px;
+}

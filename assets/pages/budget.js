@@ -146,7 +146,7 @@ export function renderBudget() {
     <div><h1>Budget</h1><p class="sub">One shared household ceiling per category. Bars show <b>combined</b> spend for both of you, regardless of who is selected above. Zero means "not budgeted".</p></div>
     <div class="spacer"></div>
     <div class="actions">
-      <button class="btn ghost" id="b-add-cat">+ Add category</button>
+      <button class="btn ghost" id="b-add-cat">+ Add budget</button>
       <button class="btn ghost" id="b-clear-all">Clear all</button>
       <button class="btn" id="b-save">Save budget</button>
     </div>
@@ -176,12 +176,6 @@ export function renderBudget() {
   </div>
 
   <div class="eyebrow">Expenses</div>
-  <form id="b-newcat" class="actions" style="display:none;margin:0 0 12px" autocomplete="off">
-    <input id="b-newcat-name" placeholder="New expense category, e.g. Pets" maxlength="40" style="min-width:240px">
-    <button class="btn" type="submit">Add</button>
-    <button class="btn ghost" type="button" id="b-newcat-cancel">Cancel</button>
-    <span class="err" id="b-newcat-err"></span>
-  </form>
   <div class="bcards">
     ${allCats
       .filter((c) => CAT_TYPE[c] !== "Income")
@@ -283,28 +277,76 @@ export function renderBudget() {
 
   // add / remove a category (kept on this device; it is shared once it has a
   // saved budget amount)
-  $("#b-add-cat").onclick = () => {
-    $("#b-newcat").style.display = "flex";
-    $("#b-newcat-name").focus();
-  };
-  $("#b-newcat-cancel").onclick = () => {
-    $("#b-newcat").style.display = "none";
-  };
-  $("#b-newcat").onsubmit = (ev) => {
-    ev.preventDefault();
-    const name = $("#b-newcat-name").value.trim();
-    const err = $("#b-newcat-err");
-    if (!name) return (err.textContent = "Enter a name.");
-    if (allCats.some((c) => c.toLowerCase() === name.toLowerCase()))
-      return (err.textContent = "That category already exists.");
-    state.budget = { ...state.budget, ...collect() }; // keep unsaved edits
-    addCustom("category", name);
-    state.budget[name] = Object.fromEntries(
-      Array.from({ length: 12 }, (_, i) => [i + 1, 0]),
-    );
-    renderBudget();
-    notice(`Added "${name}" - set an amount and click Save budget.`, "ok");
-  };
+  $("#b-add-cat").onclick = () => openAddDialog();
+  function openAddDialog() {
+    const scrim = document.createElement("div");
+    scrim.className = "b-scrim";
+    scrim.innerHTML = `
+    <div class="b-dialog" role="dialog" aria-modal="true" aria-labelledby="b-dlg-title">
+      <div class="b-dlg-head">
+        <h2 id="b-dlg-title">Add budget</h2>
+        <button type="button" class="rowbtn" id="b-dlg-x" aria-label="Close">\u2715</button>
+      </div>
+      <form id="b-dlg-form" class="formgrid" autocomplete="off">
+        <label class="f wide"><span>Category *</span>
+          <input id="b-dlg-name" list="b-dlg-cats" placeholder="Pick one or type a new name, e.g. Pets" maxlength="40" required>
+          <datalist id="b-dlg-cats">${expenseCats
+            .filter((c) => !Object.values(state.budget[c] || {}).some((v) => Number(v) > 0))
+            .map((c) => `<option value="${esc(c)}">`)
+            .join("")}</datalist></label>
+        <label class="f"><span>Monthly budget *</span>
+          <input id="b-dlg-amt" type="number" step="1" min="0" required placeholder="0"></label>
+        <div class="full">
+          <p class="note" style="margin:0 0 10px">A new name creates a new expense category. Same amount every month; you can change individual months on its card afterwards. Nothing is saved until you click <b>Save budget</b>.</p>
+          <div class="err" id="b-dlg-err"></div>
+          <div class="actions">
+            <button class="btn" type="submit">Add budget</button>
+            <button class="btn ghost" type="button" id="b-dlg-cancel">Cancel</button>
+          </div>
+        </div>
+      </form>
+    </div>`;
+    document.body.appendChild(scrim);
+    const close = () => {
+      scrim.remove();
+      document.removeEventListener("keydown", onKey);
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") close();
+    };
+    document.addEventListener("keydown", onKey);
+    scrim.addEventListener("mousedown", (e) => {
+      if (e.target === scrim) close();
+    });
+    scrim.querySelector("#b-dlg-x").onclick = close;
+    scrim.querySelector("#b-dlg-cancel").onclick = close;
+    scrim.querySelector("#b-dlg-name").focus();
+    scrim.querySelector("#b-dlg-form").onsubmit = (ev) => {
+      ev.preventDefault();
+      const name = scrim.querySelector("#b-dlg-name").value.trim();
+      const amt = Number(scrim.querySelector("#b-dlg-amt").value);
+      const err = scrim.querySelector("#b-dlg-err");
+      if (!name) return (err.textContent = "Enter a category.");
+      if (!(amt >= 0)) return (err.textContent = "Enter a monthly amount.");
+      const existing = allCats.find((c) => c.toLowerCase() === name.toLowerCase());
+      if (existing && CAT_TYPE[existing] === "Income")
+        return (err.textContent = "Income categories aren't added here.");
+      if (
+        existing &&
+        Object.values(state.budget[existing] || {}).some((v) => Number(v) > 0)
+      )
+        return (err.textContent = `${existing} already has a budget - edit its card instead.`);
+      const cat = existing || name;
+      state.budget = { ...state.budget, ...collect() }; // keep unsaved edits
+      if (!existing) addCustom("category", cat);
+      state.budget[cat] = Object.fromEntries(
+        Array.from({ length: 12 }, (_, i) => [i + 1, amt]),
+      );
+      close();
+      renderBudget();
+      notice(`Added ${cat} - click Save budget to keep it.`, "ok");
+    };
+  }
   view.querySelectorAll("[data-rmcat]").forEach(
     (b) =>
       (b.onclick = () => {
