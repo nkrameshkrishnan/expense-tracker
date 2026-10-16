@@ -485,39 +485,54 @@ export function wireDebtHandlers() {
   );
 }
 
-/** Edit one payment or one "how this debt built up" item. */
+/** Edit one payment or one "how this debt built up" item - every field. */
 function childDialog(id) {
   const row = (state.debts || []).find((x) => Number(x.id) === Number(id));
   if (!row) return;
-  const parent = debtSummary(state.debts || []).find(
-    (x) => Number(x.id) === Number(row.parentId),
-  );
-  const cur = row.currency || parent?.currency || "CAD";
+  const agreements = debtSummary(state.debts || []);
+  const cur0 = agreements.find((x) => Number(x.id) === Number(row.parentId));
   const isPay = row.kind === "Payment";
   const label = isPay ? "payment" : "item";
+  const rowCur = row.currency || cur0?.currency || "CAD";
+  const targets = agreements.filter(
+    (a) => a.direction === row.direction || Number(a.id) === Number(row.parentId),
+  );
   view.innerHTML = `
   <div class="head">
     <div><h1>Edit ${label}</h1>
-      <p class="sub">${esc(row.counterparty)} &middot; amounts in ${esc(cur)}</p></div>
+      <p class="sub">${esc(row.counterparty)}</p></div>
     <div class="spacer"></div><button class="btn ghost" id="ch-back">&larr; Back</button>
   </div>
   <form id="ch-form" class="formgrid" autocomplete="off">
-    <label class="f"><span>Amount (${esc(cur)}) *</span>
+    <label class="f"><span>Belongs to *</span>
+      <select name="parentId" id="ch-parent">${targets
+        .map(
+          (a) =>
+            `<option value="${a.id}"${Number(a.id) === Number(row.parentId) ? " selected" : ""}>${esc(a.counterparty)} (${esc(a.currency)})</option>`,
+        )
+        .join("")}</select></label>
+    <label class="f"><span>Currency *</span>
+      <select name="currency" id="ch-cur">${currencyOptions(rowCur)}</select></label>
+    <label class="f"><span>Amount *</span>
       <input type="number" name="amount" step="0.01" min="0.01" required value="${row.amount}"></label>
+    <label class="f" id="ch-fx-row"${rowCur === "CAD" ? ' style="display:none"' : ""}><span id="ch-fx-label">1 ${esc(rowCur)} = ? CAD *</span>
+      <input type="number" name="fxRate" id="ch-fx" step="0.000001" min="0.000001" value="${rowCur === "CAD" ? "" : (row.fxRate ?? "")}"></label>
     <label class="f"><span>Date *</span><input type="date" name="date" required value="${esc(row.date)}"></label>
-    ${
-      cur !== "CAD"
-        ? `<label class="f"><span>1 ${esc(cur)} = ? CAD *</span>
-      <input type="number" name="fxRate" step="0.000001" min="0.000001" required value="${row.fxRate ?? ""}"></label>`
-        : ""
-    }
+    <label class="f"><span>Whose</span>
+      <select name="owner">${PEOPLE.map((p) => `<option${(row.owner || "Ramesh") === p ? " selected" : ""}>${esc(p)}</option>`).join("")}</select></label>
     <label class="f wide"><span>${isPay ? "Note" : "Description"}</span>
       <input name="description" value="${esc(row.description || "")}"></label>
+    <label class="f wide"><span>Notes</span>
+      <input name="notes" value="${esc(row.notes || "")}"></label>
     ${
-      isPay && row.paidCurrency && row.paidAmount != null
-        ? `<p class="note full">Paid as ${moneyIn(row.paidAmount, row.paidCurrency)}; that is kept as recorded.</p>`
+      isPay
+        ? `<label class="f"><span>Actually paid in</span>
+      <select name="paidCurrency"><option value="">&mdash; same as above &mdash;</option>${CURRENCIES.map((c) => `<option value="${c}"${row.paidCurrency === c ? " selected" : ""}>${c}</option>`).join("")}</select></label>
+    <label class="f"><span>Amount actually paid</span>
+      <input type="number" name="paidAmount" step="0.01" min="0" value="${row.paidAmount ?? ""}"></label>`
         : ""
     }
+    <p class="note full">If the currency or the debt you pick differs from the debt's own currency, the amount is converted into it at the rate shown (or the latest stored rate for the debt's currency).</p>
     <div class="full">
       <div class="err" id="ch-err"></div>
       <div class="actions">
@@ -528,20 +543,63 @@ function childDialog(id) {
   </form>`;
   $("#ch-back").onclick = () => renderNetWorth();
   $("#ch-cancel").onclick = () => renderNetWorth();
+  $("#ch-cur").addEventListener("change", () => {
+    const c = $("#ch-cur").value;
+    $("#ch-fx-row").style.display = c === "CAD" ? "none" : "";
+    $("#ch-fx-label").textContent = `1 ${c} = ? CAD *`;
+    const fx = $("#ch-fx");
+    if (c !== "CAD") {
+      fx.value = "";
+      fillRate(c, document.querySelector('#ch-form [name="date"]').value, fx, null);
+    }
+  });
   $("#ch-form").onsubmit = async (ev) => {
     ev.preventDefault();
     const f = Object.fromEntries(new FormData(ev.target));
-    if (!(Number(f.amount) > 0))
+    const cur = $("#ch-cur").value;
+    f.currency = cur;
+    const amt = Number(f.amount);
+    if (!(amt > 0))
       return ($("#ch-err").textContent = "Amount must be greater than zero.");
-    if (cur !== "CAD" && !(Number(f.fxRate) > 0))
+    const rate = cur === "CAD" ? 1 : Number(f.fxRate);
+    if (!(rate > 0))
       return ($("#ch-err").textContent = `Enter the rate: 1 ${cur} = ? CAD.`);
+    const target = agreements.find((a) => Number(a.id) === Number(f.parentId));
+    if (!target) return ($("#ch-err").textContent = "Pick a debt.");
+    const tCur = target.currency || "CAD";
+    let amount = amt;
+    let fxRate = rate;
+    let description = f.description;
+    let paidCurrency = row.paidCurrency ?? null;
+    let paidAmount = row.paidAmount ?? null;
+    if (isPay) {
+      paidCurrency = f.paidCurrency || null;
+      paidAmount = f.paidCurrency && f.paidAmount !== "" ? Number(f.paidAmount) : null;
+      if (!paidCurrency) paidAmount = null;
+    }
+    if (cur !== tCur) {
+      fxRate = debtRateCad(target);
+      amount = Math.round(((amt * rate) / fxRate) * 100) / 100;
+      if (isPay && !paidCurrency) {
+        paidCurrency = cur;
+        paidAmount = amt;
+      } else if (!isPay)
+        description += ` (${moneyIn(amt, cur)} @ ${rate})`;
+    }
     const rec = {
       ...row,
-      amount: Number(f.amount),
+      parentId: Number(f.parentId),
+      counterparty: target.counterparty,
+      direction: target.direction,
+      amount,
+      currency: tCur,
+      fxRate,
       date: f.date,
-      description: f.description,
-      currency: cur,
-      fxRate: cur === "CAD" ? 1 : Number(f.fxRate),
+      owner: f.owner,
+      description,
+      notes: f.notes,
+      paidCurrency,
+      paidAmount,
     };
     const done = await withBusy("Saving", async () => {
       await state.store.updateDebt(row.id, rec);
