@@ -200,8 +200,16 @@ create table if not exists debts (
   date date not null,
   amount numeric(12, 2) not null check (amount >= 0),
   owner text not null default '',
-  notes text not null default ''
+  notes text not null default '',
+  -- Balance is tracked in the debt's own currency; fx_rate = CAD per 1 unit
+  -- at the time of the row. A payment made in another currency records what
+  -- was actually paid in paid_currency/paid_amount.
+  currency text not null default 'CAD' check (currency in ('CAD', 'INR', 'AED')),
+  fx_rate numeric(12, 6) not null default 1 check (fx_rate > 0),
+  paid_currency text check (paid_currency is null or paid_currency in ('CAD', 'INR', 'AED')),
+  paid_amount numeric(12, 2) check (paid_amount is null or paid_amount >= 0)
 );
+-- Existing databases: run supabase/migrations/2026-10-16-debt-currency.sql
 
 alter table debts enable row level security;
 

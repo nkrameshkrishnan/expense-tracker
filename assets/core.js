@@ -23,6 +23,7 @@ import {
   getClientId,
   getIdTokenEmail,
   getHomeCurrency,
+  FX_CURRENCIES,
 } from "./store.js";
 import { byPersonFilter } from "./xlsxio.js";
 import { go } from "./router.js";
@@ -178,11 +179,30 @@ export function updateBrandCurrency() {
   if (el) el.textContent = ` · ${getHomeCurrency()}`;
 }
 
+/** Latest stored CAD-per-unit rate for each non-CAD currency, used to value
+    foreign-currency debts at today's rate in net worth. Empty for stores
+    without an exchange_rates table - callers fall back to the rate recorded
+    on the row itself. */
+async function loadLatestRates() {
+  const out = {};
+  const today = new Date().toISOString().slice(0, 10);
+  for (const cur of FX_CURRENCIES) {
+    try {
+      const r = await state.store.getExchangeRate?.(today, cur);
+      if (r && r.rateToCad > 0) out[cur] = r.rateToCad;
+    } catch {
+      /* no rate available - row-level rate is used instead */
+    }
+  }
+  return out;
+}
+
 export async function refresh() {
   state.rows = await state.store.list();
   state.budget = await state.store.getBudget(state.year);
   state.balances = (await state.store.getBalances?.()) || [];
   state.debts = (await state.store.getDebts?.()) || [];
+  state.fxLatest = await loadLatestRates();
   state.metalHoldings = (await state.store.listMetalHoldings?.()) || [];
   state.fixedDeposits = (await state.store.listFixedDeposits?.()) || [];
   state.goldPrice = (await state.store.getLatestGoldPrice?.()) || null;

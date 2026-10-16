@@ -1,7 +1,8 @@
 /* Debt/loan tracking: summary math, the Add/Edit and Record-payment dialogs,
    PDF export, and the "Debts & loans" card list on the Net worth page. */
-import { PEOPLE } from "../store.js";
-import { money, pct } from "../xlsxio.js";
+import { PEOPLE, CURRENCIES, toCad, amountCad } from "../store.js";
+import { money, moneyIn, pct } from "../xlsxio.js";
+import { CURRENCY_SYMBOL } from "../prefs.js";
 import { $, view, esc, state, notice, withBusy, kpi } from "../core.js";
 import { go } from "../router.js";
 import { renderNetWorth } from "./networth.js";
@@ -26,6 +27,7 @@ function loadPdfLibs() {
 async function exportDebtPdf(d) {
   const [{ jsPDF }, { autoTable }] = await loadPdfLibs();
   const doc = new jsPDF();
+  const money = (n) => moneyIn(n, d.currency); // the debt's own currency
   const headStyles = { fillColor: [31, 41, 55] };
 
   doc.setFontSize(14);
@@ -110,6 +112,15 @@ async function exportDebtPdf(d) {
   doc.save(`${safeName}-debt-export.pdf`);
 }
 
+/** CAD per 1 unit of the debt's currency: 1 for CAD, otherwise the latest
+    stored exchange rate if there is one, falling back to the rate recorded
+    on the agreement itself. */
+export function debtRateCad(d) {
+  const cur = d.currency || "CAD";
+  if (cur === "CAD") return 1;
+  return Number(state.fxLatest?.[cur]) || Number(d.fxRate) || 1;
+}
+
 export function debtSummary(debts) {
   // Only a "Debt" row is its own agreement/card. "Payment" and "Receipt" rows
   // are both children (via parentId) of an agreement, never cards on their own.
@@ -134,8 +145,26 @@ export function debtSummary(debts) {
     const paid = payments.reduce((s, p) => s + Number(p.amount || 0), 0);
     const principal = Number(a.amount || 0) + received;
     const outstanding = Math.max(0, principal - paid);
+    // Everything above is in the debt's OWN currency, so a rupee debt repaid
+    // in rupees reaches exactly zero whatever the exchange rate did. CAD
+    // figures are for totals and net worth only: today's rate when known,
+    // else the rate recorded on the agreement.
+    const currency = a.currency || "CAD";
+    const rateCad = debtRateCad({ ...a, currency });
+    // What was actually received/paid, in CAD at each row's own rate - the
+    // basis for cross-checking against Transactions, which are in CAD.
+    const paidCadAtRow = payments.reduce(
+      (s, p) => s + toCad(p.amount, currency === "CAD" ? 1 : p.fxRate),
+      0,
+    );
     return {
       ...a,
+      currency,
+      rateCad,
+      principalCad: toCad(principal, rateCad),
+      outstandingCad: toCad(outstanding, rateCad),
+      paidCad: toCad(paid, rateCad),
+      paidCadAtRow,
       payments,
       receipts,
       received,
@@ -155,10 +184,10 @@ export function debtNetWorth(debts, owner) {
   return {
     liability: rows
       .filter((d) => d.direction === "Owed")
-      .reduce((s, d) => s + d.outstanding, 0),
+      .reduce((s, d) => s + d.outstandingCad, 0),
     receivable: rows
       .filter((d) => d.direction === "Lent")
-      .reduce((s, d) => s + d.outstanding, 0),
+      .reduce((s, d) => s + d.outstandingCad, 0),
   };
 }
 
@@ -238,6 +267,8 @@ export function wireDebtHandlers() {
               amount: Number(String(g("amount")).replace(/[$,\s]/g, "")),
               owner: g("owner"),
               notes: g("notes"),
+              currency: g("currency").toUpperCase(),
+              fxRate: Number(g("fxrate")) || 0,
             };
           });
       }
@@ -284,6 +315,22 @@ export function wireDebtHandlers() {
       pays.forEach((p) => {
         p.parentFileRef = String(p.parentId || "1");
       });
+      // Optional currency/fxrate columns. Missing or unknown -> CAD at 1;
+      // a foreign debt without a rate is rejected rather than guessed;
+      // payments inherit their agreement's currency and rate.
+      for (const d of debts) {
+        if (!CURRENCIES.includes(d.currency)) d.currency = "CAD";
+        if (d.currency === "CAD") d.fxRate = 1;
+        else if (!(d.fxRate > 0)) {
+          out.innerHTML = `<b class="over">${esc(d.counterparty)}: ${d.currency} debt needs an fxrate column (CAD per 1 ${d.currency}).</b>`;
+          return;
+        }
+      }
+      for (const p of pays) {
+        const parent = debts[Number(p.parentFileRef) - 1] || debts[0];
+        p.currency = parent.currency;
+        if (!(p.fxRate > 0)) p.fxRate = parent.fxRate;
+      }
       const batch = [
         ...debts.map((d) => ({ ...d, kind: "Debt" })),
         ...pays.map((p) => ({ ...p, kind: "Payment" })),
@@ -378,7 +425,7 @@ export function wireDebtHandlers() {
           : "";
         if (
           !confirm(
-            `Delete "${d.counterparty}" (${money(d.principal)})?${extra}\n\nTransactions are not affected.`,
+            `Delete "${d.counterparty}" (${moneyIn(d.principal, d.currency)})?${extra}\n\nTransactions are not affected.`,
           )
         )
           return;
@@ -434,6 +481,36 @@ export function wireDebtHandlers() {
   );
 }
 
+/** Looks up the stored CAD rate for `cur` on `date` and fills `input` unless
+    the person has typed their own value (dataset.auto tracks that). */
+async function fillRate(cur, date, input, hint) {
+  if (!input || cur === "CAD") return;
+  try {
+    const found = await state.store.getExchangeRate?.(date, cur);
+    if (found) {
+      if (!input.value || input.dataset.auto === "1") {
+        input.value = found.rateToCad;
+        input.dataset.auto = "1";
+      }
+      if (hint)
+        hint.textContent =
+          found.date === date
+            ? "auto-filled - edit if your statement differs"
+            : `auto-filled from ${found.date} (closest available) - edit if your statement differs`;
+    } else if (hint) {
+      hint.textContent = "no stored rate for this date - enter it";
+    }
+  } catch {
+    if (hint) hint.textContent = "couldn't look up a rate - enter it";
+  }
+}
+
+function currencyOptions(sel) {
+  return CURRENCIES.map(
+    (c) => `<option value="${c}"${c === sel ? " selected" : ""}>${c}</option>`,
+  ).join("");
+}
+
 function debtDialog(existing) {
   const d = existing || {};
   const today = new Date().toISOString().slice(0, 10);
@@ -449,6 +526,10 @@ function debtDialog(existing) {
     "Student Loan",
     "Other",
   ];
+  const curSel = d.currency || "CAD";
+  const locked =
+    !!existing &&
+    (state.debts || []).some((x) => Number(x.parentId) === Number(existing.id));
   view.innerHTML = `
   <div class="head">
     <div><h1>${existing ? "Edit" : "Add"} debt or loan</h1>
@@ -472,8 +553,14 @@ function debtDialog(existing) {
             `<option value="${t}"${d.debtType === t ? " selected" : ""}>${t}</option>`,
         ).join("")}
       </select></label>
+    <label class="f"><span>Currency *</span>
+      <select name="currency" id="debt-cur"${locked ? " disabled" : ""}>${currencyOptions(curSel)}</select>
+      ${locked ? `<small class="muted">Locked - this debt already has payments or items.</small>` : ""}</label>
     <label class="f"><span>Principal amount *</span>
-      <input type="number" name="amount" step="0.01" min="0.01" value="${d.amount ?? ""}" required placeholder="0.00"></label>
+      <input type="number" name="amount" id="debt-amt" step="0.01" min="0.01" value="${d.amount ?? ""}" required placeholder="0.00"></label>
+    <label class="f" id="debt-fx-row"${curSel === "CAD" ? ' style="display:none"' : ""}><span id="debt-fx-label">1 ${esc(curSel)} = ? CAD *</span>
+      <input type="number" name="fxRate" id="debt-fx" step="0.000001" min="0.000001" value="${curSel === "CAD" ? "" : esc(String(d.fxRate ?? ""))}" placeholder="rate to CAD" inputmode="decimal">
+      <small class="muted" id="debt-fx-hint"></small> <small id="debt-fx-prev"></small></label>
     <label class="f"><span>Interest rate (% p.a., optional)</span>
       <input type="number" name="interestRate" step="0.01" min="0" value="${d.interestRate ?? ""}" placeholder="e.g. 5.5"></label>
     <label class="f"><span>Whose *</span>
@@ -502,6 +589,41 @@ function debtDialog(existing) {
   $("#debt-back").onclick = () => renderNetWorth();
   $("#debt-cancel").onclick = () => renderNetWorth();
 
+  const fxIn = $("#debt-fx");
+  const curNow = () => $("#debt-cur").value;
+  const fxPrev = () => {
+    const c = curNow();
+    const a = Number($("#debt-amt").value) || 0;
+    const r = Number(fxIn.value) || 0;
+    $("#debt-fx-prev").textContent =
+      c !== "CAD" && a && r ? `\u2248 ${money(toCad(a, r))}` : "";
+  };
+  const dateIn = () => document.querySelector('#debt-form [name="date"]').value;
+  $("#debt-cur").addEventListener("change", () => {
+    const c = curNow();
+    $("#debt-fx-row").style.display = c === "CAD" ? "none" : "";
+    $("#debt-fx-label").textContent = `1 ${c} = ? CAD *`;
+    fxIn.value = "";
+    delete fxIn.dataset.auto;
+    $("#debt-fx-hint").textContent = "";
+    if (c !== "CAD") fillRate(c, dateIn(), fxIn, $("#debt-fx-hint")).then(fxPrev);
+    fxPrev();
+    if (typeof updateMergeNote === "function") updateMergeNote();
+  });
+  fxIn.addEventListener("input", () => {
+    delete fxIn.dataset.auto;
+    fxPrev();
+  });
+  $("#debt-amt").addEventListener("input", fxPrev);
+  document
+    .querySelector('#debt-form [name="date"]')
+    .addEventListener("change", () => {
+      if (curNow() !== "CAD")
+        fillRate(curNow(), dateIn(), fxIn, $("#debt-fx-hint")).then(fxPrev);
+    });
+  if (!existing && curNow() !== "CAD") fillRate(curNow(), dateIn(), fxIn, $("#debt-fx-hint")).then(fxPrev);
+  fxPrev();
+
   // Existing "Family" agreement (if any) to potentially merge new entries
   // into. Only meaningful when adding fresh - editing an existing row never
   // re-routes it elsewhere.
@@ -515,6 +637,7 @@ function debtDialog(existing) {
     const f = Object.fromEntries(new FormData($("#debt-form")));
     const wouldMerge =
       familyAgreement &&
+      (familyAgreement.currency || "CAD") === (f.currency || curNow()) &&
       (f.debtType === "Family" || Number(f.interestRate) === 0);
     $("#debt-merge-note").style.display = wouldMerge ? "block" : "none";
   };
@@ -526,9 +649,12 @@ function debtDialog(existing) {
   $("#debt-form").onsubmit = async (ev) => {
     ev.preventDefault();
     const f = Object.fromEntries(new FormData(ev.target));
+    f.currency = curNow();
     if (!(Number(f.amount) > 0))
       return ($("#debt-err").textContent =
         "Principal must be greater than zero.");
+    if (f.currency !== "CAD" && !(Number(f.fxRate) > 0))
+      return ($("#debt-err").textContent = `Enter the rate: 1 ${f.currency} = ? CAD.`);
     if (!f.counterparty.trim())
       return ($("#debt-err").textContent = "Who is this with?");
     if (f.interestRate !== "" && Number(f.interestRate) < 0)
@@ -539,9 +665,11 @@ function debtDialog(existing) {
     // existing Family agreement as an itemized "Receipt" rather than
     // spawning a new top-level card, as long as the merge checkbox is
     // still ticked and there's an existing Family debt to fold into.
+    const fxRate = f.currency === "CAD" ? 1 : Number(f.fxRate);
     const wantsMerge =
       !existing &&
       familyAgreement &&
+      (familyAgreement.currency || "CAD") === f.currency &&
       (f.debtType === "Family" || Number(f.interestRate) === 0) &&
       $("#debt-merge-toggle")?.checked;
 
@@ -554,6 +682,8 @@ function debtDialog(existing) {
           description: f.description || f.counterparty.trim(),
           date: f.date,
           amount: Number(f.amount),
+          currency: f.currency,
+          fxRate,
           owner: f.owner,
           notes: "",
         }
@@ -565,6 +695,8 @@ function debtDialog(existing) {
           description: f.description,
           date: f.date,
           amount: Number(f.amount),
+          currency: f.currency,
+          fxRate,
           interestRate: f.interestRate === "" ? null : Number(f.interestRate),
           debtType: f.debtType || null,
           owner: f.owner,
@@ -595,20 +727,33 @@ function paymentDialog(debtId) {
   );
   if (!d) return;
   const today = new Date().toISOString().slice(0, 10);
+  const dc = d.currency; // the debt's own currency
+  const fm = (n) => moneyIn(n, dc);
   view.innerHTML = `
   <div class="head">
     <div><h1>Record payment</h1>
-      <p class="sub">${esc(d.counterparty)} &middot; ${money(d.outstanding)} outstanding of ${money(d.principal)}</p></div>
+      <p class="sub">${esc(d.counterparty)} &middot; ${fm(d.outstanding)} outstanding of ${fm(d.principal)}</p></div>
     <div class="spacer"></div><button class="btn ghost" id="pay-back">&larr; Back</button>
   </div>
   <form id="pay-form" class="formgrid" autocomplete="off">
-    <label class="f"><span>Amount *</span>
-      <input type="number" name="amount" step="0.01" min="0.01" value="" required placeholder="0.00" id="pay-amt"></label>
-    <label class="f"><span>Date *</span><input type="date" name="date" value="${today}" required></label>
+    <label class="f"><span>Paid in *</span>
+      <select name="paidCurrency" id="pay-cur">${currencyOptions(dc)}</select></label>
+    <label class="f"><span>Amount paid *</span>
+      <input type="number" name="paid" step="0.01" min="0.01" required placeholder="0.00" id="pay-paid"></label>
+    <label class="f"><span>Date *</span><input type="date" name="date" value="${today}" required id="pay-date"></label>
+    <label class="f" id="pay-fx1-row"><span id="pay-fx1-label"></span>
+      <input type="number" id="pay-fx1" step="0.000001" min="0.000001" placeholder="rate to CAD" inputmode="decimal">
+      <small class="muted" id="pay-fx1-hint"></small></label>
+    <label class="f" id="pay-fx2-row" style="display:none"><span id="pay-fx2-label"></span>
+      <input type="number" id="pay-fx2" step="0.000001" min="0.000001" placeholder="rate to CAD" inputmode="decimal">
+      <small class="muted" id="pay-fx2-hint"></small></label>
+    <label class="f" id="pay-applied-row" style="display:none"><span>Counts toward the debt (${esc(dc)}) *</span>
+      <input type="number" id="pay-applied" step="0.01" min="0.01" placeholder="0.00">
+      <small class="muted">Calculated from the rates above - edit it if your bank's actual rate differs.</small></label>
     <label class="f wide"><span>Note</span><input name="description" placeholder="e.g. e-transfer"></label>
     <div class="full">
       <div class="actions" style="margin-bottom:10px">
-        <button class="btn ghost" type="button" id="pay-full">Pay full ${money(d.outstanding)}</button>
+        <button class="btn ghost" type="button" id="pay-full">Pay full ${fm(d.outstanding)}</button>
         <button class="btn ghost" type="button" id="pay-half">Half</button>
       </div>
       <div class="err" id="pay-err"></div>
@@ -624,23 +769,93 @@ function paymentDialog(debtId) {
 
   $("#pay-back").onclick = () => renderNetWorth();
   $("#pay-cancel").onclick = () => renderNetWorth();
-  $("#pay-full").onclick = () => {
-    $("#pay-amt").value = d.outstanding.toFixed(2);
+
+  const pc = () => $("#pay-cur").value;
+  const cross = () => pc() !== dc;
+  const num = (id) => Number($(id).value) || 0;
+  // CAD per unit of the debt currency / of the paid currency
+  const debtFx = () => (dc === "CAD" ? 1 : cross() ? num("#pay-fx2") : num("#pay-fx1"));
+  const paidFx = () => (pc() === "CAD" ? 1 : num("#pay-fx1"));
+  const applied = () =>
+    cross() ? num("#pay-applied") : num("#pay-paid");
+
+  let appliedEdited = false;
+  const recalc = () => {
+    if (!cross() || appliedEdited) return;
+    const pf = paidFx();
+    const df = debtFx();
+    const paid = num("#pay-paid");
+    $("#pay-applied").value =
+      paid && pf && df ? ((paid * pf) / df).toFixed(2) : "";
   };
-  $("#pay-half").onclick = () => {
-    $("#pay-amt").value = (d.outstanding / 2).toFixed(2);
+  const layout = () => {
+    const p = pc();
+    $("#pay-fx1-row").style.display = p === "CAD" ? "none" : "";
+    $("#pay-fx1-label").textContent = `1 ${p} = ? CAD *`;
+    const needFx2 = cross() && dc !== "CAD";
+    $("#pay-fx2-row").style.display = needFx2 ? "" : "none";
+    $("#pay-fx2-label").textContent = `1 ${dc} = ? CAD *`;
+    $("#pay-applied-row").style.display = cross() ? "" : "none";
   };
+  const lookups = () => {
+    const date = $("#pay-date").value || today;
+    if (pc() !== "CAD") fillRate(pc(), date, $("#pay-fx1"), $("#pay-fx1-hint")).then(recalc);
+    if (cross() && dc !== "CAD") fillRate(dc, date, $("#pay-fx2"), $("#pay-fx2-hint")).then(recalc);
+  };
+  $("#pay-cur").addEventListener("change", () => {
+    for (const id of ["#pay-fx1", "#pay-fx2"]) {
+      $(id).value = "";
+      delete $(id).dataset.auto;
+    }
+    appliedEdited = false;
+    layout();
+    lookups();
+    recalc();
+  });
+  for (const id of ["#pay-fx1", "#pay-fx2"])
+    $(id).addEventListener("input", () => {
+      delete $(id).dataset.auto;
+      recalc();
+    });
+  $("#pay-paid").addEventListener("input", recalc);
+  $("#pay-applied").addEventListener("input", () => (appliedEdited = true));
+  $("#pay-date").addEventListener("change", lookups);
+  layout();
+  lookups();
+
+  const setApplied = (v) => {
+    appliedEdited = false;
+    if (!cross()) {
+      $("#pay-paid").value = v.toFixed(2);
+    } else {
+      const pf = paidFx();
+      const df = debtFx();
+      if (pf && df) $("#pay-paid").value = ((v * df) / pf).toFixed(2);
+      $("#pay-applied").value = v.toFixed(2);
+      appliedEdited = true;
+    }
+  };
+  $("#pay-full").onclick = () => setApplied(d.outstanding);
+  $("#pay-half").onclick = () => setApplied(d.outstanding / 2);
 
   $("#pay-form").onsubmit = async (ev) => {
     ev.preventDefault();
     const f = Object.fromEntries(new FormData(ev.target));
-    const amt = Number(f.amount);
-    if (!(amt > 0))
+    const paid = Number(f.paid);
+    if (!(paid > 0))
       return ($("#pay-err").textContent = "Amount must be greater than zero.");
+    if (pc() !== "CAD" && !(paidFx() > 0))
+      return ($("#pay-err").textContent = `Enter the rate: 1 ${pc()} = ? CAD.`);
+    if (cross() && dc !== "CAD" && !(debtFx() > 0))
+      return ($("#pay-err").textContent = `Enter the rate: 1 ${dc} = ? CAD.`);
+    const amt = applied();
+    if (!(amt > 0))
+      return ($("#pay-err").textContent =
+        "Enter how much this counts toward the debt.");
     if (
       amt - d.outstanding > 0.005 &&
       !confirm(
-        `${money(amt)} is more than the ${money(d.outstanding)} outstanding. Record it anyway?`,
+        `${fm(amt)} is more than the ${fm(d.outstanding)} outstanding. Record it anyway?`,
       )
     )
       return;
@@ -651,7 +866,11 @@ function paymentDialog(debtId) {
       direction: d.direction,
       description: f.description,
       date: f.date,
-      amount: amt,
+      amount: Math.round(amt * 100) / 100,
+      currency: dc,
+      fxRate: dc === "CAD" ? 1 : debtFx(),
+      paidCurrency: cross() ? pc() : null,
+      paidAmount: cross() ? paid : null,
       owner: d.owner,
       notes: "",
     };
@@ -664,7 +883,7 @@ function paymentDialog(debtId) {
       notice(
         left < 0.005
           ? `${d.counterparty} fully settled.`
-          : `${money(left)} still outstanding.`,
+          : `${fm(left)} still outstanding.`,
         "ok",
       );
       renderNetWorth();
@@ -686,17 +905,21 @@ export function renderDebtSection(scopeOwner) {
 
   const owedTotal = rows
     .filter((d) => d.direction === "Owed" && !d.settled)
-    .reduce((s, d) => s + d.outstanding, 0);
+    .reduce((s, d) => s + d.outstandingCad, 0);
   const lentTotal = rows
     .filter((d) => d.direction === "Lent" && !d.settled)
-    .reduce((s, d) => s + d.outstanding, 0);
+    .reduce((s, d) => s + d.outstandingCad, 0);
 
   const card = (d) => {
     const rel = relatedTransactions(d.counterparty);
-    const relTotal = rel.reduce((s, r) => s + r.amount, 0);
+    const relTotal = rel.reduce((s, r) => s + amountCad(r), 0);
     // If cash moved but no payment was recorded (or vice versa), say so rather
-    // than let the two views quietly disagree.
-    const mismatch = rel.length > 0 && Math.abs(relTotal - d.paid) > 0.005;
+    // than let the two views quietly disagree. Compared in CAD (transactions
+    // are CAD-valued) using each payment's own rate.
+    const paidCadCmp = d.paidCadAtRow;
+    const mismatch = rel.length > 0 && Math.abs(relTotal - paidCadCmp) > 0.005;
+    const foreign = d.currency !== "CAD";
+    const fm = (n) => moneyIn(n, d.currency); // the debt's own currency
     return `
     <div class="debt-card ${d.settled ? "settled" : ""}" data-debt="${d.id}">
       <div class="debt-head">
@@ -710,21 +933,22 @@ export function renderDebtSection(scopeOwner) {
           ${d.description ? `<div class="debt-desc">${esc(d.description)}</div>` : ""}
         </div>
         <div class="debt-amounts">
-          <span class="debt-outstanding num ${d.direction === "Owed" ? "tx-over" : "tx-income"}">${money(d.outstanding)}</span>
-          <span class="debt-sub">outstanding of ${money(d.principal)}</span>
+          <span class="debt-outstanding num ${d.direction === "Owed" ? "tx-over" : "tx-income"}">${fm(d.outstanding)}</span>
+          <span class="debt-sub">outstanding of ${fm(d.principal)}</span>
+          ${foreign ? `<span class="debt-sub">\u2248 ${money(d.outstandingCad)} at ${d.rateCad.toFixed(4)} CAD/${esc(d.currency)}</span>` : ""}
         </div>
       </div>
 
       <div class="debt-bar-track"><div class="debt-bar-fill ${d.settled ? "done" : ""}" style="width:${(d.pct * 100).toFixed(1)}%"></div></div>
       <div class="debt-meta">
-        <span class="muted">${money(d.paid)} repaid \u00b7 ${(d.pct * 100).toFixed(0)}%</span>
+        <span class="muted">${fm(d.paid)} repaid \u00b7 ${(d.pct * 100).toFixed(0)}%</span>
         <span class="muted">${d.payments.length} payment${d.payments.length === 1 ? "" : "s"} \u00b7 opened ${esc(d.date)}</span>
       </div>
 
       ${
         d.overpaid
           ? `<div class="debt-warn">Payments exceed the principal by
-        ${money(d.paid - d.principal)}. Outstanding is floored at zero.</div>`
+        ${fm(d.paid - d.principal)}. Outstanding is floored at zero.</div>`
           : ""
       }
       ${
@@ -740,22 +964,22 @@ export function renderDebtSection(scopeOwner) {
       ${
         mismatch
           ? `<div class="debt-warn">Transactions mentioning &ldquo;${esc(d.counterparty)}&rdquo;
-        total ${money(relTotal)}, but ${money(d.paid)} is recorded here.
-        ${relTotal > d.paid ? "Some cash movement has no matching payment." : "Some payments have no matching transaction."}</div>`
+        total ${money(relTotal)}, but ${money(paidCadCmp)} is recorded here.
+        ${relTotal > paidCadCmp ? "Some cash movement has no matching payment." : "Some payments have no matching transaction."}</div>`
           : ""
       }
 
       ${
         d.receipts.length
           ? `<details class="debt-history">
-        <summary>How this debt built up (${money(d.received)} in ${d.receipts.length} item${d.receipts.length === 1 ? "" : "s"})</summary>
+        <summary>How this debt built up (${fm(d.received)} in ${d.receipts.length} item${d.receipts.length === 1 ? "" : "s"})</summary>
         <table class="debt-table"><tbody>
           ${d.receipts
             .map(
               (r) => `<tr>
             <td class="num">${esc(r.date)}</td>
             <td>${esc(r.description) || '<span class="muted">\u2014</span>'}</td>
-            <td class="n num">${money(r.amount)}</td>
+            <td class="n num">${fm(r.amount)}</td>
             <td><button class="rowbtn" data-delreceipt="${r.id}" title="Delete this item">\u2715</button></td>
           </tr>`,
             )
@@ -775,7 +999,7 @@ export function renderDebtSection(scopeOwner) {
               (p) => `<tr>
             <td class="num">${esc(p.date)}</td>
             <td>${esc(p.description) || '<span class="muted">\u2014</span>'}</td>
-            <td class="n num">${money(p.amount)}</td>
+            <td class="n num">${fm(p.amount)}${p.paidCurrency && p.paidAmount != null ? ` <span class="muted">(paid ${moneyIn(p.paidAmount, p.paidCurrency)})</span>` : ""}</td>
             <td><button class="rowbtn" data-delpay="${p.id}" title="Delete this payment">\u2715</button></td>
           </tr>`,
             )
@@ -797,7 +1021,7 @@ export function renderDebtSection(scopeOwner) {
             <td class="num">${esc(r.date)}</td>
             <td>${esc(r.description).slice(0, 44)}</td>
             <td><span class="tag">${esc(r.type)}</span></td>
-            <td class="n num">${money(r.amount)}</td>
+            <td class="n num">${moneyIn(r.amount, r.currency)}</td>
           </tr>`,
             )
             .join("")}

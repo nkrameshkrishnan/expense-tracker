@@ -408,10 +408,22 @@ export class SupabaseStore {
       so it never matches its debt: outstanding silently shows the full
       principal as if zero payments had ever been made against it. */
   _normDebt(d) {
-    const { parent_id, interest_rate, debt_type, ...rest } = d;
+    const {
+      parent_id,
+      interest_rate,
+      debt_type,
+      fx_rate,
+      paid_currency,
+      paid_amount,
+      ...rest
+    } = d;
     return {
       ...rest,
       id: Number(d.id) || 0,
+      currency: d.currency || "CAD",
+      fxRate: Number(fx_rate) || 1,
+      paidCurrency: paid_currency ?? null,
+      paidAmount: paid_amount != null ? Number(paid_amount) : null,
       parentId: parent_id != null ? Number(parent_id) : null,
       amount: Number(d.amount) || 0,
       interestRate: interest_rate != null ? Number(interest_rate) : null,
@@ -424,8 +436,19 @@ export class SupabaseStore {
   // parent_id - PostgREST rejects an unrecognised parentId key outright
   // (PGRST204) rather than ignoring it, so every write path needs this.
   _toDbDebt(record) {
-    const { parentId, interestRate, debtType, ...rest } = record;
+    const {
+      parentId,
+      interestRate,
+      debtType,
+      fxRate,
+      paidCurrency,
+      paidAmount,
+      ...rest
+    } = record;
     const out = { ...rest };
+    if ("fxRate" in record) out.fx_rate = fxRate;
+    if ("paidCurrency" in record) out.paid_currency = paidCurrency;
+    if ("paidAmount" in record) out.paid_amount = paidAmount;
     if ("parentId" in record) out.parent_id = parentId;
     if ("interestRate" in record) out.interest_rate = interestRate;
     if ("debtType" in record) out.debt_type = debtType;
