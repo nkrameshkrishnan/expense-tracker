@@ -211,7 +211,13 @@ export async function selectAllRows(buildQuery) {
 
 export function budgetRowsToShape(rows) {
   const full = emptyBudget();
-  for (const row of rows || [])
-    if (full[row.category]) full[row.category][row.month] = Number(row.amount);
+  for (const row of rows || []) {
+    // Custom (user-added) categories come back too, not just the built-ins.
+    if (!full[row.category]) {
+      full[row.category] = {};
+      for (let m = 1; m <= 12; m++) full[row.category][m] = 0;
+    }
+    full[row.category][row.month] = Number(row.amount);
+  }
   return full;
 }

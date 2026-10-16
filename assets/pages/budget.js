@@ -7,7 +7,7 @@ import {
   spendOf,
 } from "../store.js";
 import { money, pct, monthOf } from "../xlsxio.js";
-import { listFor } from "../categories.js";
+import { listFor, addCustom, removeCustom } from "../categories.js";
 import { $, view, esc, state, notice, withBusy, refresh } from "../core.js";
 import { iconBadge } from "../icons.js";
 import { countUp, cancelCountUp, isEntering } from "../motion.js";
@@ -17,11 +17,20 @@ export function renderBudget() {
   // go(). Re-renders in place - after Save budget, person switch - stay still.
   const fresh = isEntering();
   // Includes user-created categories, not just the built-in list.
-  const allCats = listFor("category");
+  // Categories that already carry a budget (saved on any device) are listed
+  // too, so a category added elsewhere shows up here.
+  const budgeted = Object.keys(state.budget || {}).filter((c) =>
+    Object.values(state.budget[c] || {}).some((v) => Number(v) > 0),
+  );
+  const allCats = [...new Set([...listFor("category"), ...budgeted])].sort(
+    (a, b) => a.localeCompare(b),
+  );
+  const expenseCats = allCats.filter((c) => CAT_TYPE[c] !== "Income");
+  const isCustom = (c) => !(c in CAT_TYPE);
   // Budget is deliberately household-level: one ceiling for the two of you.
   // The bars therefore always show combined spend, whoever is selected above.
   const actuals = {};
-  for (const c of listFor("category")) {
+  for (const c of allCats) {
     actuals[c] = {};
     for (let m = 1; m <= 12; m++) {
       actuals[c][m] = state.rows
@@ -42,7 +51,7 @@ export function renderBudget() {
   }
 
   // Summary numbers for the header strip
-  const totalBudget = EXPENSE_CATS.reduce((a, c) => {
+  const totalBudget = expenseCats.reduce((a, c) => {
     return (
       a +
       Object.values(state.budget[c] || {}).reduce(
@@ -51,11 +60,11 @@ export function renderBudget() {
       )
     );
   }, 0);
-  const totalSpent = EXPENSE_CATS.reduce(
+  const totalSpent = expenseCats.reduce(
     (a, c) => a + Object.values(actuals[c] || {}).reduce((s, v) => s + v, 0),
     0,
   );
-  const budgetedCats = CAT_NAMES.filter((c) =>
+  const budgetedCats = allCats.filter((c) =>
     Object.values(state.budget[c] || {}).some((v) => Number(v) > 0),
   ).length;
 
@@ -78,6 +87,7 @@ export function renderBudget() {
         <div class="bcard-name">
           ${iconBadge(c, "category", "sm")}
           ${esc(c)}
+          ${isCustom(c) && !hasBudget && !hasActual ? `<button type="button" class="rowbtn" data-rmcat="${esc(c)}" title="Remove this category">\u2715</button>` : ""}
         </div>
         <div class="bcard-annual">
           <span class="bcard-total num" data-annual>${hasBudget ? money(annualBudget) : '<span class="muted">—</span>'}</span>
@@ -136,6 +146,7 @@ export function renderBudget() {
     <div><h1>Budget</h1><p class="sub">One shared household ceiling per category. Bars show <b>combined</b> spend for both of you, regardless of who is selected above. Zero means "not budgeted".</p></div>
     <div class="spacer"></div>
     <div class="actions">
+      <button class="btn ghost" id="b-add-cat">+ Add category</button>
       <button class="btn ghost" id="b-clear-all">Clear all</button>
       <button class="btn" id="b-save">Save budget</button>
     </div>
@@ -165,6 +176,12 @@ export function renderBudget() {
   </div>
 
   <div class="eyebrow">Expenses</div>
+  <form id="b-newcat" class="actions" style="display:none;margin:0 0 12px" autocomplete="off">
+    <input id="b-newcat-name" placeholder="New expense category, e.g. Pets" maxlength="40" style="min-width:240px">
+    <button class="btn" type="submit">Add</button>
+    <button class="btn ghost" type="button" id="b-newcat-cancel">Cancel</button>
+    <span class="err" id="b-newcat-err"></span>
+  </form>
   <div class="bcards">
     ${allCats
       .filter((c) => CAT_TYPE[c] !== "Income")
@@ -244,8 +261,8 @@ export function renderBudget() {
     updateAnnual();
   });
 
-  // save
-  $("#b-save").onclick = async () => {
+  // Reads every card's inputs, including edits not saved yet.
+  const collect = () => {
     const b = {};
     view.querySelectorAll(".bcard").forEach((card) => {
       const c = card.dataset.cat;
@@ -261,6 +278,46 @@ export function renderBudget() {
         });
       }
     });
+    return b;
+  };
+
+  // add / remove a category (kept on this device; it is shared once it has a
+  // saved budget amount)
+  $("#b-add-cat").onclick = () => {
+    $("#b-newcat").style.display = "flex";
+    $("#b-newcat-name").focus();
+  };
+  $("#b-newcat-cancel").onclick = () => {
+    $("#b-newcat").style.display = "none";
+  };
+  $("#b-newcat").onsubmit = (ev) => {
+    ev.preventDefault();
+    const name = $("#b-newcat-name").value.trim();
+    const err = $("#b-newcat-err");
+    if (!name) return (err.textContent = "Enter a name.");
+    if (allCats.some((c) => c.toLowerCase() === name.toLowerCase()))
+      return (err.textContent = "That category already exists.");
+    state.budget = { ...state.budget, ...collect() }; // keep unsaved edits
+    addCustom("category", name);
+    state.budget[name] = Object.fromEntries(
+      Array.from({ length: 12 }, (_, i) => [i + 1, 0]),
+    );
+    renderBudget();
+    notice(`Added "${name}" - set an amount and click Save budget.`, "ok");
+  };
+  view.querySelectorAll("[data-rmcat]").forEach(
+    (b) =>
+      (b.onclick = () => {
+        state.budget = { ...state.budget, ...collect() };
+        removeCustom("category", b.dataset.rmcat);
+        delete state.budget[b.dataset.rmcat];
+        renderBudget();
+      }),
+  );
+
+  // save
+  $("#b-save").onclick = async () => {
+    const b = collect();
     const done = await withBusy("Saving the budget", async () => {
       await state.store.setBudget(b, state.year);
       await refresh();
