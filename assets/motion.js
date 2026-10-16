@@ -49,12 +49,23 @@ export function runEntrance(host, animate, render) {
     render();
   } finally {
     pageEntering = false;
+    // In finally so a throwing render() can never leave .is-entering stuck.
+    if (host && animate)
+      enterClassTimer = setTimeout(() => {
+        host.classList.remove("is-entering");
+        enterClassTimer = 0;
+      }, 450);
   }
-  if (host && animate)
-    enterClassTimer = setTimeout(
-      () => host.classList.remove("is-entering"),
-      450,
-    );
+}
+
+/** Ends a pending page-entrance window early: clears the timer and takes
+    .is-entering off #view. Idempotent and safe when nothing is pending. Call
+    at the top of in-place re-renders (filters, background reloads) so the
+    450ms window cannot replay the card entrance; never from a go() entry. */
+export function cancelEntrance() {
+  clearTimeout(enterClassTimer);
+  enterClassTimer = 0;
+  document.getElementById("view")?.classList.remove("is-entering");
 }
 
 export function reducedMotion() {
@@ -217,6 +228,7 @@ export function revealPage(root) {
   }
 }
 
+// 400ms deliberately exceeds the 150-220ms UI-motion range: it is a Chart.js canvas draw-in fixed by the plan interface (docs/superpowers/plans/2026-10-10-editorial-ui-revamp.md).
 export function chartAnimation() {
   return reducedMotion()
     ? { duration: 0 }

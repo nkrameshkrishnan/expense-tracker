@@ -21,6 +21,7 @@ import {
   refresh,
 } from "../core.js";
 import { go } from "../router.js";
+import { cancelEntrance } from "../motion.js";
 import { iconBadge, personAvatar, emptyIcon } from "../icons.js";
 
 const txCollapsed = new Set();
@@ -285,7 +286,10 @@ export function renderTransactions() {
   });
 
   // — filter events
-  const refilter = () => renderTransactions();
+  const refilter = () => {
+    cancelEntrance(); // in-place re-render: never replay the page entrance
+    renderTransactions();
+  };
 
   /* Typing must NOT re-render the search box. renderTransactions() replaces
      view.innerHTML, which destroys the <input> and rebuilds it with the caret

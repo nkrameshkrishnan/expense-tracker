@@ -33,6 +33,7 @@ import {
   updateBrandCurrency,
 } from "./core.js";
 import { go, VIEWS } from "./router.js";
+import { cancelEntrance } from "./motion.js";
 import { renderDashboard } from "./pages/dashboard.js";
 import { renderOnboarding } from "./pages/onboarding.js";
 import {
@@ -544,8 +545,10 @@ function finishBoot() {
     .ensureAllYearsLoaded?.()
     .then(async () => {
       state.rows = await state.store.list();
-      if (state.tab === "dashboard" || state.tab === "transactions")
+      if (state.tab === "dashboard" || state.tab === "transactions") {
+        cancelEntrance(); // background re-render: must not replay the entrance
         (VIEWS[state.tab] || renderDashboard)();
+      }
     })
     .catch(() => {}); // best-effort - a failure here just means years stay lazy-loaded on demand
 }
