@@ -315,3 +315,18 @@
   font-family: var(--serif);
   font-size: 20px;
 }
+/* Inside the overlay the form is a plain two-column stack: no nested box,
+   category full width, amount aligned to the left edge below it. */
+.b-dialog .formgrid {
+  grid-template-columns: 1fr 1fr;
+  border: 0;
+  background: none;
+  padding: 0;
+}
+.b-dialog .formgrid .wide {
+  grid-column: 1 / -1;
+}
+.b-dialog label.f > input {
+  width: 100%;
+  box-sizing: border-box;
+}
