@@ -85,9 +85,13 @@ export function renderOnboarding({ onFinish }) {
       fresh,
     );
     gate.querySelectorAll("[data-currency]").forEach((btn) => {
-      btn.onclick = () => {
+      btn.onclick = (e) => {
         currency = btn.dataset.currency;
         renderStep1(false);
+        // Keyboard pick: the re-render replaced the button, so put focus back
+        // on its equivalent (detail 0 = keyboard; mouse needs no focus move).
+        if (e.detail === 0)
+          gate.querySelector(`[data-currency="${currency}"]`)?.focus();
       };
     });
     document.getElementById("ob-next").onclick = (e) =>
@@ -120,10 +124,12 @@ export function renderOnboarding({ onFinish }) {
       fresh,
     );
     gate.querySelectorAll("[data-theme-choice]").forEach((btn) => {
-      btn.onclick = () => {
+      btn.onclick = (e) => {
         theme = btn.dataset.themeChoice;
         setTheme(theme); // live preview - see it change immediately, not just on Finish
         renderStep2(false);
+        if (e.detail === 0)
+          gate.querySelector(`[data-theme-choice="${theme}"]`)?.focus();
       };
     });
     document.getElementById("ob-back").onclick = (e) =>
