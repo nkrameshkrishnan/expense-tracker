@@ -479,6 +479,12 @@
 .txbtn.del:hover {
   color: var(--red);
 }
+/* Touch devices have no hover: never hide the row actions, at any width. */
+@media (hover: none) {
+  .tx-actions {
+    opacity: 1;
+  }
+}
 
 /* inline delete confirm */
 .tx-confirm {
@@ -501,6 +507,54 @@
   }
   .tx-actions {
     opacity: 1;
+    gap: 6px;
+  }
+  /* Padding grows the tap area; the negative margin keeps layout unchanged. */
+  .tx-collapse-btn {
+    padding: 15px 6px;
+    margin: -15px -6px;
+  }
+  .txbtn {
+    min-width: 40px;
+    min-height: 40px;
+    padding: 0;
+  }
+  /* Month header: label + count on the first line, totals wrap beneath so
+     nothing can push the page wider than the viewport. */
+  .tx-group-header {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    row-gap: 2px;
+    min-height: 44px;
+  }
+  .tx-group-stats {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    margin-left: 18px;
+    min-width: 0;
+  }
+  /* Meta wraps onto its own lines; the category chip leads so it is always
+     visible, the separator dot is redundant once chips wrap. */
+  .tx-desc {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .tx-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 8px;
+    align-items: center;
+    white-space: normal;
+    overflow: visible;
+  }
+  .tx-meta .tx-cat {
+    order: -1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .tx-meta .tx-sep {
+    display: none;
   }
   .tx-filterbar {
     flex-direction: column;
