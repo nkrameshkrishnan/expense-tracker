@@ -1350,3 +1350,72 @@ code {
   color: var(--ink-2);
   line-height: 1.45;
 }
+
+/* ============================================================ TOUCH (<=640px)
+   Small-screen tap targets: >= 44px for primary controls. Desktop untouched.
+   Placed last so it follows the per-page sheets' base rules. */
+@media (max-width: 640px) {
+  button.btn,
+  .l-btn,
+  .person-btn,
+  .nw-tab-btn,
+  .add-type-btn,
+  select,
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"]) {
+    min-height: 44px;
+  }
+  /* Dense in-table editors (import review etc.) stay compact. */
+  td input,
+  td select {
+    min-height: 0;
+  }
+  .l-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  /* Padding grows the tap area; the negative margin keeps layout unchanged. */
+  .note a {
+    display: inline-block;
+    padding: 15px 6px;
+    margin: -15px -6px;
+  }
+  .rowbtn {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 6px 8px;
+  }
+  /* Right-edge fade on horizontally scrollable tables: shown while there is
+     more to scroll to, gone once scrolled to the end (never hides content
+     there). Scroll-driven, so it only exists where the table overflows. */
+  @supports (animation-timeline: scroll()) {
+    .tablewrap {
+      -webkit-mask-image: linear-gradient(
+        to right,
+        #000 calc(100% - var(--tw-fade)),
+        transparent
+      );
+      mask-image: linear-gradient(
+        to right,
+        #000 calc(100% - var(--tw-fade)),
+        transparent
+      );
+      animation: tw-fade linear both;
+      animation-timeline: scroll(self inline);
+    }
+  }
+}
+@property --tw-fade {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@keyframes tw-fade {
+  0%,
+  92% {
+    --tw-fade: 28px;
+  }
+  100% {
+    --tw-fade: 0px;
+  }
+}
