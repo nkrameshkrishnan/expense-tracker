@@ -228,7 +228,9 @@ export function revealPage(root) {
   }
 }
 
-// 400ms deliberately exceeds the 150-220ms UI-motion range: it is a Chart.js canvas draw-in fixed by the plan interface (docs/superpowers/plans/2026-10-10-editorial-ui-revamp.md).
+// 400ms deliberately exceeds the 150-220ms UI-motion range: it is a Chart.js
+// canvas draw-in fixed by the plan interface
+// (docs/superpowers/plans/2026-10-10-editorial-ui-revamp.md).
 export function chartAnimation() {
   return reducedMotion()
     ? { duration: 0 }

@@ -91,7 +91,9 @@ export function renderOnboarding({ onFinish }) {
         // Keyboard pick: the re-render replaced the button, so put focus back
         // on its equivalent (detail 0 = keyboard; mouse needs no focus move).
         if (e.detail === 0)
-          gate.querySelector(`[data-currency="${currency}"]`)?.focus();
+          gate
+            .querySelector(`[data-currency="${currency}"]`)
+            ?.focus({ preventScroll: true });
       };
     });
     document.getElementById("ob-next").onclick = (e) =>
@@ -129,7 +131,9 @@ export function renderOnboarding({ onFinish }) {
         setTheme(theme); // live preview - see it change immediately, not just on Finish
         renderStep2(false);
         if (e.detail === 0)
-          gate.querySelector(`[data-theme-choice="${theme}"]`)?.focus();
+          gate
+            .querySelector(`[data-theme-choice="${theme}"]`)
+            ?.focus({ preventScroll: true });
       };
     });
     document.getElementById("ob-back").onclick = (e) =>
