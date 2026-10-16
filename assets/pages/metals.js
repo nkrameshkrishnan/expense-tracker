@@ -227,10 +227,23 @@ export function renderMetalsSection(scopeOwner) {
   const needsFeed = holdings.some((h) => h.metal !== "Diamond");
   const missingFeed = single && !latestPrice;
 
+  // Which day's spot price the Value / gain figures reflect. Diamonds are
+  // valued manually so they carry no date; mixed metals list each date.
+  const priced = [
+    ...new Set(holdings.map((h) => h.metal).filter((m) => m !== "Diamond")),
+  ].filter((m) => prices[m]?.date);
+  const dates = new Set(priced.map((m) => prices[m].date));
+  const asOf = !priced.length
+    ? ""
+    : dates.size === 1
+      ? `as of ${[...dates][0]}`
+      : "as of " + priced.map((m) => `${m} ${prices[m].date}`).join(", ");
+  const withAsOf = (t) => (asOf ? `${t} \u00b7 ${asOf}` : t);
+
   const gainTile = kpi(
     "Unrealized gain",
     (summary.unrealizedGain >= 0 ? "+" : "") + money(summary.unrealizedGain),
-    pct(summary.unrealizedGainPct),
+    withAsOf(pct(summary.unrealizedGainPct)),
     summary.unrealizedGain < 0 ? "neg" : "pos",
     "metal-gain",
   );
@@ -259,7 +272,7 @@ export function renderMetalsSection(scopeOwner) {
     </div>
     <p class="note">No ${esc(metalFilter.toLowerCase())} price data yet &mdash; the daily price fetch hasn't run.</p>`
     : `<div class="kpis">
-      ${kpi("Value", money(summary.value), valueSub, "", "metal-value")}
+      ${kpi("Value", money(summary.value), withAsOf(valueSub), "", "metal-value")}
       ${
         single
           ? kpi(
