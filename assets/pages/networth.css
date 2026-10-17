@@ -399,13 +399,84 @@ tr:hover .nw-del-acct {
 .debt-history summary:hover {
   color: var(--ink);
 }
+/* History tables (built up / payments / matching transactions). Fixed layout
+   with shared column widths so the tables line up inside a card; the
+   description column takes the rest and wraps. Separate borders so the
+   rounded outer border can clip. */
 .debt-table {
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
   border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
   margin-top: 4px;
 }
+.debt-table th,
 .debt-table td {
   font-size: 12px;
-  padding: 5px 9px;
+  padding: 6px 10px;
+  vertical-align: middle;
+}
+.debt-table thead th {
+  position: static;
+  background: transparent;
+  border-bottom: 1px solid var(--rule);
+  font-size: 10.5px;
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+.debt-table tbody tr:nth-child(even) {
+  background: transparent;
+}
+.debt-table tbody tr:hover {
+  background: var(--paper-2);
+}
+.debt-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.debt-table tfoot td {
+  border-top: 1px solid var(--rule);
+  border-bottom: 0;
+  font-weight: 600;
+  color: var(--ink);
+}
+.debt-table .c-date {
+  width: 92px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.debt-table .c-amt {
+  width: 128px;
+  white-space: nowrap;
+}
+.debt-table .c-type {
+  width: 84px;
+}
+.debt-table .c-act {
+  width: 84px;
+  text-align: right;
+  white-space: nowrap;
+}
+.debt-table td:nth-child(2) {
+  overflow-wrap: anywhere;
+}
+/* Foreign-currency note: second line under the amount, right-aligned. */
+.debt-paid {
+  display: block;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.debt-table .vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.debt-table .c-act .rowbtn + .rowbtn {
+  margin-left: 4px;
 }
 .debt-actions {
   display: flex;
@@ -439,6 +510,84 @@ tr:hover .nw-del-acct {
     position: absolute;
     top: 8px;
     right: 8px;
+  }
+  /* Phones: each history row becomes a small grid (date + amount on the
+     first line, description under it, actions on the right spanning both),
+     so nothing needs a wide table. The header row is dropped; the muted
+     date and the totals label carry the meaning. */
+  .debt-table thead,
+  .debt-table colgroup {
+    display: none;
+  }
+  .debt-table,
+  .debt-table tbody,
+  .debt-table tfoot {
+    display: block;
+  }
+  .debt-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto 80px;
+    grid-template-areas:
+      "date amt act"
+      "desc desc act";
+    align-items: center;
+    row-gap: 2px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .debt-table tbody tr:last-child {
+    border-bottom: 0;
+  }
+  .debt-table td,
+  .debt-table td.c-date,
+  .debt-table td.c-amt,
+  .debt-table td.c-type,
+  .debt-table td.c-act {
+    border: 0;
+    padding: 0 10px;
+    width: auto;
+  }
+  .debt-table td.c-date {
+    grid-area: date;
+    color: var(--ink-3);
+  }
+  .debt-table td:nth-child(2) {
+    grid-area: desc;
+  }
+  .debt-table td.c-amt {
+    grid-area: amt;
+  }
+  .debt-table td.c-act {
+    grid-area: act;
+    padding: 0 6px 0 0;
+    display: flex;
+    justify-content: flex-end;
+    gap: 4px;
+  }
+  .debt-table .c-act .rowbtn + .rowbtn {
+    margin-left: 0;
+  }
+  .debt-table tfoot tr {
+    grid-template-areas: "lbl amt act";
+    border-top: 1px solid var(--rule);
+  }
+  .debt-table tfoot td {
+    border-top: 0;
+  }
+  .debt-table td.c-lbl {
+    grid-area: lbl;
+  }
+  .debt-table-tx tr {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "date type amt"
+      "desc desc desc";
+  }
+  .debt-table-tx td.c-type {
+    grid-area: type;
+  }
+  .debt-table-tx td.c-amt {
+    padding-left: 10px;
   }
   /* Even 2x2 grid instead of a ragged two-row wrap. The 1px gap shows the
      container's rule colour as the inner dividers. */

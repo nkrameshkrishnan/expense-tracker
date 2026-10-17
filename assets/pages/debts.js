@@ -1062,6 +1062,15 @@ export function renderDebtSection(scopeOwner) {
     const mismatch = rel.length > 0 && Math.abs(relTotal - paidCadCmp) > 0.005;
     const foreign = d.currency !== "CAD";
     const fm = (n) => moneyIn(n, d.currency); // the debt's own currency
+    // Shared column set for the built-up and payment tables so their columns
+    // line up inside a card; the actions header is visually hidden.
+    const editCols = `<colgroup><col class="c-date"><col><col class="c-amt"><col class="c-act"></colgroup>
+          <thead><tr><th>Date</th><th>Description</th><th class="n">Amount</th><th class="c-act"><span class="vh">Actions</span></th></tr></thead>`;
+    // A one-row table's total would just repeat that row, so it gets none.
+    const totalRow = (label, n, rows) =>
+      rows > 1
+        ? `<tfoot><tr><td colspan="2" class="c-lbl">${label}</td><td class="n num c-amt">${fm(n)}</td><td class="c-act"></td></tr></tfoot>`
+        : "";
     return `
     <div class="debt-card ${d.settled ? "settled" : ""}" data-debt="${d.id}">
       <div class="debt-head">
@@ -1115,19 +1124,20 @@ export function renderDebtSection(scopeOwner) {
         d.receipts.length
           ? `<details class="debt-history">
         <summary>How this debt built up (${fm(d.received)} in ${d.receipts.length} item${d.receipts.length === 1 ? "" : "s"})</summary>
-        <table class="debt-table"><tbody>
+        <table class="debt-table">
+          ${editCols}<tbody>
           ${d.receipts
             .map(
               (r) => `<tr>
-            <td class="num">${esc(r.date)}</td>
+            <td class="num c-date">${esc(r.date)}</td>
             <td>${esc(r.description) || '<span class="muted">\u2014</span>'}</td>
-            <td class="n num">${fm(r.amount)}</td>
-            <td><button class="rowbtn edit" data-editchild="${r.id}" title="Edit this item">\u270E</button>
+            <td class="n num c-amt">${fm(r.amount)}</td>
+            <td class="c-act"><button class="rowbtn edit" data-editchild="${r.id}" title="Edit this item">\u270E</button>
               <button class="rowbtn del" data-delreceipt="${r.id}" title="Delete this item">\u2715</button></td>
           </tr>`,
             )
             .join("")}
-        </tbody></table>
+        </tbody>${totalRow("Total built up", d.received, d.receipts.length)}</table>
       </details>`
           : ""
       }
@@ -1136,19 +1146,20 @@ export function renderDebtSection(scopeOwner) {
         d.payments.length
           ? `<details class="debt-history">
         <summary>Payment history</summary>
-        <table class="debt-table"><tbody>
+        <table class="debt-table">
+          ${editCols}<tbody>
           ${d.payments
             .map(
               (p) => `<tr>
-            <td class="num">${esc(p.date)}</td>
+            <td class="num c-date">${esc(p.date)}</td>
             <td>${esc(p.description) || '<span class="muted">\u2014</span>'}</td>
-            <td class="n num">${fm(p.amount)}${p.paidCurrency && p.paidAmount != null ? ` <span class="muted">(paid ${moneyIn(p.paidAmount, p.paidCurrency)})</span>` : ""}</td>
-            <td><button class="rowbtn edit" data-editchild="${p.id}" title="Edit this payment">\u270E</button>
+            <td class="n num c-amt">${fm(p.amount)}${p.paidCurrency && p.paidAmount != null ? `<span class="debt-paid">paid ${moneyIn(p.paidAmount, p.paidCurrency)}</span>` : ""}</td>
+            <td class="c-act"><button class="rowbtn edit" data-editchild="${p.id}" title="Edit this payment">\u270E</button>
               <button class="rowbtn del" data-delpay="${p.id}" title="Delete this payment">\u2715</button></td>
           </tr>`,
             )
             .join("")}
-        </tbody></table>
+        </tbody>${totalRow("Total paid", d.paid, d.payments.length)}</table>
       </details>`
           : ""
       }
@@ -1157,15 +1168,17 @@ export function renderDebtSection(scopeOwner) {
         rel.length
           ? `<details class="debt-history">
         <summary>${rel.length} matching transaction${rel.length === 1 ? "" : "s"} (${money(relTotal)})</summary>
-        <table class="debt-table"><tbody>
+        <table class="debt-table debt-table-tx">
+          <colgroup><col class="c-date"><col><col class="c-type"><col class="c-amt"></colgroup>
+          <thead><tr><th>Date</th><th>Description</th><th>Type</th><th class="n">Amount</th></tr></thead><tbody>
           ${rel
             .slice(0, 10)
             .map(
               (r) => `<tr>
-            <td class="num">${esc(r.date)}</td>
+            <td class="num c-date">${esc(r.date)}</td>
             <td>${esc(r.description).slice(0, 44)}</td>
-            <td><span class="tag">${esc(r.type)}</span></td>
-            <td class="n num">${moneyIn(r.amount, r.currency)}</td>
+            <td class="c-type"><span class="tag">${esc(r.type)}</span></td>
+            <td class="n num c-amt">${moneyIn(r.amount, r.currency)}</td>
           </tr>`,
             )
             .join("")}
