@@ -425,4 +425,33 @@ tr:hover .nw-del-acct {
   .debt-amounts {
     text-align: left;
   }
+  /* Delete button: pinned to the card's top-right corner (same idea as
+     .bcard-del on the Budget page) instead of wrapping alone onto its own
+     line after the action buttons. The header reserves room for it so the
+     name and amounts never run underneath. */
+  .debt-card {
+    position: relative;
+  }
+  .debt-head {
+    padding-right: 40px;
+  }
+  .debt-actions .rowbtn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+  }
+  /* Even 2x2 grid instead of a ragged two-row wrap. The 1px gap shows the
+     container's rule colour as the inner dividers. */
+  .nw-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    width: 100%;
+    background: var(--rule-2);
+  }
+  .nw-tab-btn {
+    justify-content: center;
+    border-right: 0;
+    padding: 8px 10px;
+  }
 }

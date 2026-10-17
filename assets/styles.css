@@ -1385,8 +1385,7 @@ code {
   select.add-currency-code {
     min-height: 32px;
   }
-  button.btn.tx-reset,
-  .debt-actions .btn {
+  button.btn.tx-reset {
     min-height: 36px;
   }
   .l-btn {
