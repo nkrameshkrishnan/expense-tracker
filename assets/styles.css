@@ -700,9 +700,9 @@ tbody tr:hover {
   color: var(--red);
 }
 /* Edit / delete icon buttons (row actions everywhere, incl. .txbtn on the
-   Transactions list): a quiet hairline border at rest, so they read as
-   buttons, and a green (edit) / red (delete) border + text + 10% tint on
-   hover and keyboard focus. Scoped to .edit/.del so the unrelated rowbtns
+   Transactions list): a hairline border at rest (>= 3:1 on cards in both
+   themes), so they read as buttons, and a green (edit) / red (delete)
+   border + text + 10% tint on hover and keyboard focus. Scoped to .edit/.del so the unrelated rowbtns
    (dialog close, inline "remove re-import" link) stay plain. Padding is 1px
    less than plain .rowbtn on each side to absorb the border, so rows keep
    their height. */
@@ -710,7 +710,7 @@ tbody tr:hover {
 .rowbtn.del,
 .txbtn {
   background: transparent;
-  border: 1px solid color-mix(in srgb, var(--ink-3) 45%, var(--card-bg));
+  border: 1px solid color-mix(in srgb, var(--ink-3) 70%, var(--card-bg));
   border-radius: var(--radius-xs);
   color: var(--ink-3);
   cursor: pointer;

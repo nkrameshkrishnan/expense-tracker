@@ -344,7 +344,7 @@
 .bcard-del {
   flex-shrink: 0;
   align-self: flex-start;
-  margin: -2px -4px 0 4px;
+  margin: -2px -4px 0 10px;
   padding: 2px 6px;
   line-height: 1;
 }
