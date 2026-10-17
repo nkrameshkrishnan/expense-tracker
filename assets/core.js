@@ -41,6 +41,24 @@ export const esc = (s) =>
       ],
   );
 
+/* Chrome steps a focused <input type="number"> when the mouse wheel scrolls
+   over it, silently changing amounts while the person only meant to scroll
+   the page. Blurring the field on wheel stops the change (the page still
+   scrolls, the listener is passive); typing and ArrowUp/Down are untouched. */
+document.addEventListener(
+  "wheel",
+  (e) => {
+    const el = e.target;
+    if (
+      el instanceof HTMLInputElement &&
+      el.type === "number" &&
+      document.activeElement === el
+    )
+      el.blur();
+  },
+  { passive: true },
+);
+
 export const YEAR_KEY = "ledger.year";
 export const state = {
   store: null,
