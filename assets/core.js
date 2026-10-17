@@ -92,6 +92,9 @@ export const state = {
   // far" is a less useful first view than a complete, closed-out month).
   catSpendYear: previousMonth().year,
   catSpendMonth: previousMonth().month,
+  // "Category share of spend" panel: its own year, independent of the others
+  // above; defaults to the real current year.
+  catShareYear: currentYear(),
 };
 
 export const scoped = () => byPersonFilter(state.rows, state.person);

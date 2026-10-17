@@ -193,6 +193,54 @@ export function categorySeries(rows, year = currentYear()) {
   })).filter((s) => s.data.some((v) => v > 0));
 }
 
+/** Share-of-spend model for the Dashboard's "Category share of spend" panel,
+    built on categorySeries() (so the same net-of-refunds figures as every
+    other category view). Columns are Jan..Dec then the full year (index 12).
+    Each category-column amount is clamped at 0 - a refund-heavy category
+    would otherwise make a 100% stack nonsensical - and a column's share is
+    amount / the sum of the clamped amounts shown in it, so every non-empty
+    column sums to exactly 100%. The Year column clamps the category's NET
+    yearly figure (sum of its months), not the sum of clamped months, so it
+    agrees with the "Spend by category" table's full-year number. Categories
+    beyond the top `topN` by yearly spend are merged into one "Other" row.
+    `share` is null (never NaN/Infinity) for a column with no spend. */
+export function categoryShare(series, topN = 8) {
+  const pos = (v) => (v > 0 ? v : 0);
+  const rows = series
+    .map((s) => ({
+      category: s.category,
+      amounts: [...s.data.map(pos), pos(s.data.reduce((a, v) => a + v, 0))],
+    }))
+    .filter((r) => r.amounts.some((v) => v > 0))
+    .sort((a, b) => b.amounts[12] - a.amounts[12]);
+  let shown = rows;
+  if (rows.length > topN) {
+    const rest = rows.slice(topN);
+    shown = [
+      ...rows.slice(0, topN),
+      {
+        category: "Other",
+        other: true,
+        count: rest.length,
+        amounts: rest[0].amounts.map((_, i) =>
+          rest.reduce((a, r) => a + r.amounts[i], 0),
+        ),
+      },
+    ];
+  }
+  const totals = Array.from({ length: 13 }, (_, i) =>
+    shown.reduce((a, r) => a + r.amounts[i], 0),
+  );
+  for (const r of shown)
+    r.shares = r.amounts.map((v, i) => (totals[i] > 0 ? v / totals[i] : null));
+  return {
+    rows: shown,
+    totals,
+    merged: rows.length > topN ? rows.length - topN : 0,
+    clamped: series.some((s) => s.data.some((v) => v < 0)),
+  };
+}
+
 /** Plain category totals for one period - no budget involved, unlike
     aggregate() below. Feeds the Dashboard's "Spend by category" table, which
     carries its own year/month filter independent of the page-wide selector
