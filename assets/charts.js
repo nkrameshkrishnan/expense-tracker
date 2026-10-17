@@ -207,12 +207,17 @@ export function trend(series) {
           label: "Budget ceiling",
           data: series.map((s) => s.budget),
           borderColor: AMBER,
+          backgroundColor: AMBER,
           borderDash: [5, 4],
-          pointRadius: 0,
-          // A reference line, not real data - stays dot-free on hover too,
-          // matching its always-dot-free resting state.
-          pointHoverRadius: 0,
           tension: 0,
+          // Same dots and hover ring as "Actual expense" above, in the
+          // line's own colour, so each month's ceiling can be read and
+          // compared point-for-point against that month's actual spend.
+          pointRadius: 3,
+          pointHoverRadius: 6,
+          pointHoverBackgroundColor: CARD,
+          pointHoverBorderColor: AMBER,
+          pointHoverBorderWidth: 2,
         },
       ],
     },
