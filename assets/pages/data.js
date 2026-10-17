@@ -101,7 +101,7 @@ function stagingRowHtml(r, i) {
     <td class="n stg-flagcell"><input type="checkbox" data-include="${i}" title="Import this row" ${r._skip && !staging.replaceFirst ? "" : "checked"} ${staging.replaceFirst ? "disabled" : ""}></td>
     <td class="stg-flagcell" data-flag="${i}">${flagHtml(r)}</td>
     <td><input type="date" class="stg-in" data-idx="${i}" data-field="date" value="${esc(r.date)}"></td>
-    <td><select class="stg-in" data-idx="${i}" data-field="type">${sel(TYPES, r.type)}</select></td>
+    <td data-type="${esc(r.type)}"><select class="stg-in" data-idx="${i}" data-field="type">${sel(TYPES, r.type)}</select></td>
     <td><select class="stg-in" data-idx="${i}" data-field="category">${sel(listFor("category"), r.category)}</select></td>
     <td><input type="text" class="stg-in" data-idx="${i}" data-field="subcategory" value="${esc(r.subcategory)}"></td>
     <td><input type="text" class="stg-in stg-wide" data-idx="${i}" data-field="description" value="${esc(r.description)}"></td>
@@ -328,6 +328,7 @@ function wireStaging() {
       else if (f === "amount")
         r.amount = Math.round((Number(el.value) || 0) * 100) / 100;
       else r[f] = el.value;
+      if (f === "type") el.closest("td").dataset.type = el.value;
       if (MATCH_FIELDS.has(f)) {
         markDuplicates();
         paintFlags();
