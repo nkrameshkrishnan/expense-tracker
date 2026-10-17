@@ -147,6 +147,10 @@ export async function withBusy(label, fn) {
   notice(label + "\u2026");
   try {
     await fn();
+    // Nobody else replaced "Saving\u2026" (some callers say nothing on
+    // success): drop it rather than leave a stale progress toast up.
+    const b = $("#banner");
+    if (b.textContent === label + "\u2026") b.hidden = true;
     return true;
   } catch (e) {
     // A Google sign-in can expire mid-session (roughly hourly). Previously
@@ -224,19 +228,38 @@ export function confirmDialog(message, { okLabel, title = "Please confirm" } = {
     passing a hardcoded label/callback, never from untrusted data. */
 export function notice(msg, kind = "", action = null) {
   const b = $("#banner");
+  clearTimeout(noticeTimer);
   b.className = "banner " + kind;
+  // #banner is a fixed-position toast, so it never shifts the page. Failures
+  // are announced assertively; everything else politely. Neither takes focus.
+  b.setAttribute("role", kind === "bad" ? "alert" : "status");
+  b.setAttribute("aria-live", kind === "bad" ? "assertive" : "polite");
+  // A progress message ("Saving\u2026") is replaced by the outcome, and an
+  // "ok" without an action fades on its own; the rest get a dismiss button. Its glyph is CSS, keeping
+  // textContent equal to the message.
+  const lasting = (kind !== "ok" || action) && !msg.includes("\u2026");
   b.innerHTML =
     esc(msg) +
     (action
-      ? ` <button class="banner-action" id="banner-action-btn">${esc(action.label)}</button>`
+      ? `<button class="banner-action" id="banner-action-btn">${esc(action.label)}</button>`
+      : "") +
+    (lasting
+      ? `<button type="button" class="banner-x" aria-label="Dismiss"></button>`
       : "");
   b.hidden = false;
   if (action) $("#banner-action-btn").onclick = action.onClick;
-  if (kind === "ok" && !action)
-    setTimeout(() => {
-      b.hidden = true;
-    }, 4000);
+  if (lasting) b.querySelector(".banner-x").onclick = () => (b.hidden = true);
+  // Success fades after 4s; a failure after 8s so it cannot sit over the page
+  // forever. Warnings and anything with an action stay until replaced/dismissed.
+  if (!action && (kind === "ok" || kind === "bad"))
+    noticeTimer = setTimeout(
+      () => {
+        b.hidden = true;
+      },
+      kind === "ok" ? 4000 : 8000,
+    );
 }
+let noticeTimer = 0;
 
 /** The "· CAD" (or "· INR"/"· AED") label beside the brand mark in the
     header rail - kept in sync with the signed-in person's home-currency

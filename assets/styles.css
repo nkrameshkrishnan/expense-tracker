@@ -812,26 +812,82 @@ tbody tr:hover {
 }
 
 /* ---------- banner ---------- */
+/* A floating toast, bottom-centre of the viewport. position: fixed takes it
+   out of layout entirely, so showing, replacing or hiding a notice can never
+   move page content or the scroll position (it used to be an in-flow strip
+   under the header). It is also visible wherever the page is scrolled to.
+   z-index sits above the header/menus (<= 50) but below the budget dialog
+   scrim (400) and the modal dialogs (700), which show errors inline. */
 .banner {
-  padding: 9px 20px;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 300;
+  box-sizing: border-box;
+  width: fit-content;
+  max-width: min(560px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 10px 14px 10px 17px;
   font-size: 12.5px;
-  border-bottom: 1px solid var(--rule);
-  /* Light tints derived from --amber/--teal/--red rather than the old
-     mustard-yellow warning scheme, which was tuned for the old brownish
-     --amber and no longer matches this palette. */
-  background: color-mix(in srgb, var(--amber) 10%, var(--paper));
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  /* Light tints derived from --amber/--teal/--red rather old mustard-yellow warning scheme,
+     was tuned for old brownish --amber and no longer matches palette. Mixed over the
+     opaque --card-bg so the toast never lets the page show through. */
+  background: color-mix(in srgb, var(--amber) 10%, var(--card-bg));
   color: var(--ink);
-  box-shadow: inset 3px 0 0 var(--amber);
+  box-shadow:
+    inset 3px 0 0 var(--amber),
+    0 6px 20px rgba(0, 0, 0, 0.14);
+  animation: toast-in 180ms var(--ease-out);
+}
+.banner[hidden] {
+  display: none;
 }
 .banner.ok {
-  background: color-mix(in srgb, var(--teal) 10%, var(--paper));
-  color: var(--ink);
-  box-shadow: inset 3px 0 0 var(--teal);
+  background: color-mix(in srgb, var(--teal) 10%, var(--card-bg));
+  box-shadow:
+    inset 3px 0 0 var(--teal),
+    0 6px 20px rgba(0, 0, 0, 0.14);
 }
 .banner.bad {
-  background: color-mix(in srgb, var(--red) 10%, var(--paper));
-  color: var(--ink);
-  box-shadow: inset 3px 0 0 var(--red);
+  background: color-mix(in srgb, var(--red) 10%, var(--card-bg));
+  box-shadow:
+    inset 3px 0 0 var(--red),
+    0 6px 20px rgba(0, 0, 0, 0.14);
+}
+/* Dismiss button for notices that do not auto-hide. The glyph comes from CSS
+   so #banner's textContent stays exactly the message (add.js copies it). */
+.banner-x {
+  margin-left: 10px;
+  padding: 0 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: 1.2;
+  cursor: pointer;
+  vertical-align: middle;
+}
+.banner-x::before {
+  content: "\2715";
+}
+.banner-x:hover {
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .banner {
+    animation: none;
+  }
 }
 
 /* ---------- footer ---------- */
