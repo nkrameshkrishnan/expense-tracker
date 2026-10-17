@@ -260,7 +260,7 @@ async function loadAccessPanel(myEmail) {
             const removeCell = r.is_primary
               ? ""
               : iAmPrimary
-                ? `<button class="rowbtn" data-remove-email="${esc(r.email)}">✕</button>`
+                ? `<button class="rowbtn del" data-remove-email="${esc(r.email)}">✕</button>`
                 : "";
             return `<tr>
               <td>${esc(r.email)}${tags ? " " + tags : ""}</td>

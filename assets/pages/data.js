@@ -110,7 +110,7 @@ function stagingRowHtml(r, i) {
     <td><select class="stg-in" data-idx="${i}" data-field="account"><option value=""${r.account ? "" : " selected"}>—</option>${sel(listFor("account"), r.account)}</select></td>
     <td><select class="stg-in" data-idx="${i}" data-field="person"><option value=""${r.person ? "" : " selected"}>${esc(UNASSIGNED)}</option>${sel(listFor("person"), r.person)}</select></td>
     <td class="n"><input type="checkbox" data-idx="${i}" data-field="recurring" ${r.recurring === "Yes" ? "checked" : ""}></td>
-    <td><button class="rowbtn" data-remove="${i}" title="Remove this row">✕</button></td>
+    <td><button class="rowbtn del" data-remove="${i}" title="Remove this row">✕</button></td>
   </tr>`;
 }
 

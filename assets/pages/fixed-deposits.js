@@ -213,8 +213,8 @@ export function renderFixedDepositsSection(scopeOwner) {
         <td class="num">${esc(fd.startDate)} → ${esc(fd.maturityDate)}<br><span class="muted" style="font-size:10.5px">${fmtTenure(fd.startDate, fd.maturityDate)}</span></td>
         <td class="n num">${moneyIn(maturity, FD_CURRENCY)}</td>
         <td class="n num"><span class="tag${matured ? "" : ""}">${matured ? "Matured" : "Active"}</span><br>${moneyIn(valueToday, FD_CURRENCY)}</td>
-        <td style="white-space:nowrap"><button class="rowbtn" data-editfd="${fd.id}" title="Edit this deposit">Edit</button>
-          <button class="rowbtn" data-delfd="${fd.id}" title="Delete this deposit">✕</button></td>
+        <td style="white-space:nowrap"><button class="rowbtn edit" data-editfd="${fd.id}" title="Edit this deposit">Edit</button>
+          <button class="rowbtn del" data-delfd="${fd.id}" title="Delete this deposit">✕</button></td>
       </tr>`;
     })
     .join("");

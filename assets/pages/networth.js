@@ -400,7 +400,7 @@ export function renderNetWorth() {
       <td class="n num">${money(x.assets)}</td>
       <td class="n num">${money(x.liabs)}</td>
       <td class="n num"><b>${money(x.net)}</b></td>
-      <td><button class="rowbtn" data-delsnap="${esc(x.date)}" title="Delete this snapshot">\u2715</button></td>
+      <td><button class="rowbtn del" data-delsnap="${esc(x.date)}" title="Delete this snapshot">\u2715</button></td>
     </tr>`,
       )
       .join("")}
@@ -566,7 +566,7 @@ function renderBalanceForm(copyFrom) {
         return `
     <tr>
       <td>${esc(a.account)}
-        <button class="rowbtn nw-del-acct" data-delacct="${esc(a.account)}"
+        <button class="rowbtn del nw-del-acct" data-delacct="${esc(a.account)}"
            title="Delete this account">\u2715</button></td>
       <td><span class="tag ${a.kind === "Liability" ? "tag-liab" : ""}">${a.kind}</span></td>
       <td class="n">

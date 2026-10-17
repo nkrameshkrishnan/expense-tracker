@@ -1122,8 +1122,8 @@ export function renderDebtSection(scopeOwner) {
             <td class="num">${esc(r.date)}</td>
             <td>${esc(r.description) || '<span class="muted">\u2014</span>'}</td>
             <td class="n num">${fm(r.amount)}</td>
-            <td><button class="rowbtn" data-editchild="${r.id}" title="Edit this item">\u270E</button>
-              <button class="rowbtn" data-delreceipt="${r.id}" title="Delete this item">\u2715</button></td>
+            <td><button class="rowbtn edit" data-editchild="${r.id}" title="Edit this item">\u270E</button>
+              <button class="rowbtn del" data-delreceipt="${r.id}" title="Delete this item">\u2715</button></td>
           </tr>`,
             )
             .join("")}
@@ -1143,8 +1143,8 @@ export function renderDebtSection(scopeOwner) {
             <td class="num">${esc(p.date)}</td>
             <td>${esc(p.description) || '<span class="muted">\u2014</span>'}</td>
             <td class="n num">${fm(p.amount)}${p.paidCurrency && p.paidAmount != null ? ` <span class="muted">(paid ${moneyIn(p.paidAmount, p.paidCurrency)})</span>` : ""}</td>
-            <td><button class="rowbtn" data-editchild="${p.id}" title="Edit this payment">\u270E</button>
-              <button class="rowbtn" data-delpay="${p.id}" title="Delete this payment">\u2715</button></td>
+            <td><button class="rowbtn edit" data-editchild="${p.id}" title="Edit this payment">\u270E</button>
+              <button class="rowbtn del" data-delpay="${p.id}" title="Delete this payment">\u2715</button></td>
           </tr>`,
             )
             .join("")}
@@ -1178,9 +1178,9 @@ export function renderDebtSection(scopeOwner) {
 
       <div class="debt-actions">
         <button class="btn ghost debt-pay" data-pay="${d.id}">Record payment</button>
-        <button class="btn ghost" data-editdebt="${d.id}">Edit</button>
+        <button class="btn ghost edit" data-editdebt="${d.id}">Edit</button>
         <button class="btn ghost" data-pdfdebt="${d.id}">Export PDF</button>
-        <button class="rowbtn" data-deldebt="${d.id}" title="Delete this agreement and its payments">\u2715</button>
+        <button class="rowbtn del" data-deldebt="${d.id}" title="Delete this agreement and its payments">\u2715</button>
       </div>
     </div>`;
   };

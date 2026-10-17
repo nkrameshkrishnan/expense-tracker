@@ -332,8 +332,8 @@ export function renderMetalsSection(scopeOwner) {
         <td class="n num">${dia ? "—" : money(h.pricePerGram)}</td>
         <td class="n num muted">${money(lotCost(h))}</td>
         <td class="n num">${v === null ? "—" : money(v)}${estimated ? ' <span class="muted" title="No current value entered - showing what you paid">(at cost)</span>' : ""}</td>
-        <td class="nowrap"><button class="rowbtn" data-editmetal="${h.id}" title="Edit this lot">Edit</button>
-          <button class="rowbtn" data-delmetal="${h.id}" title="Delete this lot">✕</button></td>
+        <td class="nowrap"><button class="rowbtn edit" data-editmetal="${h.id}" title="Edit this lot">Edit</button>
+          <button class="rowbtn del" data-delmetal="${h.id}" title="Delete this lot">✕</button></td>
       </tr>`;
     })
     .join("");
