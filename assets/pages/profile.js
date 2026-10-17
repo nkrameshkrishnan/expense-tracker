@@ -12,7 +12,12 @@ import {
   setTheme,
   setDisplayRate,
 } from "../store.js";
-import { CURRENCY_LABEL, CURRENCY_SYMBOL, CURRENCY_FLAG } from "../prefs.js";
+import {
+  CURRENCY_LABEL,
+  CURRENCY_SYMBOL,
+  CURRENCY_FLAG,
+  getDisplayRate,
+} from "../prefs.js";
 import {
   $,
   view,
@@ -127,6 +132,10 @@ async function loadDisplayRateIfNeeded(code) {
 // refocus once the panel is re-rendered; null for mouse/touch.
 async function savePreferences(homeCurrency, theme, focusSel = null) {
   const email = getIdTokenEmail();
+  // What is in effect right now (for a blocked second click, the first
+  // click's optimistic value), so a save that doesn't happen can revert to it.
+  const prevCurrency = getHomeCurrency();
+  const prevTheme = getTheme();
   setHomeCurrency(homeCurrency);
   setTheme(theme);
   await loadDisplayRateIfNeeded(homeCurrency);
@@ -135,12 +144,26 @@ async function savePreferences(homeCurrency, theme, focusSel = null) {
     const done = await withBusy("Saving preferences", async () => {
       await state.store.saveUserSettings(email, { homeCurrency, theme });
     });
-    if (!done) return;
+    if (!done) {
+      // Save failed or was blocked by withBusy (which already showed the
+      // toast): undo the optimistic change so what's visible is what's saved.
+      setHomeCurrency(prevCurrency);
+      setTheme(prevTheme);
+      if (prevCurrency !== "CAD" && !getDisplayRate(prevCurrency))
+        await loadDisplayRateIfNeeded(prevCurrency);
+      updateBrandCurrency();
+      rerenderPreferences(focusSel);
+      return;
+    }
   }
   notice("Preferences saved.", "ok");
   // Re-render only the Preferences block so the selected option reflects
   // immediately - a full renderProfile() would also reset the Household
   // access panel to "Loading…" and re-fetch it over the network.
+  rerenderPreferences(focusSel);
+}
+
+function rerenderPreferences(focusSel) {
   const host = $("#prefs-host");
   if (!host) return;
   host.innerHTML = renderPreferencesPanel();
