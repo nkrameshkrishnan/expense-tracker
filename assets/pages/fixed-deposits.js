@@ -6,7 +6,7 @@
    any DOM, same split as metals.js's resolvePricePerGram/metalsSummary.
    Rendering/store-wiring (renderFixedDepositsSection/wireFixedDepositsHandlers)
    mirrors renderMetalsSection/wireMetalsHandlers in that same file. */
-import { PEOPLE, toCad, getHomeCurrency } from "../store.js";
+import { PEOPLE, CURRENCIES, toCad, getHomeCurrency } from "../store.js";
 import { money, moneyIn } from "../xlsxio.js";
 import {
   $,
@@ -22,14 +22,12 @@ import { isRemoteStore } from "../auth.js";
 import { emptyIcon } from "../icons.js";
 import { countKpiTiles, revealOnView } from "../motion.js";
 
-// The feature is scoped to India fixed deposits for now - every deposit is
-// entered and displayed in its own currency (never converted in place, same
-// reasoning as transactions/balances), so fixedDepositsSummary below can
-// safely sum native amounts across deposits without checking each one's
-// currency individually. The schema itself isn't limited to INR (fx_rate +
-// a CAD/INR/AED check, same shape as balances) - only the UI is, so adding
-// another currency later is a UI change, not a migration.
+// Every deposit is entered and displayed in its OWN currency (CAD, INR or
+// AED - never converted in place, same reasoning as transactions/balances)
+// with the rate to CAD recorded on the row. INR is only the default for a
+// new deposit and for rows saved before currencies were selectable.
 export const FD_CURRENCY = "INR";
+const fdCur = (fd) => fd?.currency || FD_CURRENCY;
 
 const DAY_MS = 86400000;
 const yearsBetween = (fromDate, toDate) =>
@@ -99,26 +97,39 @@ export function fdValueToday(fd, todayStr) {
   return fdValueAt(fd.principal, fd.annualRate, fd.compounding, elapsed);
 }
 
-/** Aggregate KPI-tile figures across every deposit - native-currency totals
-    (safe to sum directly across deposits only because FD_CURRENCY is fixed
-    today - see its comment above) plus the CAD-equivalent the Net Worth
-    total actually adds, via each deposit's own fx_rate, same as
-    Balances/Transactions. */
+/** Aggregate KPI-tile figures across every deposit. Amounts in different
+    currencies can't be added directly, so: with a single currency the totals
+    are native (`currency`), with several they are CAD-equivalent (each
+    deposit converted via its own fx_rate, as Net Worth does) and
+    `byCurrency` carries the native breakdown. */
 export function fixedDepositsSummary(deposits, todayStr) {
-  let totalPrincipal = 0,
-    totalValueToday = 0,
+  const byCurrency = {};
+  let principalCad = 0,
     totalValueCad = 0;
   for (const fd of deposits) {
     const v = fdValueToday(fd, todayStr);
-    totalPrincipal += fd.principal;
-    totalValueToday += v;
-    totalValueCad += toCad(v, fd.fxRate || 1);
+    const rate = fd.fxRate || 1;
+    const c = (byCurrency[fdCur(fd)] ||= { principal: 0, value: 0 });
+    c.principal += fd.principal;
+    c.value += v;
+    principalCad += toCad(fd.principal, rate);
+    totalValueCad += toCad(v, rate);
   }
+  const currencies = Object.keys(byCurrency);
+  const mixed = currencies.length > 1;
+  const single = currencies[0] || FD_CURRENCY;
+  const totalPrincipal = mixed
+    ? principalCad
+    : (byCurrency[single]?.principal ?? 0);
+  const totalValueToday = mixed ? totalValueCad : (byCurrency[single]?.value ?? 0);
   return {
     totalPrincipal,
     totalValueToday,
     totalValueCad,
     totalInterestEarned: totalValueToday - totalPrincipal,
+    currency: mixed ? "CAD" : single,
+    mixed,
+    byCurrency,
     count: deposits.length,
   };
 }
@@ -176,7 +187,13 @@ export function renderFixedDepositsSection(scopeOwner) {
   const sel = (cond) => (cond ? " selected" : "");
   const val = (v) => (v == null ? "" : ` value="${esc(String(v))}"`);
 
-  const fdMoney = (n) => moneyIn(n, FD_CURRENCY);
+  const fdMoney = (n) => moneyIn(n, summary.currency);
+  const breakdown = summary.mixed
+    ? Object.entries(summary.byCurrency)
+        .map(([c, t]) => moneyIn(t.value, c))
+        .join(" + ")
+    : "";
+  const curSel = editing ? fdCur(editing) : FD_CURRENCY;
   pendingTotals = [
     ["fd-principal", summary.totalPrincipal, fdMoney],
     ["fd-value", summary.totalValueToday, fdMoney],
@@ -187,12 +204,12 @@ export function renderFixedDepositsSection(scopeOwner) {
     ],
   ];
   const tiles = `<div class="kpis">
-    ${kpi("Principal", moneyIn(summary.totalPrincipal, FD_CURRENCY), `${deposits.length} deposit${deposits.length === 1 ? "" : "s"}`, "", "fd-principal")}
-    ${kpi("Value today", moneyIn(summary.totalValueToday, FD_CURRENCY), `≈ ${money(summary.totalValueCad)} ${getHomeCurrency()}`, "", "fd-value")}
+    ${kpi("Principal", fdMoney(summary.totalPrincipal), `${deposits.length} deposit${deposits.length === 1 ? "" : "s"}${summary.mixed ? " \u00b7 in CAD" : ""}`, "", "fd-principal")}
+    ${kpi("Value today", fdMoney(summary.totalValueToday), summary.mixed ? breakdown : `≈ ${money(summary.totalValueCad)} ${getHomeCurrency()}`, "", "fd-value")}
     ${kpi(
       "Interest earned",
       (summary.totalInterestEarned >= 0 ? "+" : "") +
-        moneyIn(summary.totalInterestEarned, FD_CURRENCY),
+        fdMoney(summary.totalInterestEarned),
       "so far",
       summary.totalInterestEarned < 0 ? "neg" : "pos",
       "fd-interest",
@@ -207,12 +224,12 @@ export function renderFixedDepositsSection(scopeOwner) {
       return `<tr>
         <td>${esc(fd.institution)}${fd.maturityAmount != null ? ' <span class="tag" title="Maturity amount entered by hand, not calculated">override</span>' : ""}</td>
         <td><span class="person-chip" data-p="${esc(fd.owner)}">${esc(fd.owner)}</span></td>
-        <td class="n num">${moneyIn(fd.principal, FD_CURRENCY)}</td>
+        <td class="n num">${moneyIn(fd.principal, fdCur(fd))}</td>
         <td class="n num">${fd.annualRate}%</td>
         <td>${esc(fd.compounding)}</td>
         <td class="num">${esc(fd.startDate)} → ${esc(fd.maturityDate)}<br><span class="muted" style="font-size:10.5px">${fmtTenure(fd.startDate, fd.maturityDate)}</span></td>
-        <td class="n num">${moneyIn(maturity, FD_CURRENCY)}</td>
-        <td class="n num"><span class="tag${matured ? "" : ""}">${matured ? "Matured" : "Active"}</span><br>${moneyIn(valueToday, FD_CURRENCY)}</td>
+        <td class="n num">${moneyIn(maturity, fdCur(fd))}</td>
+        <td class="n num"><span class="tag${matured ? "" : ""}">${matured ? "Matured" : "Active"}</span><br>${moneyIn(valueToday, fdCur(fd))}</td>
         <td style="white-space:nowrap"><button class="rowbtn edit" data-editfd="${fd.id}" title="Edit this deposit">Edit</button>
           <button class="rowbtn del" data-delfd="${fd.id}" title="Delete this deposit">✕</button></td>
       </tr>`;
@@ -235,7 +252,9 @@ export function renderFixedDepositsSection(scopeOwner) {
     <form id="fd-add-form" class="nw-add-row" autocomplete="off">
       <label class="f"><span>Institution</span>
         <input type="text" name="institution" placeholder="e.g. HDFC Bank" required${val(editing?.institution)}></label>
-      <label class="f"><span>Principal (${FD_CURRENCY})</span>
+      <label class="f"><span>Currency</span>
+        <select name="currency" id="fd-currency">${CURRENCIES.map((c) => `<option${sel(c === curSel)}>${c}</option>`).join("")}</select></label>
+      <label class="f"><span id="fd-principal-label">Principal (${esc(curSel)})</span>
         <input type="number" name="principal" id="fd-principal" step="0.01" min="0.01" required placeholder="e.g. 100000"${val(editing?.principal)}></label>
       <label class="f"><span>Annual rate (%)</span>
         <input type="number" name="annualRate" id="fd-rate" step="0.01" min="0" required placeholder="e.g. 7.25"${val(editing?.annualRate)}></label>
@@ -251,8 +270,8 @@ export function renderFixedDepositsSection(scopeOwner) {
         <input type="number" name="maturityAmount" id="fd-maturity-amount" step="0.01" min="0" placeholder="auto-calculated"${val(editing?.maturityAmount)}></label>
       <label class="f"><span>Owner</span>
         <select name="owner">${PEOPLE.map((p) => `<option${sel(editing && editing.owner === p)}>${esc(p)}</option>`).join("")}</select></label>
-      <label class="f"><span>Exchange rate (${FD_CURRENCY} → CAD)</span>
-        <input type="number" name="fxRate" id="fd-fxrate" step="any" min="0.000001" required placeholder="1 ${FD_CURRENCY} = ? CAD" inputmode="decimal"${val(editing?.fxRate)}></label>
+      <label class="f" id="fd-fx-row"${curSel === "CAD" ? " hidden" : ""}><span id="fd-fx-label">Exchange rate (${esc(curSel)} → CAD)</span>
+        <input type="number" name="fxRate" id="fd-fxrate" step="any" min="0.000001"${curSel === "CAD" ? "" : " required"} placeholder="1 ${esc(curSel)} = ? CAD" inputmode="decimal"${curSel === "CAD" ? "" : val(editing?.fxRate)}></label>
       <button class="btn" type="submit">${editing ? "Save changes" : "Add deposit"}</button>
       ${editing ? '<button class="btn ghost" type="button" id="fd-cancel-edit">Cancel</button>' : ""}
     </form>
@@ -302,11 +321,13 @@ export function wireFixedDepositsHandlers() {
       maturityDate,
     });
     const override = $("#fd-maturity-amount")?.value;
+    const cur = $("#fd-currency")?.value || FD_CURRENCY;
     hint.textContent = override
-      ? `Calculated maturity would be ${moneyIn(calculated, FD_CURRENCY)} over ${fmtTenure(startDate, maturityDate)} — your override (${moneyIn(Number(override), FD_CURRENCY)}) will be used instead.`
-      : `= ${moneyIn(calculated, FD_CURRENCY)} at maturity, over ${fmtTenure(startDate, maturityDate)}`;
+      ? `Calculated maturity would be ${moneyIn(calculated, cur)} over ${fmtTenure(startDate, maturityDate)} — your override (${moneyIn(Number(override), cur)}) will be used instead.`
+      : `= ${moneyIn(calculated, cur)} at maturity, over ${fmtTenure(startDate, maturityDate)}`;
   };
   [
+    "fd-currency",
     "fd-principal",
     "fd-rate",
     "fd-compounding",
@@ -346,7 +367,9 @@ export function wireFixedDepositsHandlers() {
     const lookup = async () => {
       const date = startInput.value;
       try {
-        const found = await state.store.getExchangeRate?.(date, FD_CURRENCY);
+        const cur = $("#fd-currency")?.value || FD_CURRENCY;
+        if (cur === "CAD") return;
+        const found = await state.store.getExchangeRate?.(date, cur);
         if (found) {
           const filled = !fxInput.value || fxInput.dataset.auto === "1";
           if (filled) {
@@ -369,6 +392,19 @@ export function wireFixedDepositsHandlers() {
       }
     };
     startInput.addEventListener("change", lookup);
+    $("#fd-currency")?.addEventListener("change", () => {
+      const cur = $("#fd-currency").value;
+      $("#fd-fx-row").hidden = cur === "CAD";
+      fxInput.required = cur !== "CAD";
+      fxInput.value = "";
+      delete fxInput.dataset.auto;
+      hint.textContent = "";
+      $("#fd-principal-label").textContent = `Principal (${cur})`;
+      $("#fd-fx-label").textContent = `Exchange rate (${cur} → CAD)`;
+      fxInput.placeholder = `1 ${cur} = ? CAD`;
+      updateCalcHint();
+      lookup();
+    });
     if (!editingFdId) await lookup();
   })();
 
@@ -391,15 +427,16 @@ export function wireFixedDepositsHandlers() {
       errEl.textContent = "Maturity date must be after the start date.";
       return;
     }
-    const fxRate = Number(f.fxRate);
+    const currency = f.currency || FD_CURRENCY;
+    const fxRate = currency === "CAD" ? 1 : Number(f.fxRate);
     if (!Number.isFinite(fxRate) || fxRate < 0.000001) {
-      errEl.textContent = "Enter the INR → CAD exchange rate.";
+      errEl.textContent = `Enter the ${currency} → CAD exchange rate.`;
       return;
     }
     const record = {
       institution: f.institution.trim(),
       principal,
-      currency: FD_CURRENCY,
+      currency,
       annualRate,
       compounding: f.compounding,
       startDate: f.startDate,
