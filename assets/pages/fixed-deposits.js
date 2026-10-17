@@ -8,7 +8,16 @@
    mirrors renderMetalsSection/wireMetalsHandlers in that same file. */
 import { PEOPLE, toCad, getHomeCurrency } from "../store.js";
 import { money, moneyIn } from "../xlsxio.js";
-import { $, view, esc, state, kpi, notice, withBusy, confirmDialog } from "../core.js";
+import {
+  $,
+  view,
+  esc,
+  state,
+  kpi,
+  notice,
+  withBusy,
+  confirmDialog,
+} from "../core.js";
 import { isRemoteStore } from "../auth.js";
 import { emptyIcon } from "../icons.js";
 import { countKpiTiles, revealOnView } from "../motion.js";
@@ -129,6 +138,16 @@ const fmtTenure = (startDate, maturityDate) => {
 /** Count-up targets from the most recent renderFixedDepositsSection(). */
 let pendingTotals = [];
 
+/** Id of the deposit currently loaded into the form for editing, or null
+    when the form is adding a new one. Module state, so it survives the
+    re-render that follows Edit/Cancel (same as editingLotId in metals.js). */
+let editingFdId = null;
+
+const rerenderNetWorth = async () => {
+  const { renderNetWorth } = await import("./networth.js");
+  renderNetWorth();
+};
+
 /** Entrance-only motion for the Fixed Deposits tab (route entry or tab
     switch; never filter/edit re-renders). */
 export function animateFixedDepositsSection() {
@@ -152,6 +171,10 @@ export function renderFixedDepositsSection(scopeOwner) {
     (d) => !scopeOwner || d.owner === scopeOwner,
   );
   const summary = fixedDepositsSummary(deposits, today);
+  const editing = deposits.find((d) => d.id === editingFdId) || null;
+  if (!editing) editingFdId = null;
+  const sel = (cond) => (cond ? " selected" : "");
+  const val = (v) => (v == null ? "" : ` value="${esc(String(v))}"`);
 
   const fdMoney = (n) => moneyIn(n, FD_CURRENCY);
   pendingTotals = [
@@ -190,7 +213,8 @@ export function renderFixedDepositsSection(scopeOwner) {
         <td class="num">${esc(fd.startDate)} → ${esc(fd.maturityDate)}<br><span class="muted" style="font-size:10.5px">${fmtTenure(fd.startDate, fd.maturityDate)}</span></td>
         <td class="n num">${moneyIn(maturity, FD_CURRENCY)}</td>
         <td class="n num"><span class="tag${matured ? "" : ""}">${matured ? "Matured" : "Active"}</span><br>${moneyIn(valueToday, FD_CURRENCY)}</td>
-        <td><button class="rowbtn" data-delfd="${fd.id}" title="Delete this deposit">✕</button></td>
+        <td class="nowrap"><button class="rowbtn" data-editfd="${fd.id}" title="Edit this deposit">Edit</button>
+          <button class="rowbtn" data-delfd="${fd.id}" title="Delete this deposit">✕</button></td>
       </tr>`;
     })
     .join("");
@@ -210,26 +234,30 @@ export function renderFixedDepositsSection(scopeOwner) {
   <div class="panel" style="margin-top:12px">
     <form id="fd-add-form" class="nw-add-row" autocomplete="off">
       <label class="f"><span>Institution</span>
-        <input type="text" name="institution" placeholder="e.g. HDFC Bank" required></label>
+        <input type="text" name="institution" placeholder="e.g. HDFC Bank" required${val(editing?.institution)}></label>
       <label class="f"><span>Principal (${FD_CURRENCY})</span>
-        <input type="number" name="principal" id="fd-principal" step="0.01" min="0.01" required placeholder="e.g. 100000"></label>
+        <input type="number" name="principal" id="fd-principal" step="0.01" min="0.01" required placeholder="e.g. 100000"${val(editing?.principal)}></label>
       <label class="f"><span>Annual rate (%)</span>
-        <input type="number" name="annualRate" id="fd-rate" step="0.01" min="0" required placeholder="e.g. 7.25"></label>
+        <input type="number" name="annualRate" id="fd-rate" step="0.01" min="0" required placeholder="e.g. 7.25"${val(editing?.annualRate)}></label>
       <label class="f"><span>Compounding</span>
         <select name="compounding" id="fd-compounding">
-          ${COMPOUNDING_OPTIONS.map((c) => `<option${c === "Quarterly" ? " selected" : ""}>${c}</option>`).join("")}
+          ${COMPOUNDING_OPTIONS.map((c) => `<option${sel(c === (editing ? editing.compounding : "Quarterly"))}>${c}</option>`).join("")}
         </select></label>
       <label class="f"><span>Start date</span>
-        <input type="date" name="startDate" id="fd-start" value="${today}" required></label>
+        <input type="date" name="startDate" id="fd-start" value="${editing ? esc(editing.startDate) : today}" required></label>
       <label class="f"><span>Maturity date</span>
-        <input type="date" name="maturityDate" id="fd-maturity-date" required></label>
+        <input type="date" name="maturityDate" id="fd-maturity-date" required${val(editing?.maturityDate)}></label>
       <label class="f"><span>Maturity amount (override)</span>
-        <input type="number" name="maturityAmount" id="fd-maturity-amount" step="0.01" min="0" placeholder="auto-calculated"></label>
+        <input type="number" name="maturityAmount" id="fd-maturity-amount" step="0.01" min="0" placeholder="auto-calculated"${val(editing?.maturityAmount)}></label>
       <label class="f"><span>Owner</span>
-        <select name="owner">${PEOPLE.map((p) => `<option>${esc(p)}</option>`).join("")}</select></label>
-      <input type="hidden" name="fxRate" id="fd-fxrate" value="1">
-      <button class="btn" type="submit">Add deposit</button>
+        <select name="owner">${PEOPLE.map((p) => `<option${sel(editing && editing.owner === p)}>${esc(p)}</option>`).join("")}</select></label>
+      <label class="f"><span>Exchange rate (${FD_CURRENCY} → ${getHomeCurrency()})</span>
+        <input type="number" name="fxRate" id="fd-fxrate" step="any" min="0.000001" required placeholder="1 ${FD_CURRENCY} = ? ${getHomeCurrency()}" inputmode="decimal"${val(editing?.fxRate)}>
+        <span class="add-field-hint muted" id="fd-fx-hint"></span></label>
+      <button class="btn" type="submit">${editing ? "Save changes" : "Add deposit"}</button>
+      ${editing ? '<button class="btn ghost" type="button" id="fd-cancel-edit">Cancel</button>' : ""}
     </form>
+    ${editing ? `<p class="note" style="margin:8px 0 0"><b>Editing the ${esc(editing.institution)} deposit.</b></p>` : ""}
     <p class="note" id="fd-calc-hint" style="margin:8px 0 0"></p>
     <div class="err" id="fd-err"></div>
   </div>
@@ -295,25 +323,53 @@ export function wireFixedDepositsHandlers() {
   // page's lookupRate() - only present on SupabaseStore (exchange_rates has
   // no LocalStore/MemoryStore equivalent, and this whole section is
   // Supabase-only already), so a missing getExchangeRate is simply a no-op
-  // here and the fx_rate hidden field stays at its default of 1.
+  // here and the required rate field stays empty until it's typed. There is
+  // deliberately no default of 1: a silent wrong rate would skew the CAD
+  // total on Net Worth. While editing, the saved rate is left alone until
+  // the start date is changed.
   (async () => {
     const startInput = $("#fd-start");
     const fxInput = $("#fd-fxrate");
+    const hint = $("#fd-fx-hint");
     if (!startInput || !fxInput) return;
+    fxInput.addEventListener("input", () => {
+      delete fxInput.dataset.auto; // the person is typing their own value now
+    });
+    // A previously auto-filled rate belongs to the old date; drop it rather
+    // than leave a rate that no longer matches. A typed value is kept.
+    const dropAuto = () => {
+      if (fxInput.dataset.auto === "1") {
+        fxInput.value = "";
+        delete fxInput.dataset.auto;
+      }
+    };
     const lookup = async () => {
+      const date = startInput.value;
       try {
-        const found = await state.store.getExchangeRate?.(
-          startInput.value,
-          FD_CURRENCY,
-        );
-        if (found) fxInput.value = found.rateToCad;
+        const found = await state.store.getExchangeRate?.(date, FD_CURRENCY);
+        if (found) {
+          const filled = !fxInput.value || fxInput.dataset.auto === "1";
+          if (filled) {
+            fxInput.value = found.rateToCad;
+            fxInput.dataset.auto = "1";
+          }
+          hint.textContent = !filled
+            ? `stored rate for ${found.date} is ${found.rateToCad} — kept the rate you entered`
+            : found.date === date
+              ? `auto-filled from ${date}'s rate — edit if your statement shows a different one`
+              : `auto-filled from ${found.date}'s rate (closest available) — edit if your statement shows a different one`;
+        } else if (state.store.getExchangeRate) {
+          dropAuto();
+          hint.textContent =
+            "no stored rate yet for this date — enter the rate";
+        }
       } catch {
-        // Left at its current value - the deposit still saves fine with a
-        // default/previous rate; only the Net Worth CAD total is affected.
+        dropAuto();
+        hint.textContent = "couldn't look up a rate — enter it by hand";
       }
     };
     startInput.addEventListener("change", lookup);
-    await lookup();
+    if (!editingFdId) await lookup();
   })();
 
   $("#fd-add-form")?.addEventListener("submit", async (ev) => {
@@ -335,25 +391,55 @@ export function wireFixedDepositsHandlers() {
       errEl.textContent = "Maturity date must be after the start date.";
       return;
     }
-    const done = await withBusy("Adding deposit", async () => {
-      await state.store.addFixedDeposit({
-        institution: f.institution.trim(),
-        principal,
-        currency: FD_CURRENCY,
-        annualRate,
-        compounding: f.compounding,
-        startDate: f.startDate,
-        maturityDate: f.maturityDate,
-        maturityAmount: f.maturityAmount ? Number(f.maturityAmount) : null,
-        fxRate: Number(f.fxRate) || 1,
-        owner: f.owner,
-        notes: "",
-      });
-    });
-    if (done) {
-      await reload();
-      notice(`Added ${f.institution} fixed deposit.`, "ok");
+    const fxRate = Number(f.fxRate);
+    if (!(fxRate > 0) || !Number.isFinite(fxRate)) {
+      errEl.textContent = "Enter the INR → CAD exchange rate.";
+      return;
     }
+    const record = {
+      institution: f.institution.trim(),
+      principal,
+      currency: FD_CURRENCY,
+      annualRate,
+      compounding: f.compounding,
+      startDate: f.startDate,
+      maturityDate: f.maturityDate,
+      maturityAmount: f.maturityAmount ? Number(f.maturityAmount) : null,
+      fxRate,
+      owner: f.owner,
+    };
+    const wasEditing = editingFdId;
+    const done = await withBusy(
+      wasEditing ? "Saving deposit" : "Adding deposit",
+      async () => {
+        if (wasEditing)
+          await state.store.updateFixedDeposit(wasEditing, record);
+        else await state.store.addFixedDeposit({ ...record, notes: "" });
+      },
+    );
+    if (done) {
+      editingFdId = null;
+      await reload();
+      notice(
+        wasEditing
+          ? "Deposit updated."
+          : `Added ${f.institution} fixed deposit.`,
+        "ok",
+      );
+    }
+  });
+
+  view.querySelectorAll("[data-editfd]").forEach(
+    (b) =>
+      (b.onclick = async () => {
+        editingFdId = Number(b.dataset.editfd);
+        await rerenderNetWorth();
+        $("#fd-add-form")?.scrollIntoView({ block: "center" });
+      }),
+  );
+  $("#fd-cancel-edit")?.addEventListener("click", async () => {
+    editingFdId = null;
+    await rerenderNetWorth();
   });
 
   view.querySelectorAll("[data-delfd]").forEach(
