@@ -455,7 +455,7 @@
 
 .tx-actions {
   display: flex;
-  gap: 2px;
+  gap: 4px;
   opacity: 0;
   transition: opacity 0.15s;
 }
@@ -463,21 +463,11 @@
 .tx-row:focus-within .tx-actions {
   opacity: 1;
 }
+/* Border, colours and hover live in styles.css (shared with .rowbtn). */
 .txbtn {
-  background: none;
-  border: 0;
-  cursor: pointer;
   font-size: 14px;
-  padding: 4px 6px;
-  color: var(--ink-3);
+  padding: 3px 5px;
   line-height: 1;
-  border-radius: var(--radius-xs);
-}
-.txbtn.edit:hover {
-  color: var(--blue);
-}
-.txbtn.del:hover {
-  color: var(--red);
 }
 /* Touch-sized row actions on narrow screens and on any coarse pointer
    (tablets, landscape phones); mouse desktops keep the compact buttons. */

@@ -355,6 +355,13 @@ button.btn.ghost:hover {
   background: var(--paper-2);
   border-color: var(--rule-2);
 }
+/* Debt-card "Edit": same green hover as the other edit buttons. */
+button.btn.ghost.edit:hover,
+button.btn.ghost.edit:focus-visible {
+  color: var(--green);
+  border-color: var(--green);
+  background: color-mix(in srgb, var(--green) 10%, var(--card-bg));
+}
 button.btn.danger {
   background: var(--card-bg);
   color: var(--red);
@@ -692,8 +699,52 @@ tbody tr:hover {
 .rowbtn:hover {
   color: var(--red);
 }
-.rowbtn.edit:hover {
-  color: var(--blue);
+/* Edit / delete icon buttons (row actions everywhere, incl. .txbtn on the
+   Transactions list): a quiet hairline border at rest, so they read as
+   buttons, and a green (edit) / red (delete) border + text + 10% tint on
+   hover and keyboard focus. Scoped to .edit/.del so the unrelated rowbtns
+   (dialog close, inline "remove re-import" link) stay plain. Padding is 1px
+   less than plain .rowbtn on each side to absorb the border, so rows keep
+   their height. */
+.rowbtn.edit,
+.rowbtn.del,
+.txbtn {
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--ink-3) 45%, var(--card-bg));
+  border-radius: var(--radius-xs);
+  color: var(--ink-3);
+  cursor: pointer;
+  transition:
+    color 120ms var(--ease-out),
+    background-color 120ms var(--ease-out),
+    border-color 120ms var(--ease-out);
+}
+.rowbtn.edit,
+.rowbtn.del {
+  padding: 1px 4px;
+}
+.rowbtn.edit:not(:disabled):hover,
+.rowbtn.edit:not(:disabled):focus-visible,
+.txbtn.edit:not(:disabled):hover,
+.txbtn.edit:not(:disabled):focus-visible {
+  color: var(--green);
+  border-color: var(--green);
+  background: color-mix(in srgb, var(--green) 10%, transparent);
+}
+.rowbtn.del:not(:disabled):hover,
+.rowbtn.del:not(:disabled):focus-visible,
+.txbtn.del:not(:disabled):hover,
+.txbtn.del:not(:disabled):focus-visible {
+  color: var(--red);
+  border-color: var(--red);
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .rowbtn.edit,
+  .rowbtn.del,
+  .txbtn {
+    transition: none;
+  }
 }
 /* Without this, a disabled rowbtn (e.g. the primary household member's own
    "remove" ✕, or the old "can't remove the last remaining email" case)
@@ -708,6 +759,10 @@ tbody tr:hover {
 }
 .rowbtn:disabled:hover {
   color: var(--rule-2);
+}
+.rowbtn.edit:disabled,
+.rowbtn.del:disabled {
+  border-color: var(--rule-2);
 }
 
 /* ---------- forms ---------- */
@@ -1399,7 +1454,9 @@ code {
     padding: 15px 6px;
     margin: -15px -6px;
   }
-  .rowbtn {
+  .rowbtn,
+  .rowbtn.edit,
+  .rowbtn.del {
     min-width: 36px;
     min-height: 36px;
     padding: 6px 8px;
