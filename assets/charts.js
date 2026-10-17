@@ -1,4 +1,5 @@
 import { chartAnimation } from "./motion.js";
+import { swatchVar } from "./icons.js";
 
 /* Chart.js wrappers. Each call destroys the previous instance on that canvas,
    which is what stops the classic "ghost tooltip from the old chart" bug. */
@@ -56,12 +57,30 @@ function lighten(hex, amt) {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
-function mount(id, config) {
+/** The concrete colour of a category's --cat-color-N token (the same one the
+    Transactions chips use, via swatchVar). Canvas can't resolve var(), so
+    this reads the computed value on every chart build - tokens are identical
+    in both themes (every one is >= 3.7:1 on the dark card, >= 4.5:1 on the
+    light card), so no per-theme nudge is needed. */
+function catColor(name) {
+  const m = /--cat-color-\d+/.exec(swatchVar(name));
+  const hex = m
+    ? getComputedStyle(document.documentElement).getPropertyValue(m[0]).trim()
+    : "";
+  return /^#[0-9a-f]{3,6}$/i.test(hex) ? hex : SAND;
+}
+
+function mount(id, config, stillOnUpdate = false) {
   const el = document.getElementById(id);
   if (!el) return;
   config.options = config.options || {};
   config.options.animation = chartAnimation();
   const existing = registry.get(id);
+  // A selector/person change redraws the same live canvas; `stillOnUpdate`
+  // charts snap to the new data there (filters never animate). A fresh canvas
+  // (page entrance) still gets the shared draw-in above.
+  if (stillOnUpdate && existing && existing.canvas === el)
+    config.options.animation = { duration: 0 };
   // If the canvas element is the SAME DOM node as last time, Chart.js can
   // update its data/options in place - much cheaper than tearing down and
   // rebuilding the whole chart (no re-layout, no new WebGL/2D context, no
@@ -272,29 +291,131 @@ export function actualVsBudget(catRows) {
   });
 }
 
-export function topFive(top5) {
+/** `total` is the period's total net expense (aggregate().expense - the same
+    figure as the Expense KPI and the "Spend by category" Total row), so each
+    share is of ALL spend that period, not of the top five alone. */
+export function topFive(top5, total = 0) {
   readTheme();
-  mount("c-top", {
-    type: "bar",
-    data: {
-      labels: top5.map((t) => t.category),
-      datasets: [
-        {
-          data: top5.map((t) => t.actual),
-          backgroundColor: INK,
-          hoverBackgroundColor: lighten(INK, 0.3),
-          hoverBorderColor: CARD,
-          hoverBorderWidth: 2,
+  const share = (v) => (total > 0 ? ((v / total) * 100).toFixed(1) + "%" : "");
+  mount(
+    "c-top",
+    {
+      type: "bar",
+      data: {
+        // Two-line tick: the name, then its share of total spend.
+        labels: top5.map((t) => [t.category, share(t.actual)]),
+        datasets: [
+          {
+            data: top5.map((t) => t.actual),
+            backgroundColor: top5.map((t) => catColor(t.category)),
+            hoverBackgroundColor: top5.map((t) =>
+              lighten(catColor(t.category), 0.3),
+            ),
+            hoverBorderColor: CARD,
+            hoverBorderWidth: 2,
+          },
+        ],
+      },
+      options: {
+        maintainAspectRatio: false,
+        responsive: true,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              title: (items) => top5[items[0].dataIndex]?.category || "",
+              label: (item) =>
+                `${money0(item.raw)}` +
+                (total > 0 ? ` \u00b7 ${share(item.raw)}` : ""),
+              footer: () =>
+                total > 0 ? `% of total spend (${money0(total)})` : "",
+            },
+          },
         },
-      ],
+        scales: { x: { ...gridX, ticks: { font: { size: 10 } } }, y: gridY },
+      },
     },
-    options: {
-      maintainAspectRatio: false,
-      responsive: true,
-      plugins: { legend: { display: false } },
-      scales: { x: { ...gridX, ticks: { font: { size: 10 } } }, y: gridY },
+    true,
+  );
+}
+
+/** 100%-stacked share of spend by month (+ a separated Year column). `model`
+    is xlsxio.categoryShare(): rows[] of {category, amounts[13], shares[13]}
+    where index 12 is the full year. Column 12 of the chart is a blank gap so
+    Year reads as its own bar. */
+export function categoryShare(model, months) {
+  readTheme();
+  const narrow = window.matchMedia("(max-width: 640px)").matches;
+  const GAP = 12;
+  const pad = (a) => [...a.slice(0, 12), null, a[12]];
+  mount(
+    "c-cat-share",
+    {
+      type: "bar",
+      data: {
+        labels: [...months, "", "Year"],
+        datasets: model.rows.map((r) => {
+          const base = r.other ? INK3 : catColor(r.category);
+          return {
+            label: r.category,
+            data: pad(r.shares.map((v) => (v === null ? null : v * 100))),
+            amounts: pad(r.amounts),
+            backgroundColor: base,
+            hoverBackgroundColor: lighten(base, 0.3),
+            borderColor: CARD,
+            borderWidth: 1,
+            hoverBorderColor: CARD,
+            hoverBorderWidth: 2,
+            borderSkipped: false,
+          };
+        }),
+      },
+      options: {
+        maintainAspectRatio: false,
+        responsive: true,
+        interaction: { mode: "nearest", intersect: true },
+        plugins: {
+          legend: {
+            ...legendTop.legend,
+            labels: {
+              boxWidth: narrow ? 8 : 10,
+              boxHeight: narrow ? 8 : 10,
+              padding: narrow ? 8 : 14,
+              font: { size: narrow ? 10 : 11 },
+            },
+          },
+          tooltip: {
+            callbacks: {
+              title: (items) => items[0].label,
+              label: (item) =>
+                `${item.dataset.label}: ${money0(item.dataset.amounts[item.dataIndex])} \u00b7 ${item.parsed.y.toFixed(1)}%`,
+              footer: (items) => {
+                const i = items[0].dataIndex;
+                if (i === GAP) return "";
+                const t = model.totals[i === 13 ? 12 : i];
+                return `Total spend ${money0(t)} (= 100%)`;
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            ...gridX,
+            stacked: true,
+            ticks: { font: { size: narrow ? 9 : 10 }, autoSkip: false },
+          },
+          y: {
+            ...gridY,
+            stacked: true,
+            min: 0,
+            max: 100,
+            ticks: { callback: (v) => v + "%", stepSize: narrow ? 50 : 25 },
+          },
+        },
+      },
     },
-  });
+    true,
+  );
 }
 
 export function paymentSplit(byPayment) {
