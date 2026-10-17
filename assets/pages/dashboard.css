@@ -82,6 +82,12 @@
   height: 100%;
   border-radius: 3px;
 }
+/* The "Used" column reuses this bar; its fill takes the usage-band colour. */
+.sharebar > .use-ok,
+.sharebar > .use-warn,
+.sharebar > .use-over {
+  background: var(--use);
+}
 
 /* "Category share of spend" heat-map table. Cell tint is set inline from the
    category colour; text stays var(--ink) so it keeps >= 4.5:1 on every tint.

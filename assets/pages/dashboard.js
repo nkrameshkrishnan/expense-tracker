@@ -5,6 +5,7 @@ import {
   aggregate,
   money,
   pct,
+  usageLevel,
   personBreakdown,
   personSeries,
   categorySeries,
@@ -306,8 +307,8 @@ function buildDashboardShell(a, label, people, pSeries, showCompare) {
   </div>
 
   <div class="kpis">
-    ${kpi("Income", money(a.income), a.income === 0 ? "no income recorded" : "", "", "income")}
-    ${kpi("Expense", money(a.expense), expenseMeta(a), "", "expense")}
+    ${kpi("Income", money(a.income), a.income === 0 ? "no income recorded" : "", "k-income", "income")}
+    ${kpi("Expense", money(a.expense), expenseMeta(a), "k-expense", "expense")}
     ${kpi("Net", money(a.net), a.net < 0 ? "spending exceeds income" : "", a.net < 0 ? "neg" : "pos", "net")}
     ${kpi("Savings rate", a.income > 0 ? pct(a.savingsRate) : "\u2014", a.income > 0 ? "" : "needs income data", "", "savings")}
     ${kpi(
@@ -318,7 +319,7 @@ function buildDashboardShell(a, label, people, pSeries, showCompare) {
           ? `of ${money(a.expenseBudget)} household`
           : `of ${money(a.expenseBudget)}`
         : "no budget set",
-      a.budgetUsed > 1 ? "neg" : "",
+      budgetKpiClass(a),
       "budgetused",
     )}
     ${kpi("Avg / day", money(a.avgDaily), label, "", "avgday")}
@@ -483,8 +484,7 @@ function updateDashboardValues(a, label, people, pSeries, showCompare) {
     a.income > 0 ? "" : "needs income data",
   );
   const budEl = $("#kpi-budgetused");
-  if (budEl)
-    budEl.className = `kpi card-hoverable ${a.budgetUsed > 1 ? "neg" : ""}`;
+  if (budEl) budEl.className = `kpi card-hoverable ${budgetKpiClass(a)}`;
   setKpi(
     "budgetused",
     a.expenseBudget > 0 ? pct(a.budgetUsed) : "\u2014",
@@ -543,11 +543,31 @@ function updateDashboardValues(a, label, people, pSeries, showCompare) {
   refreshCatShare(false);
 }
 
+/** Category name with its colour dot - the same assignment the Actual vs
+    budget / Top 5 charts use for this period (charts.budgetCategoryColors). */
+const catCell = (colors, category) =>
+  `<td><span class="cname"><span class="cdot" style="background:${colors.get(category)?.css ?? "var(--ink-3)"}"></span><span>${esc(category)}</span></span></td>`;
+/** "Used" cell: a thin bar in the usage-band colour (ok / warn / over) and the
+    % figure; the figure is red/bold when over, so the band is not colour-only. */
+const usedCell = (r) => {
+  if (!(r.budget > 0)) return `<td class="n num">\u2014</td>`;
+  const lv = usageLevel(r.used);
+  const txt = lv === "over" ? " over" : lv === "warn" ? " lv-warn" : "";
+  return `<td class="n num${txt}"><span class="sharecell"><span class="sharebar"><span class="use-${lv}" style="width:${(Math.min(r.used, 1) * 100).toFixed(1)}%"></span></span>${pct(r.used)}</span></td>`;
+};
+/** KPI tile class for Budget used: red over 100%, ochre 80-100%. */
+const budgetKpiClass = (a) =>
+  a.expenseBudget > 0 && usageLevel(a.budgetUsed) !== "ok"
+    ? usageLevel(a.budgetUsed) === "over"
+      ? "neg"
+      : "lv-warn"
+    : "";
 function overBudgetRows(a) {
+  const colors = charts.budgetCategoryColors(a.catRows);
   return a.overBudget
     .map(
       (r) =>
-        `<tr><td>${esc(r.category)}</td><td class="n num">${money(r.actual)}</td><td class="n num">${money(r.budget)}</td><td class="n num over">${money(-r.variance)}</td><td class="n num over">${pct(r.used)}</td></tr>`,
+        `<tr>${catCell(colors, r.category)}<td class="n num">${money(r.actual)}</td><td class="n num">${money(r.budget)}</td><td class="n num over"><span class="gl" aria-hidden="true">\u25b2</span>${money(-r.variance)}</td>${usedCell(r)}</tr>`,
     )
     .join("");
 }
@@ -680,14 +700,23 @@ function catSpendRows() {
   );
 }
 function catDetailRows(a) {
+  const colors = charts.budgetCategoryColors(a.catRows);
+  // Variance: red up-triangle when over budget, teal down-triangle when under;
+  // an unbudgeted category (budget 0) is neither, matching the charts.
+  const varianceCell = (r) =>
+    r.budget > 0 && r.variance < 0
+      ? `<td class="n num over"><span class="gl" aria-hidden="true">\u25b2</span>${money(r.variance)}</td>`
+      : r.budget > 0 && r.variance > 0
+        ? `<td class="n num under"><span class="gl" aria-hidden="true">\u25bc</span>${money(r.variance)}</td>`
+        : `<td class="n num${r.budget > 0 ? "" : " muted"}">${money(r.variance)}</td>`;
   return (
     a.catRows
       .filter((r) => r.actual > 0 || r.budget > 0)
       .map(
         (r) => `<tr>
-      <td>${esc(r.category)}</td><td class="n num">${money(r.actual)}</td><td class="n num">${money(r.budget)}</td>
-      <td class="n num ${r.variance < 0 ? "over" : "under"}">${money(r.variance)}</td>
-      <td class="n num ${r.used > 1 ? "over" : ""}">${r.budget > 0 ? pct(r.used) : "\u2014"}</td></tr>`,
+      ${catCell(colors, r.category)}<td class="n num">${money(r.actual)}</td><td class="n num">${money(r.budget)}</td>
+      ${varianceCell(r)}
+      ${usedCell(r)}</tr>`,
       )
       .join("") ||
     '<tr><td colspan="5" class="muted">Nothing recorded yet.</td></tr>'
