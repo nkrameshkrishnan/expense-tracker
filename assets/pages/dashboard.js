@@ -25,7 +25,7 @@ import {
 } from "../core.js";
 import { go } from "../router.js";
 import { countUp, cancelCountUp, isEntering } from "../motion.js";
-import { personAvatar, swatchVar } from "../icons.js";
+import { personAvatar } from "../icons.js";
 
 /** Expense card subtitle. Expense is already net of refunds (spendOf), so
     say so whenever refunds were subtracted - otherwise the figure would
@@ -599,9 +599,12 @@ function catShareTable(m) {
   const head = `<thead><tr><th scope="col">Category</th>${MONTHS.map((x) => `<th scope="col" class="n">${x}</th>`).join("")}<th scope="col" class="n">Year</th></tr></thead>`;
   if (m.rows.length === 0)
     return `<table class="share-tbl">${head}<tbody><tr><td colspan="14" class="muted">Nothing recorded yet.</td></tr></tbody></table>`;
+  const colors = charts.distinctCategoryColors(
+    m.rows.filter((r) => !r.other).map((r) => r.category),
+  );
   const body = m.rows
     .map((r) => {
-      const col = r.other ? "var(--ink-3)" : swatchVar(r.category);
+      const col = r.other ? "var(--ink-3)" : colors.get(r.category).css;
       const cells = r.shares
         .map((v, i) => {
           const tint = !(v > 0)
@@ -651,12 +654,13 @@ function catSpendRows() {
   if (rows.length === 0)
     return '<tr><td colspan="3" class="muted">Nothing recorded yet.</td></tr>';
   const total = rows.reduce((a, r) => a + r.actual, 0);
+  const colors = charts.distinctCategoryColors(rows.map((r) => r.category));
   // Share of the NET total (the Total row), so the column sums to 100%. A
   // zero/negative total has no meaningful split, so it shows a dash.
   const shareCell = (r) => {
     if (total <= 0) return `<td class="n num muted">${DASH}</td>`;
     const s = r.actual / total;
-    return `<td class="n num${r.actual < 0 ? " under" : ""}"><span class="sharecell"><span class="sharebar"><span style="width:${(Math.max(0, Math.min(s, 1)) * 100).toFixed(1)}%;background:${swatchVar(r.category)}"></span></span>${pct1(s)}</span></td>`;
+    return `<td class="n num${r.actual < 0 ? " under" : ""}"><span class="sharecell"><span class="sharebar"><span style="width:${(Math.max(0, Math.min(s, 1)) * 100).toFixed(1)}%;background:${colors.get(r.category).css}"></span></span>${pct1(s)}</span></td>`;
   };
   const body = rows
     .map(

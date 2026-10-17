@@ -57,17 +57,56 @@ function lighten(hex, amt) {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
-/** The concrete colour of a category's --cat-color-N token (the same one the
-    Transactions chips use, via swatchVar). Canvas can't resolve var(), so
-    this reads the computed value on every chart build - tokens are identical
-    in both themes (every one is >= 3.7:1 on the dark card, >= 4.5:1 on the
-    light card), so no per-theme nudge is needed. */
-function catColor(name) {
-  const m = /--cat-color-\d+/.exec(swatchVar(name));
-  const hex = m
-    ? getComputedStyle(document.documentElement).getPropertyValue(m[0]).trim()
-    : "";
+/** Concrete value of --cat-color-<tok>. Canvas can't resolve var(), so this
+    reads the computed value on every chart build. Every token is >= 3.7:1 on
+    the dark card and >= 4.5:1 on the light card, so no per-theme nudge. */
+function tokenHex(tok) {
+  const hex = getComputedStyle(document.documentElement)
+    .getPropertyValue(`--cat-color-${tok}`)
+    .trim();
   return /^#[0-9a-f]{3,6}$/i.test(hex) ? hex : SAND;
+}
+
+/** Perceptual families of the 12 --cat-color tokens (several are near
+    duplicates), and the order unused families are handed out in (chosen so
+    neighbours in a stack contrast: blue, orange, pink, green, violet, cyan,
+    ochre, red). */
+const COLOR_FAMILY = {
+  0: 0,
+  1: 4,
+  7: 4,
+  2: 2,
+  3: 6,
+  10: 6,
+  4: 3,
+  11: 3,
+  5: 5,
+  9: 5,
+  6: 1,
+  8: 7,
+};
+const FAMILY_FIRST_TOKEN = [0, 6, 2, 4, 1, 5, 3, 8];
+
+/** One colour per category within a single view. `names` must be in rank
+    order (largest spend first). Each tries its app colour (the hashed
+    --cat-color-N the Transactions chips use); if that colour's family is
+    already taken by a higher-ranked name it gets the first unused family
+    instead. Past 8 names the families run out, so the rest keep their own
+    colour. Deterministic. Returns Map(name -> { css: "var(...)", hex }). */
+export function distinctCategoryColors(names) {
+  const taken = new Set();
+  const out = new Map();
+  for (const name of names) {
+    const own = Number(/--cat-color-(\d+)/.exec(swatchVar(name))[1]);
+    let tok = own;
+    if (taken.has(COLOR_FAMILY[own])) {
+      const free = FAMILY_FIRST_TOKEN.find((t) => !taken.has(COLOR_FAMILY[t]));
+      if (free !== undefined) tok = free;
+    }
+    if (!taken.has(COLOR_FAMILY[tok])) taken.add(COLOR_FAMILY[tok]);
+    out.set(name, { css: `var(--cat-color-${tok})`, hex: tokenHex(tok) });
+  }
+  return out;
 }
 
 function mount(id, config, stillOnUpdate = false) {
@@ -297,6 +336,7 @@ export function actualVsBudget(catRows) {
 export function topFive(top5, total = 0) {
   readTheme();
   const share = (v) => (total > 0 ? ((v / total) * 100).toFixed(1) + "%" : "");
+  const colors = distinctCategoryColors(top5.map((t) => t.category));
   mount(
     "c-top",
     {
@@ -307,9 +347,9 @@ export function topFive(top5, total = 0) {
         datasets: [
           {
             data: top5.map((t) => t.actual),
-            backgroundColor: top5.map((t) => catColor(t.category)),
+            backgroundColor: top5.map((t) => colors.get(t.category).hex),
             hoverBackgroundColor: top5.map((t) =>
-              lighten(catColor(t.category), 0.3),
+              lighten(colors.get(t.category).hex, 0.3),
             ),
             hoverBorderColor: CARD,
             hoverBorderWidth: 2,
@@ -347,6 +387,9 @@ export function categoryShare(model, months) {
   readTheme();
   const narrow = window.matchMedia("(max-width: 640px)").matches;
   const GAP = 12;
+  const colors = distinctCategoryColors(
+    model.rows.filter((r) => !r.other).map((r) => r.category),
+  );
   const pad = (a) => [...a.slice(0, 12), null, a[12]];
   mount(
     "c-cat-share",
@@ -355,7 +398,7 @@ export function categoryShare(model, months) {
       data: {
         labels: [...months, "", "Year"],
         datasets: model.rows.map((r) => {
-          const base = r.other ? INK3 : catColor(r.category);
+          const base = r.other ? INK3 : colors.get(r.category).hex;
           return {
             label: r.category,
             data: pad(r.shares.map((v) => (v === null ? null : v * 100))),
