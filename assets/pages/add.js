@@ -8,7 +8,7 @@ import {
   toCad,
   getHomeCurrency,
 } from "../store.js";
-import { money, monthOf } from "../xlsxio.js";
+import { money, moneyIn, monthOf } from "../xlsxio.js";
 import {
   listFor,
   selectWithNew,
@@ -587,14 +587,27 @@ export function mountTransactionForm(
     btn.disabled = true;
 
     if (e) {
+      const label = btn.textContent;
+      btn.textContent = "Saving\u2026";
       const done = await withBusy("Updating", async () => {
         await state.store.update(e.id, { ...d, amount });
         await refresh();
       });
       btn.disabled = false;
+      btn.textContent = label;
       if (done) {
         notice("Entry updated." + yearNote, "ok");
         onSaved?.();
+      } else if (document.getElementById("gate")?.hidden === false) {
+        // Session expired mid-save: withBusy showed the sign-in gate, which
+        // would sit under this modal, so get out of its way.
+        onCancel?.();
+      } else {
+        // withBusy only writes to the page banner, hidden behind the scrim.
+        errEl.textContent =
+          document.getElementById("banner")?.textContent ||
+          "Couldn't save \u2014 try again.";
+        errEl.scrollIntoView({ block: "nearest" }); // it sits above the Save button
       }
     } else {
       const done = await withBusy("Saving", async () => {
@@ -644,7 +657,9 @@ export function renderAdd() {
     on the scrim; Tab is trapped inside and focus returns to `opener` on close.
     Like the Budget dialog it does not animate. onSaved() runs after a
     successful save, once the dialog is gone. */
+let openDlg = null;
 export function openEditDialog(row, { opener, onSaved } = {}) {
+  if (openDlg) return; // a second activation while one is open is a no-op
   const scrim = document.createElement("div");
   scrim.className = "dlg-scrim";
   scrim.innerHTML = `
@@ -652,13 +667,14 @@ export function openEditDialog(row, { opener, onSaved } = {}) {
     <div class="dlg-head">
       <div>
         <h2 id="edit-dlg-title">Edit entry</h2>
-        <p class="sub">Editing #${row.id} \u2014 ${esc(row.category)} ${money(row.amount)}</p>
+        <p class="sub">Editing #${row.id} \u2014 ${esc(row.category)} ${moneyIn(row.amount, row.currency)}</p>
       </div>
       <button type="button" class="rowbtn" id="edit-dlg-x" aria-label="Close">\u2715</button>
     </div>
     <div id="edit-dlg-body"></div>
   </div>`;
   document.body.appendChild(scrim);
+  openDlg = scrim;
   const prevOverflow = document.body.style.overflow;
   document.body.style.overflow = "hidden";
   const close = () => {
@@ -666,6 +682,7 @@ export function openEditDialog(row, { opener, onSaved } = {}) {
     window.removeEventListener("hashchange", close);
     document.body.style.overflow = prevOverflow;
     scrim.remove();
+    openDlg = null;
     if (opener?.isConnected) opener.focus({ preventScroll: true });
   };
   const onKey = (ev) => {
@@ -699,14 +716,21 @@ export function openEditDialog(row, { opener, onSaved } = {}) {
     if (ev.target === scrim) close();
   });
   scrim.querySelector("#edit-dlg-x").onclick = close;
-  mountTransactionForm(scrim.querySelector("#edit-dlg-body"), {
-    editing: row,
-    onCancel: close,
-    onSaved: () => {
-      close();
-      onSaved?.();
-    },
-  });
+  try {
+    mountTransactionForm(scrim.querySelector("#edit-dlg-body"), {
+      editing: row,
+      onCancel: close,
+      onSaved: () => {
+        close();
+        onSaved?.();
+      },
+    });
+  } catch (err) {
+    // Never leave a half-built modal with the page scroll locked.
+    close();
+    console.error(err);
+    notice("Couldn't open the editor: " + err.message, "bad");
+  }
 }
 
 /* ============================================================== TRANSACTIONS */

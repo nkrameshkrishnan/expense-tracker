@@ -396,9 +396,15 @@ export function renderTransactions() {
               // Redraw the list in place (no page entrance), then put focus
               // back on the edited row's button - the old one is gone.
               refilter();
-              view
-                .querySelector(`[data-edit="${r.id}"]`)
-                ?.focus({ preventScroll: true });
+              // The row may now be filtered out or in a collapsed month:
+              // fall back to its month header, then the search box.
+              const visible = (el) => el && el.offsetParent !== null;
+              const btn = view.querySelector(`[data-edit="${r.id}"]`);
+              const month = state.rows.find((x) => x.id === r.id)?.date;
+              const hdr = view.querySelector(
+                `[data-toggle="${String(month).slice(0, 7)}"]`,
+              );
+              [btn, hdr, $("#q")].find(visible)?.focus({ preventScroll: true });
             },
           });
         }),
