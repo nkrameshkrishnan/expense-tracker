@@ -6,7 +6,7 @@ import {
   MONTHS,
   spendOf,
 } from "../store.js";
-import { money, pct, monthOf } from "../xlsxio.js";
+import { money, pct, monthOf, usageLevel } from "../xlsxio.js";
 import { listFor, addCustom, removeCustom, loadCustom } from "../categories.js";
 import { $, view, esc, state, notice, withBusy, refresh, confirmDialog } from "../core.js";
 import { iconBadge } from "../icons.js";
@@ -84,6 +84,8 @@ export function renderBudget() {
     const pct = annualBudget > 0 ? Math.min(annualActual / annualBudget, 1) : 0;
     const hasBudget = annualBudget > 0;
     const hasActual = annualActual > 0;
+    // Same ok / warn / over bands as the Dashboard's Used column.
+    const lv = hasBudget ? usageLevel(annualActual / annualBudget) : "";
 
     return `<div class="bcard" data-cat="${esc(c)}">
       <div class="bcard-head">
@@ -102,9 +104,9 @@ export function renderBudget() {
         hasActual || hasBudget
           ? `<div class="bcard-bar-wrap">
         <div class="bcard-bar-track">
-          <div class="bcard-bar-fill ${isOver ? "over" : ""}${fresh ? " grow" : ""}" style="width:${(pct * 100).toFixed(1)}%"></div>
+          <div class="bcard-bar-fill ${isOver ? "over " : ""}${lv ? "use-" + lv : ""}${fresh ? " grow" : ""}" style="width:${(pct * 100).toFixed(1)}%"></div>
         </div>
-        <span class="bcard-bar-label num ${isOver ? "over" : "muted"}">${hasBudget ? (pct * 100).toFixed(0) + "%" : ""}</span>
+        <span class="bcard-bar-label num ${isOver ? "over" : lv === "warn" ? "lv-warn" : "muted"}">${hasBudget ? (pct * 100).toFixed(0) + "%" : ""}</span>
       </div>
       <div class="bcard-context">
         ${hasActual ? `<span class="num muted" style="font-size:11px">spent ${money(annualActual)}</span>` : '<span class="muted" style="font-size:11px">no spend yet</span>'}
@@ -161,7 +163,7 @@ export function renderBudget() {
       <span class="b-sum-key">annual expense budget</span>
     </div>
     <div class="b-sum-item">
-      <span id="b-sum-spent" class="b-sum-val num ${totalSpent > totalBudget && totalBudget > 0 ? "over" : ""}">${money(totalSpent)}</span>
+      <span id="b-sum-spent" class="b-sum-val num ${totalBudget > 0 ? { over: "over", warn: "lv-warn", ok: "" }[usageLevel(totalSpent / totalBudget)] : ""}">${money(totalSpent)}</span>
       <span class="b-sum-key">spent so far ${state.year}</span>
     </div>
     <div class="b-sum-item">

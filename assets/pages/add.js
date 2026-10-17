@@ -8,7 +8,7 @@ import {
   toCad,
   getHomeCurrency,
 } from "../store.js";
-import { money, moneyIn, monthOf } from "../xlsxio.js";
+import { money, moneyIn, monthOf, usageLevel } from "../xlsxio.js";
 import {
   listFor,
   selectWithNew,
@@ -237,7 +237,7 @@ export function mountTransactionForm(
               ? `
             <div class="add-ctx-bar-wrap">
               <div class="add-ctx-bar-track">
-                <div class="add-ctx-bar-fill ${ctxOver ? "over" : ""}"
+                <div class="add-ctx-bar-fill ${ctxOver ? "over " : ""}use-${usageLevel(ctxActual / ctxBudget)}"
                   style="width:${Math.min((ctxActual / ctxBudget) * 100, 100).toFixed(1)}%"></div>
               </div>
             </div>
@@ -519,7 +519,7 @@ export function mountTransactionForm(
     const stats = q("#ctx-stats");
     if (stats) {
       if (bud > 0) {
-        stats.innerHTML = `<div class="add-ctx-bar-wrap"><div class="add-ctx-bar-track"><div class="add-ctx-bar-fill ${over ? "over" : ""}" style="width:${Math.min((act / bud) * 100, 100).toFixed(1)}%"></div></div></div>
+        stats.innerHTML = `<div class="add-ctx-bar-wrap"><div class="add-ctx-bar-track"><div class="add-ctx-bar-fill ${over ? "over " : ""}use-${usageLevel(act / bud)}" style="width:${Math.min((act / bud) * 100, 100).toFixed(1)}%"></div></div></div>
           <div class="add-ctx-row"><span class="muted">Spent ${MONTHS[curMonth - 1]}</span><span class="num ${over ? "over" : ""}">${money(act)}</span></div>
           <div class="add-ctx-row"><span class="muted">Budget</span><span class="num">${money(bud)}</span></div>
           <div class="add-ctx-row"><span class="muted">Remaining</span><span class="num ${over ? "over" : "tx-income"}">${money(bud - act)}</span></div>`;

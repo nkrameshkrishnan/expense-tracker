@@ -35,6 +35,9 @@
 .b-sum-val.over {
   color: var(--red);
 }
+.b-sum-val.lv-warn {
+  color: var(--c-warn);
+}
 @media (max-width: 600px) {
   .b-summary {
     grid-template-columns: 1fr 1fr;
@@ -143,7 +146,7 @@
 .bcard-bar-fill {
   height: 100%;
   border-radius: 2px;
-  background: var(--ink-2);
+  background: var(--use, var(--ink-2));
   transform-origin: left center;
 }
 /* Entrance: grow from the left once, on a fresh page build only (renderBudget
@@ -174,6 +177,9 @@
 }
 .bcard-bar-label.over {
   color: var(--red);
+}
+.bcard-bar-label.lv-warn {
+  color: var(--c-warn);
 }
 .bcard-context {
   margin-bottom: 10px;
