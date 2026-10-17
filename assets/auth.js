@@ -171,19 +171,13 @@ function mountGoogleSignIn(container, { buttonText = "signin_with" } = {}) {
     // silent no-op or race the still-settling first prompt into an
     // AbortError - and the user has already seen one attempt at that point,
     // so the rendered button is the reliable path from here on regardless.
+    // No notification callback on purpose: its isNotDisplayed() /
+    // isSkippedMoment() status methods are being removed under FedCM (Google
+    // logs a deprecation warning for any app that uses them), and the button
+    // above is always visible whether or not the prompt opens.
     if (!gsiPrompted) {
       gsiPrompted = true;
-      google.accounts.id.prompt((notification) => {
-        if (
-          notification.isNotDisplayed?.() ||
-          notification.isSkippedMoment?.()
-        ) {
-          const hint = $(".gate-sub");
-          if (hint)
-            hint.textContent =
-              "The automatic prompt did not open in this browser (common in Safari) \u2014 use the button below instead.";
-        }
-      });
+      google.accounts.id.prompt();
     }
   };
   if (window.google?.accounts?.id) start();
