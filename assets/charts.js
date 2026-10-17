@@ -7,19 +7,42 @@ let INK = "#12161c",
   INK3 = "#6b7684",
   RULE = "#ddd5c8",
   CARD = "#ffffff";
+// Fixed hues for the person charts only (they mirror the .person-swatch
+// chips); every other chart reads the semantic palette `PAL` below.
 const TEAL = "#0f766e",
   AMBER = "#b45309",
-  RED = "#b3261e",
   BLUE = "#1d4ed8",
   SAND = "#c6bcab";
-const PIE = [TEAL, AMBER, BLUE, RED, "#7c3aed", "#0891b2", SAND];
+
+/* Semantic palette, one meaning per colour across every chart (and the
+   tables, via semanticColors()). Re-read from the theme tokens by
+   readTheme() on every build, so light/dark follow styles.css:
+     income / assets / gain / net saved   = --teal
+     expense / liabilities / net overspent = --red, shifted ~28% away from the
+                                             teal's lightness (lighter on
+                                             light, darker on dark) so the two
+                                             also differ in lightness, not just
+                                             hue, for colour-blind readers
+     over-budget flag (outline, ticks)    = --red, unshifted
+     budget / ceiling                     = --amber, always dashed or hatched
+     actual                               = --ink
+     dividends                            = --purple (not amber: that is budget)
+     "Other" / neutral                    = --ink-3
+   Fallbacks below are only used if a token is missing. */
+const PAL = {
+  income: "#0f766e",
+  expense: "#b3261e",
+  alert: "#b3261e",
+  budget: "#b45309",
+  dividend: "#7c3aed",
+};
 
 const registry = new Map();
 
 /** Re-reads ink / ink-3 / rule from the active theme's CSS variables so
     gridlines, ticks and ink-coloured marks follow light/dark. Called at the
-    top of every builder (before its config is assembled). Category hues are
-    deliberately left as constants. */
+    top of every builder (before its config is assembled), along with the
+    semantic palette `PAL`. */
 function readTheme() {
   const cs = getComputedStyle(document.documentElement);
   const v = (name, fallback) => cs.getPropertyValue(name).trim() || fallback;
@@ -27,11 +50,59 @@ function readTheme() {
   INK3 = v("--ink-3", INK3);
   RULE = v("--rule", RULE);
   CARD = v("--card-bg", CARD);
+  const hexTok = (name, fallback) => {
+    const rgb = parseHex(v(name, ""));
+    return rgb ? toHex(rgb) : fallback;
+  };
+  PAL.income = hexTok("--teal", PAL.income);
+  PAL.alert = hexTok("--red", PAL.alert);
+  PAL.budget = hexTok("--amber", PAL.budget);
+  PAL.dividend = hexTok("--purple", PAL.dividend);
+  // Light card: lift the red toward white; dark card: sink it toward black.
+  const cardRgb = parseHex(CARD) || [255, 255, 255];
+  const dark =
+    cardRgb[0] * 0.2126 + cardRgb[1] * 0.7152 + cardRgb[2] * 0.0722 < 128;
+  PAL.expense = mixHex(PAL.alert, dark ? "#000000" : "#ffffff", 0.28);
   gridY.grid.color = RULE;
   gridX.border.color = RULE;
 }
 const money0 = (v) =>
   "$" + Number(v).toLocaleString("en-CA", { maximumFractionDigits: 0 });
+
+function parseHex(str) {
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(str).trim());
+  if (!m) return null;
+  const h =
+    m[1].length === 3
+      ? m[1]
+          .split("")
+          .map((c) => c + c)
+          .join("")
+      : m[1];
+  const n = parseInt(h, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+const toHex = (rgb) =>
+  "#" + rgb.map((c) => c.toString(16).padStart(2, "0")).join("");
+/** `hex` mixed toward `target` by `amt` (0-1), as #rrggbb. */
+function mixHex(hex, target, amt) {
+  const a = parseHex(hex),
+    b = parseHex(target);
+  return toHex(a.map((c, i) => Math.round(c + (b[i] - c) * amt)));
+}
+/** `hex` as an rgba() string. */
+export function withAlpha(hex, alpha) {
+  const [r, g, b] = parseHex(hex) || [0, 0, 0];
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+/** The semantic palette (see PAL) as resolved hex for the active theme, for
+    callers outside this file (tables, chips) that need the same meanings.
+    Also returns the matching CSS variable per meaning where one exists. */
+export function semanticColors() {
+  readTheme();
+  return { ...PAL, neutral: INK3, actual: INK };
+}
 
 /** Mixes a hex colour toward white by `amt` (0-1) - the bar/line equivalent
     of the doughnut's hoverOffset "pop": since a bar can't push outward the
@@ -87,26 +158,108 @@ const COLOR_FAMILY = {
 };
 const FAMILY_FIRST_TOKEN = [0, 6, 2, 4, 1, 5, 3, 8];
 
-/** One colour per category within a single view. `names` must be in rank
-    order (largest spend first). Each tries its app colour (the hashed
-    --cat-color-N the Transactions chips use); if that colour's family is
-    already taken by a higher-ranked name it gets the first unused family
-    instead. Past 8 names the families run out, so the rest keep their own
-    colour. Deterministic. Returns Map(name -> { css: "var(...)", hex }). */
-export function distinctCategoryColors(names) {
+/** One colour per name within a single view. Each name tries its own app
+    colour - the hashed --cat-color-N the Transactions chips use (when `seed`
+    is set the hash input is `seed:name`, to give a dimension its own
+    palette); if that colour's family is already taken it gets the first
+    unused family instead. Past 8 names the families run out, so the rest keep
+    their own colour. Deterministic.
+    Options: `pins` {name: token 0-11} fixes known names first (they never
+    shift); `neutral` [names] get the grey "Other" colour and use no family;
+    `stable` resolves collisions in alphabetical rather than input order, so
+    re-ranking the same names (amounts changing) never changes a colour.
+    `names` should be in rank order (largest first) unless `stable`.
+    Returns Map(name -> { css: "var(...)", hex }) in `names` order. */
+export function distinctColors(
+  names,
+  { seed = "", pins = {}, neutral = [], stable = false } = {},
+) {
   const taken = new Set();
-  const out = new Map();
+  const picked = new Map();
+  const tokOf = (name) =>
+    seed
+      ? Number(/--cat-color-(\d+)/.exec(swatchVar(`${seed}:${name}`))[1])
+      : Number(/--cat-color-(\d+)/.exec(swatchVar(name))[1]);
+  const rest = [];
   for (const name of names) {
-    const own = Number(/--cat-color-(\d+)/.exec(swatchVar(name))[1]);
+    if (neutral.includes(name)) picked.set(name, null);
+    else if (pins[name] !== undefined) {
+      picked.set(name, pins[name]);
+      taken.add(COLOR_FAMILY[pins[name]]);
+    } else rest.push(name);
+  }
+  for (const name of stable ? [...rest].sort() : rest) {
+    const own = tokOf(name);
     let tok = own;
     if (taken.has(COLOR_FAMILY[own])) {
       const free = FAMILY_FIRST_TOKEN.find((t) => !taken.has(COLOR_FAMILY[t]));
       if (free !== undefined) tok = free;
     }
     if (!taken.has(COLOR_FAMILY[tok])) taken.add(COLOR_FAMILY[tok]);
-    out.set(name, { css: `var(--cat-color-${tok})`, hex: tokenHex(tok) });
+    picked.set(name, tok);
+  }
+  const out = new Map();
+  for (const name of names) {
+    const tok = picked.get(name);
+    out.set(
+      name,
+      tok === null
+        ? { css: "var(--ink-3)", hex: INK3 }
+        : { css: `var(--cat-color-${tok})`, hex: tokenHex(tok) },
+    );
   }
   return out;
+}
+
+/** Category colours: the ranked-names form of distinctColors (largest spend
+    first), shared by Top 5, Category share, Actual vs budget and the Sankey
+    so one category is one colour across the dashboard. */
+export function distinctCategoryColors(names) {
+  return distinctColors(names);
+}
+
+/** Known payment methods get a fixed family so they look the same in every
+    chart and table; unknown (custom) names fall back to their hashed colour.
+    Tokens: 1 violet, 0 blue, 4 green, 5 cyan, 6 orange. "Other" is grey. */
+const PAYMENT_PINS = {
+  "Credit Card": 1,
+  "Debit Card": 0,
+  Cash: 4,
+  "e-Transfer": 5,
+  "Pre-authorized Debit": 6,
+};
+export function paymentColors(methods) {
+  return distinctColors(methods, {
+    seed: "payment",
+    pins: PAYMENT_PINS,
+    neutral: ["Other"],
+    stable: true,
+  });
+}
+
+/** Diagonal-hatch fill (stripes of `hex` over a faint tint of it) - the
+    "planned / budget" counterpart of a solid bar in the same hue, readable
+    without relying on colour. Falls back to a flat tint with no 2D context. */
+function hatch(hex) {
+  const dpr = window.devicePixelRatio || 1;
+  const c = document.createElement("canvas");
+  c.width = c.height = 8 * dpr;
+  const g = c.getContext("2d");
+  if (!g) return withAlpha(hex, 0.35);
+  g.scale(dpr, dpr);
+  g.fillStyle = withAlpha(hex, 0.18);
+  g.fillRect(0, 0, 8, 8);
+  g.strokeStyle = hex;
+  g.lineWidth = 2;
+  g.beginPath();
+  for (const o of [-8, 0, 8]) {
+    g.moveTo(o, 8);
+    g.lineTo(o + 8, 0);
+  }
+  g.stroke();
+  const pat = g.createPattern(c, "repeat");
+  pat?.setTransform?.(new DOMMatrix().scale(1 / dpr));
+  return pat || withAlpha(hex, 0.35);
 }
 
 function mount(id, config, stillOnUpdate = false) {
@@ -185,16 +338,16 @@ export function incomeVsExpense(series) {
         {
           label: "Income",
           data: series.map((s) => s.income),
-          backgroundColor: TEAL,
-          hoverBackgroundColor: lighten(TEAL, 0.3),
+          backgroundColor: PAL.income,
+          hoverBackgroundColor: lighten(PAL.income, 0.3),
           hoverBorderColor: CARD,
           hoverBorderWidth: 2,
         },
         {
           label: "Expense",
           data: series.map((s) => s.expense),
-          backgroundColor: AMBER,
-          hoverBackgroundColor: lighten(AMBER, 0.3),
+          backgroundColor: PAL.expense,
+          hoverBackgroundColor: lighten(PAL.expense, 0.3),
           hoverBorderColor: CARD,
           hoverBorderWidth: 2,
         },
@@ -219,9 +372,11 @@ export function netByMonth(series) {
         {
           label: "Net savings",
           data: series.map((s) => s.net),
-          backgroundColor: series.map((s) => (s.net < 0 ? RED : TEAL)),
+          backgroundColor: series.map((s) =>
+            s.net < 0 ? PAL.expense : PAL.income,
+          ),
           hoverBackgroundColor: series.map((s) =>
-            lighten(s.net < 0 ? RED : TEAL, 0.3),
+            lighten(s.net < 0 ? PAL.expense : PAL.income, 0.3),
           ),
           hoverBorderColor: CARD,
           hoverBorderWidth: 2,
@@ -231,7 +386,19 @@ export function netByMonth(series) {
     options: {
       maintainAspectRatio: false,
       responsive: true,
-      plugins: { legend: { display: false } },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            // Sign and wording as well as colour, so a negative month is
+            // legible without telling teal from red.
+            label: (item) =>
+              item.raw < 0
+                ? `Net: -${money0(-item.raw)} (overspent)`
+                : `Net: +${money0(item.raw)} (saved)`,
+          },
+        },
+      },
       scales: { x: gridX, y: gridY },
     },
   });
@@ -264,8 +431,8 @@ export function trend(series) {
         {
           label: "Budget ceiling",
           data: series.map((s) => s.budget),
-          borderColor: AMBER,
-          backgroundColor: AMBER,
+          borderColor: PAL.budget,
+          backgroundColor: PAL.budget,
           borderDash: [5, 4],
           tension: 0,
           // Same dots and hover ring as "Actual expense" above, in the
@@ -274,7 +441,7 @@ export function trend(series) {
           pointRadius: 3,
           pointHoverRadius: 6,
           pointHoverBackgroundColor: CARD,
-          pointHoverBorderColor: AMBER,
+          pointHoverBorderColor: PAL.budget,
           pointHoverBorderWidth: 2,
         },
       ],
@@ -288,9 +455,22 @@ export function trend(series) {
   });
 }
 
+/** Each category keeps its colour (the same ranking-by-actual assignment as
+    Top 5 and Category share); Actual is the solid bar and Budget the hatched
+    bar in the same hue. Over budget is flagged without colour alone and
+    without swapping the fill (a red fill would be indistinguishable from the
+    red-family categories): a 3px red border on the bar, a "\u25b2" and red
+    bold tick label, and "+N% over" in the tooltip. */
 export function actualVsBudget(catRows) {
   readTheme();
   const rows = catRows.filter((r) => r.actual > 0 || r.budget > 0);
+  const over = rows.map((r) => r.budget > 0 && r.actual > r.budget);
+  const ranked = [...rows]
+    .sort((a, b) => b.actual - a.actual)
+    .map((r) => r.category);
+  const colors = distinctCategoryColors(ranked);
+  const hex = rows.map((r) => colors.get(r.category).hex);
+  const pct = (i) => Math.round((rows[i].actual / rows[i].budget - 1) * 100);
   mount("c-cat", {
     type: "bar",
     data: {
@@ -299,22 +479,23 @@ export function actualVsBudget(catRows) {
         {
           label: "Actual",
           data: rows.map((r) => r.actual),
-          backgroundColor: rows.map((r) =>
-            r.budget > 0 && r.actual > r.budget ? RED : INK,
-          ),
-          hoverBackgroundColor: rows.map((r) =>
-            lighten(r.budget > 0 && r.actual > r.budget ? RED : INK, 0.3),
-          ),
-          hoverBorderColor: CARD,
-          hoverBorderWidth: 2,
+          backgroundColor: hex,
+          hoverBackgroundColor: hex.map((h) => lighten(h, 0.3)),
+          borderColor: PAL.alert,
+          borderWidth: over.map((o) => (o ? 3 : 0)),
+          borderSkipped: false,
+          hoverBorderColor: over.map((o) => (o ? PAL.alert : CARD)),
+          hoverBorderWidth: over.map((o) => (o ? 3 : 2)),
         },
         {
           label: "Budget",
           data: rows.map((r) => r.budget),
-          backgroundColor: SAND,
-          hoverBackgroundColor: lighten(SAND, 0.3),
-          hoverBorderColor: CARD,
-          hoverBorderWidth: 2,
+          backgroundColor: hex.map((h) => hatch(h)),
+          borderColor: hex,
+          borderWidth: 1,
+          hoverBackgroundColor: hex.map((h) => withAlpha(h, 0.45)),
+          hoverBorderColor: hex,
+          hoverBorderWidth: 1,
         },
       ],
     },
@@ -322,13 +503,67 @@ export function actualVsBudget(catRows) {
       indexAxis: "y",
       maintainAspectRatio: false,
       responsive: true,
-      plugins: legendTop,
+      plugins: {
+        legend: {
+          ...legendTop.legend,
+          labels: {
+            ...legendTop.legend.labels,
+            // Bars carry per-category colours, so the legend swatches are
+            // neutral: solid = actual, hatched = budget, red outline = over.
+            generateLabels: () => [
+              {
+                text: "Actual",
+                fillStyle: INK3,
+                strokeStyle: INK3,
+                lineWidth: 0,
+                datasetIndex: 0,
+              },
+              {
+                text: "Budget",
+                fillStyle: hatch(INK3),
+                strokeStyle: INK3,
+                lineWidth: 1,
+                datasetIndex: 1,
+              },
+              {
+                text: "\u25b2 Over budget",
+                fillStyle: "transparent",
+                strokeStyle: PAL.alert,
+                lineWidth: 3,
+              },
+            ],
+          },
+          onClick: (e, item, legend) => {
+            if (item.datasetIndex !== undefined)
+              Chart.defaults.plugins.legend.onClick(e, item, legend);
+          },
+        },
+        tooltip: {
+          callbacks: {
+            label: (item) =>
+              item.datasetIndex === 0 && over[item.dataIndex]
+                ? [
+                    `Actual: ${money0(item.raw)}`,
+                    `\u25b2 +${pct(item.dataIndex)}% over budget (${money0(item.raw - rows[item.dataIndex].budget)})`,
+                  ]
+                : `${item.dataset.label}: ${money0(item.raw)}`,
+          },
+        },
+      },
       scales: {
         x: { ...gridY },
         y: {
           grid: { display: false },
           border: { color: RULE },
-          ticks: { font: { size: 10 } },
+          ticks: {
+            font: (ctx) => ({
+              size: 10,
+              weight: over[ctx.tick?.value] ? "700" : "400",
+            }),
+            color: (ctx) => (over[ctx.tick?.value] ? PAL.alert : INK3),
+            callback: (value) =>
+              (over[value] ? "\u25b2 " : "") + (rows[value]?.category ?? ""),
+          },
         },
       },
     },
@@ -468,6 +703,7 @@ export function categoryShare(model, months) {
 
 export function paymentSplit(byPayment) {
   readTheme();
+  const colors = paymentColors(byPayment.map((p) => p.method));
   mount("c-pay", {
     type: "doughnut",
     data: {
@@ -475,7 +711,7 @@ export function paymentSplit(byPayment) {
       datasets: [
         {
           data: byPayment.map((p) => p.amount),
-          backgroundColor: PIE,
+          backgroundColor: byPayment.map((p) => colors.get(p.method).hex),
           borderColor: CARD,
           borderWidth: 2,
           // The hovered slice pushes outward by this many px - Chart.js's
@@ -566,18 +802,6 @@ export function personByMonth(series, months) {
   });
 }
 
-/** Deterministic colour per label (month or category name), so the same
-    label always gets the same colour across renders/panels without
-    charts.js needing to import the fixed category/month lists from
-    store.js - it just hashes whatever string it's handed. */
-function hashColor(label) {
-  let h = 0;
-  for (let i = 0; i < label.length; i++)
-    h = (h * 31 + label.charCodeAt(i)) >>> 0;
-  const hue = h % 360;
-  return `hsl(${hue} 55% 45%)`;
-}
-
 export function categoryByMonth(
   series,
   months,
@@ -600,8 +824,16 @@ export function categoryByMonth(
 
   // Coloured by category (the "to" side), so each category reads as one
   // consistent colour everywhere it appears - the same category is always
-  // the same colour whichever month it flowed from.
-  const flowColor = (cat) => hashColor(cat);
+  // the same colour whichever month it flowed from, and the same colour as
+  // in Top 5 / Category share (ranked here by the year's spend).
+  const yearTotal = (s) => s.data.reduce((a, v) => a + (v > 0 ? v : 0), 0);
+  const catColors = distinctCategoryColors(
+    series
+      .filter((s) => yearTotal(s) > 0)
+      .sort((a, b) => yearTotal(b) - yearTotal(a))
+      .map((s) => s.category),
+  );
+  const flowColor = (cat) => catColors.get(cat)?.hex ?? INK3;
 
   // Left/top-column nodes (months) default to being stacked by value,
   // largest first - not calendar order. `priority` overrides that per node
@@ -730,7 +962,9 @@ export function netWorthTrend(series) {
           label: "Net worth",
           data: series.map((s) => s.net),
           borderColor: INK,
-          backgroundColor: INK,
+          backgroundColor: withAlpha(INK, 0.08),
+          borderWidth: 3,
+          fill: "origin",
           tension: 0.25,
           pointRadius: 4,
           pointHoverRadius: 7,
@@ -738,28 +972,39 @@ export function netWorthTrend(series) {
           pointHoverBorderColor: INK,
           pointHoverBorderWidth: 2,
         },
+        // Assets / liabilities differ in dash and point shape as well as
+        // colour (teal triangles, dashed / red diamonds, dotted).
         {
           label: "Assets",
           data: series.map((s) => s.assets),
-          borderColor: TEAL,
-          borderDash: [5, 4],
-          pointRadius: 0,
-          pointHoverRadius: 0,
+          borderColor: PAL.income,
+          backgroundColor: PAL.income,
+          borderDash: [6, 4],
+          pointStyle: "triangle",
+          pointRadius: 3,
+          pointHoverRadius: 5,
         },
         {
           label: "Liabilities",
           data: series.map((s) => s.liabs),
-          borderColor: RED,
-          borderDash: [5, 4],
-          pointRadius: 0,
-          pointHoverRadius: 0,
+          borderColor: PAL.expense,
+          backgroundColor: PAL.expense,
+          borderDash: [2, 3],
+          pointStyle: "rectRot",
+          pointRadius: 3,
+          pointHoverRadius: 5,
         },
       ],
     },
     options: {
       maintainAspectRatio: false,
       responsive: true,
-      plugins: legendTop,
+      plugins: {
+        legend: {
+          ...legendTop.legend,
+          labels: { ...legendTop.legend.labels, usePointStyle: true },
+        },
+      },
       scales: { x: gridX, y: gridY },
     },
   });
@@ -770,6 +1015,12 @@ export function assetSplit(assets) {
   const rows = assets
     .filter((a) => Number(a.balance) > 0)
     .sort((a, b) => b.balance - a.balance);
+  // Same name -> same colour as the account's icon badge elsewhere; beyond 8
+  // accounts the families run out and the rest keep their own colour.
+  const colors = distinctColors(
+    rows.map((a) => a.account),
+    { stable: true },
+  );
   mount("c-nw-split", {
     type: "doughnut",
     data: {
@@ -777,7 +1028,7 @@ export function assetSplit(assets) {
       datasets: [
         {
           data: rows.map((a) => Number(a.balance)),
-          backgroundColor: PIE,
+          backgroundColor: rows.map((a) => colors.get(a.account).hex),
           borderColor: CARD,
           borderWidth: 2,
           hoverOffset: 14,
@@ -813,8 +1064,8 @@ export function dividendsTrend(series) {
         {
           label: "Dividends",
           data: series.map((s) => s.dividends || 0),
-          backgroundColor: AMBER,
-          hoverBackgroundColor: lighten(AMBER, 0.3),
+          backgroundColor: PAL.dividend,
+          hoverBackgroundColor: lighten(PAL.dividend, 0.3),
           hoverBorderColor: CARD,
           hoverBorderWidth: 2,
         },
