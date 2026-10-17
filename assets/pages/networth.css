@@ -454,4 +454,8 @@ tr:hover .nw-del-acct {
     border-right: 0;
     padding: 8px 10px;
   }
+  /* An odd tab count would leave a solid filler cell; let the last one span. */
+  .nw-tab-btn:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
 }

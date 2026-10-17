@@ -213,7 +213,7 @@ export function renderFixedDepositsSection(scopeOwner) {
         <td class="num">${esc(fd.startDate)} → ${esc(fd.maturityDate)}<br><span class="muted" style="font-size:10.5px">${fmtTenure(fd.startDate, fd.maturityDate)}</span></td>
         <td class="n num">${moneyIn(maturity, FD_CURRENCY)}</td>
         <td class="n num"><span class="tag${matured ? "" : ""}">${matured ? "Matured" : "Active"}</span><br>${moneyIn(valueToday, FD_CURRENCY)}</td>
-        <td class="nowrap"><button class="rowbtn" data-editfd="${fd.id}" title="Edit this deposit">Edit</button>
+        <td style="white-space:nowrap"><button class="rowbtn" data-editfd="${fd.id}" title="Edit this deposit">Edit</button>
           <button class="rowbtn" data-delfd="${fd.id}" title="Delete this deposit">✕</button></td>
       </tr>`;
     })
@@ -251,8 +251,8 @@ export function renderFixedDepositsSection(scopeOwner) {
         <input type="number" name="maturityAmount" id="fd-maturity-amount" step="0.01" min="0" placeholder="auto-calculated"${val(editing?.maturityAmount)}></label>
       <label class="f"><span>Owner</span>
         <select name="owner">${PEOPLE.map((p) => `<option${sel(editing && editing.owner === p)}>${esc(p)}</option>`).join("")}</select></label>
-      <label class="f"><span>Exchange rate (${FD_CURRENCY} → ${getHomeCurrency()})</span>
-        <input type="number" name="fxRate" id="fd-fxrate" step="any" min="0.000001" required placeholder="1 ${FD_CURRENCY} = ? ${getHomeCurrency()}" inputmode="decimal"${val(editing?.fxRate)}></label>
+      <label class="f"><span>Exchange rate (${FD_CURRENCY} → CAD)</span>
+        <input type="number" name="fxRate" id="fd-fxrate" step="any" min="0.000001" required placeholder="1 ${FD_CURRENCY} = ? CAD" inputmode="decimal"${val(editing?.fxRate)}></label>
       <button class="btn" type="submit">${editing ? "Save changes" : "Add deposit"}</button>
       ${editing ? '<button class="btn ghost" type="button" id="fd-cancel-edit">Cancel</button>' : ""}
     </form>
@@ -392,7 +392,7 @@ export function wireFixedDepositsHandlers() {
       return;
     }
     const fxRate = Number(f.fxRate);
-    if (!(fxRate > 0) || !Number.isFinite(fxRate)) {
+    if (!Number.isFinite(fxRate) || fxRate < 0.000001) {
       errEl.textContent = "Enter the INR → CAD exchange rate.";
       return;
     }
