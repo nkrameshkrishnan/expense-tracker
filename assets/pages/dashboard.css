@@ -60,3 +60,82 @@
     padding: 0 0 14px;
   }
 }
+
+/* "% of total" column in the Spend by category table: a thin inline bar in
+   the category colour, then the figure (tabular numerals via .num). */
+.sharecell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.sharebar {
+  width: 56px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--rule);
+  overflow: hidden;
+  flex: none;
+}
+.sharebar > span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+}
+
+/* "Category share of spend" heat-map table. Cell tint is set inline from the
+   category colour; text stays var(--ink) so it keeps >= 4.5:1 on every tint.
+   Rows are not zebra-striped or hover-tinted (it would fight the heat). */
+.share-title {
+  margin: 18px 0 8px;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  font-weight: 700;
+}
+.share-tbl {
+  min-width: 860px;
+}
+.share-tbl th,
+.share-tbl td {
+  white-space: nowrap;
+  padding: 6px 7px;
+  font-size: 12px;
+}
+.share-tbl tbody tr:nth-child(even),
+.share-tbl tbody tr:hover {
+  background: transparent;
+}
+.share-tbl tbody th {
+  font-weight: 500;
+  color: var(--ink);
+  text-align: left;
+  border-bottom: 1px solid var(--rule);
+}
+.share-tbl tbody td {
+  color: var(--ink);
+}
+.share-tbl .share-year {
+  font-weight: 700;
+  border-left: 2px solid var(--rule-2);
+}
+/* Category column stays visible while the months scroll sideways. */
+.share-tbl th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--card-bg);
+  border-right: 1px solid var(--rule);
+}
+.share-tbl thead th:first-child {
+  z-index: 6;
+  background: var(--paper-2);
+}
+.share-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  margin-right: 7px;
+}

@@ -9,6 +9,7 @@ import {
   personSeries,
   categorySeries,
   categoryTotals,
+  categoryShare,
 } from "../xlsxio.js";
 import * as charts from "../charts.js";
 import {
@@ -24,7 +25,7 @@ import {
 } from "../core.js";
 import { go } from "../router.js";
 import { countUp, cancelCountUp, isEntering } from "../motion.js";
-import { personAvatar } from "../icons.js";
+import { personAvatar, swatchVar } from "../icons.js";
 
 /** Expense card subtitle. Expense is already net of refunds (spendOf), so
     say so whenever refunds were subtracted - otherwise the figure would
@@ -191,7 +192,8 @@ export function renderDashboard() {
   charts.trend(a.series);
   charts.paymentSplit(a.byPayment);
   charts.actualVsBudget(a.catRows);
-  charts.topFive(a.top5);
+  charts.topFive(a.top5, a.expense);
+  charts.categoryShare(catShareModel(), MONTHS);
   charts.categoryByMonth(
     catSeries,
     MONTHS,
@@ -274,6 +276,14 @@ function wireDashboard(showCompare) {
     refreshCatSpendTable();
   };
 
+  // "Category share of spend" panel's own year selector.
+  $("#csh-y-sel").onchange = async (e) => {
+    state.catShareYear = Number(e.target.value);
+    await state.store.ensureYearLoaded?.(state.catShareYear);
+    state.rows = await state.store.list();
+    refreshCatShare(true);
+  };
+
   view.querySelectorAll("[data-jump]").forEach(
     (el) =>
       (el.onclick = () => {
@@ -288,6 +298,7 @@ function wireDashboard(showCompare) {
 /** The full rebuild - identical markup/logic to the original renderDashboard,
     now with stable ids on every value the fast path needs to patch later. */
 function buildDashboardShell(a, label, people, pSeries, showCompare) {
+  const csm = catShareModel();
   view.innerHTML = `
   <div class="head">
     <div><h1>Dashboard</h1><p class="sub" id="dash-sub">${esc(personLabel())} &middot; ${esc(label)} &middot; ${a.count} transactions</p></div>
@@ -385,12 +396,31 @@ function buildDashboardShell(a, label, people, pSeries, showCompare) {
           </select>
         </div>
       </div>
-      <div class="tablewrap"><table><thead><tr><th>Category</th><th class="n">Spent</th></tr></thead><tbody id="catspend-tbody">
+      <div class="tablewrap"><table><thead><tr><th>Category</th><th class="n">Spent</th><th class="n">% of total</th></tr></thead><tbody id="catspend-tbody">
         ${catSpendRows()}
       </tbody></table></div>
     </div>
     <div class="panel"><h3>Actual vs budget by category &mdash; <span id="dash-cat-label">${esc(label)}</span></h3><div class="chartbox tall"><canvas id="c-cat"></canvas></div></div>
     <div class="panel"><h3>Top 5 spend categories &mdash; <span id="dash-top-label">${esc(label)}</span></h3><div class="chartbox tall"><canvas id="c-top"></canvas></div></div>
+    <div class="panel wide">
+      <div class="panel-head">
+        <h3>Category share of spend &mdash; <span id="dash-catshare-label">${state.catShareYear}</span></h3>
+        <div class="panel-controls">
+          <select id="csh-y-sel" title="Year">
+            ${availableYears()
+              .map(
+                (y) =>
+                  `<option value="${y}"${y === state.catShareYear ? " selected" : ""}>${y}</option>`,
+              )
+              .join("")}
+          </select>
+        </div>
+      </div>
+      <div class="chartbox tall"><canvas id="c-cat-share" role="img" aria-label="${esc(catShareSummary(csm))}"></canvas></div>
+      <p class="note" id="catshare-note">${catShareNote(csm)}</p>
+      <h4 class="share-title">Share of spend by category</h4>
+      <div class="tablewrap" id="catshare-wrap">${catShareTable(csm)}</div>
+    </div>
     <div class="panel wide">
       <div class="panel-head">
         <h3>Category spend by month &mdash; <span id="dash-catmonth-label">${state.catMonthYear}</span></h3>
@@ -508,6 +538,9 @@ function updateDashboardValues(a, label, people, pSeries, showCompare) {
   // (wired in wireDashboard) or a full rebuild touch it.
   const cm = $("#dash-catmonth-label");
   if (cm) cm.textContent = state.catMonthYear;
+  // The person switch scopes this panel too, so it follows it (its chart is
+  // redrawn by renderDashboard right after this).
+  refreshCatShare(false);
 }
 
 function overBudgetRows(a) {
@@ -537,6 +570,73 @@ function personCards(people) {
     )
     .join("");
 }
+/** Model for the "Category share of spend" panel: same person scope as the
+    neighbouring panels, its own year. */
+function catShareModel() {
+  return categoryShare(categorySeries(scoped(), state.catShareYear));
+}
+const pct1 = (v) => (v === null ? DASH : (v * 100).toFixed(1) + "%");
+function catShareNote(m) {
+  const parts = [
+    `Each column is 100% of that month's spend (Year = the whole year), net of refunds. Transfers, income and dividends are not spend.`,
+  ];
+  if (m.merged)
+    parts.push(
+      `The top 8 categories by yearly spend are shown; the other ${m.merged} are merged into Other.`,
+    );
+  if (m.clamped) parts.push(`Refund-heavy categories are shown as 0%.`);
+  return parts.join(" ");
+}
+function catShareSummary(m) {
+  if (m.rows.length === 0)
+    return `Category share of spend for ${state.catShareYear}: no spend recorded.`;
+  const top = m.rows[0];
+  return `100% stacked column chart of each category's share of spend by month for ${state.catShareYear}. Largest for the year: ${top.category}, ${pct1(top.shares[12])}. Full figures are in the table below.`;
+}
+/** Heat-map table: one row per category (+ Other), Jan..Dec | Year. Cell
+    tint scales 8%-40% of the category colour with the share (50%+ = max). */
+function catShareTable(m) {
+  const head = `<thead><tr><th scope="col">Category</th>${MONTHS.map((x) => `<th scope="col" class="n">${x}</th>`).join("")}<th scope="col" class="n">Year</th></tr></thead>`;
+  if (m.rows.length === 0)
+    return `<table class="share-tbl">${head}<tbody><tr><td colspan="14" class="muted">Nothing recorded yet.</td></tr></tbody></table>`;
+  const body = m.rows
+    .map((r) => {
+      const col = r.other ? "var(--ink-3)" : swatchVar(r.category);
+      const cells = r.shares
+        .map((v, i) => {
+          const tint = !(v > 0)
+            ? ""
+            : ` style="background:color-mix(in srgb, ${col} ${Math.round(8 + 32 * Math.min(v / 0.5, 1))}%, transparent)"`;
+          return `<td class="n num${i === 12 ? " share-year" : ""}"${tint}>${pct1(v)}</td>`;
+        })
+        .join("");
+      return `<tr><th scope="row"><span class="share-dot" style="background:${col}"></span>${esc(r.category)}</th>${cells}</tr>`;
+    })
+    .join("");
+  const total = m.totals
+    .map(
+      (t, i) =>
+        `<td class="n num${i === 12 ? " share-year" : ""}">${t > 0 ? "100.0%" : DASH}</td>`,
+    )
+    .join("");
+  return `<table class="share-tbl">${head}<tbody>${body}<tr class="tbl-total"><th scope="row">Total</th>${total}</tr></tbody></table>`;
+}
+/** Re-renders the panel in place (no rebuild, no animation). `withChart` is
+    false when the caller redraws the chart itself right afterwards. */
+function refreshCatShare(withChart) {
+  const m = catShareModel();
+  const wrap = $("#catshare-wrap");
+  if (wrap) wrap.innerHTML = catShareTable(m);
+  const note = $("#catshare-note");
+  if (note) note.textContent = catShareNote(m);
+  const lab = $("#dash-catshare-label");
+  if (lab) lab.textContent = state.catShareYear;
+  const cv = $("#c-cat-share");
+  if (cv) cv.setAttribute("aria-label", catShareSummary(m));
+  if (withChart && typeof Chart !== "undefined")
+    charts.categoryShare(m, MONTHS);
+}
+
 /** Plain "spend under each category" table, sorted highest first, for the
     panel's own year/month filter (state.catSpendYear/catSpendMonth) rather
     than the page-wide period - unlike catDetailRows below this ignores
@@ -549,15 +649,22 @@ function catSpendRows() {
     state.catSpendYear,
   );
   if (rows.length === 0)
-    return '<tr><td colspan="2" class="muted">Nothing recorded yet.</td></tr>';
+    return '<tr><td colspan="3" class="muted">Nothing recorded yet.</td></tr>';
   const total = rows.reduce((a, r) => a + r.actual, 0);
+  // Share of the NET total (the Total row), so the column sums to 100%. A
+  // zero/negative total has no meaningful split, so it shows a dash.
+  const shareCell = (r) => {
+    if (total <= 0) return `<td class="n num muted">${DASH}</td>`;
+    const s = r.actual / total;
+    return `<td class="n num${r.actual < 0 ? " under" : ""}"><span class="sharecell"><span class="sharebar"><span style="width:${(Math.max(0, Math.min(s, 1)) * 100).toFixed(1)}%;background:${swatchVar(r.category)}"></span></span>${pct1(s)}</span></td>`;
+  };
   const body = rows
     .map(
       // A negative total (refunds outweighing that category's purchases
       // this period) gets the same "under" styling catDetailRows uses for
       // under-budget - it's money back, not overspend.
       (r) =>
-        `<tr><td>${esc(r.category)}</td><td class="n num${r.actual < 0 ? " under" : ""}">${money(r.actual)}</td></tr>`,
+        `<tr><td>${esc(r.category)}</td><td class="n num${r.actual < 0 ? " under" : ""}">${money(r.actual)}</td>${shareCell(r)}</tr>`,
     )
     .join("");
   // Sums to the same net figure the Transactions page shows for this same
@@ -565,7 +672,7 @@ function catSpendRows() {
   // categories instead of dropping them - see the fix that added this check.
   return (
     body +
-    `<tr class="tbl-total"><td>Total</td><td class="n num${total < 0 ? " under" : ""}">${money(total)}</td></tr>`
+    `<tr class="tbl-total"><td>Total</td><td class="n num${total < 0 ? " under" : ""}">${money(total)}</td><td class="n num">${total > 0 ? "100.0%" : DASH}</td></tr>`
   );
 }
 function catDetailRows(a) {
