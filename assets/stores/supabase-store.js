@@ -648,6 +648,23 @@ export class SupabaseStore {
     if (this.cache) this.cache.fixedDeposits.push(result);
     return result.id;
   }
+  async updateFixedDeposit(id, record) {
+    const r = this._toDbFixedDeposit(record);
+    delete r.id; // identity column: rejected in UPDATE, same as updateDebt
+    const sb = await this._client();
+    const { data, error } = await sb
+      .from("fixed_deposits")
+      .update(r)
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) throw dbError(error);
+    const result = this._normFixedDeposit(data);
+    if (this.cache) {
+      const i = this.cache.fixedDeposits.findIndex((f) => f.id === result.id);
+      if (i !== -1) this.cache.fixedDeposits[i] = result;
+    }
+  }
   async deleteFixedDeposit(id) {
     const numId = Number(id);
     const sb = await this._client();
