@@ -16,7 +16,6 @@ import {
   addCustom,
 } from "../categories.js";
 import {
-  $,
   view,
   esc,
   state,
@@ -46,8 +45,20 @@ function personPillsHtml(people, selected) {
   );
 }
 
-export function renderAdd() {
-  const e = state.editing;
+/** Renders the whole entry form (and, for a new entry, the budget-context
+    panel) into `root` and wires it. Shared by the Add page (e = null) and the
+    Transactions edit dialog (e = the row), so there is one source of truth for
+    fields and validation. Every lookup goes through `root`, not the document.
+    The element ids are the same in both mounts, which is safe because only one
+    mount is ever on screen (the dialog opens over Transactions, which has no
+    form of its own). Calls onSaved() after a successful update of `e`; a new
+    entry stays on the form (reset for the next one). onCancel() backs the
+    Cancel button shown when editing. */
+export function mountTransactionForm(
+  root,
+  { editing: e = null, onSaved, onCancel } = {},
+) {
+  const q = (sel) => root.querySelector(sel);
   const today = new Date().toISOString().slice(0, 10);
   const selType = e?.type || "Expense";
   const selCat = e?.category || "Groceries";
@@ -101,15 +112,7 @@ export function renderAdd() {
     }
   };
 
-  view.innerHTML = `
-  <div class="head">
-    <div>
-      <h1>${e ? "Edit entry" : "Add entry"}</h1>
-      <p class="sub">${e ? `Editing #${e.id} \u2014 ${esc(e.category)} ${money(e.amount)}` : "Amount is always positive \u2014 Type carries the sign."}</p>
-    </div>
-    ${e ? `<div class="spacer"></div><button class="btn ghost" id="cancel">\u2190 Back</button>` : ""}
-  </div>
-
+  root.innerHTML = `
   <div class="add-layout">
     <div class="add-main">
 
@@ -222,7 +225,10 @@ export function renderAdd() {
       </form>
     </div>
 
-    <div class="add-context" id="ctx-panel">
+    ${
+      e
+        ? ""
+        : `<div class="add-context" id="ctx-panel">
       <div class="add-ctx-section">
         <div class="add-ctx-head" id="ctx-cat-name">${esc(selCat)}</div>
         <div class="add-ctx-stats" id="ctx-stats">
@@ -262,7 +268,8 @@ export function renderAdd() {
       </div>`
           : ""
       }
-    </div>
+    </div>`
+    }
   </div>`;
 
   // selectWithNew() builds plain selects; FormData needs name attributes.
@@ -272,7 +279,7 @@ export function renderAdd() {
     ["f-pay", "payment"],
     ["f-acc", "account"],
   ].forEach(([id, name]) => {
-    const el = $("#" + id);
+    const el = q("#" + id);
     if (el) el.name = name;
   });
 
@@ -292,20 +299,20 @@ export function renderAdd() {
     lookupRate(selCurrency, today);
   }
 
-  view.querySelectorAll(".add-type-btn").forEach((btn) => {
+  root.querySelectorAll(".add-type-btn").forEach((btn) => {
     btn.onclick = () => {
-      view
+      root
         .querySelectorAll(".add-type-btn")
         .forEach((b) => b.classList.remove("on"));
       btn.classList.add("on");
-      $("#type-hidden").value = btn.dataset.type;
+      q("#type-hidden").value = btn.dataset.type;
     };
   });
 
   /* Re-renders the "Whose" pill row (used after adding a new person via the
      "+ New" pill, since that changes how many options exist). */
   function renderPersonPills(selected) {
-    const wrap = $("#person-pills");
+    const wrap = q("#person-pills");
     if (!wrap) return;
     wrap.innerHTML =
       `<span class="add-label" style="margin-right:4px">Whose</span>` +
@@ -314,16 +321,16 @@ export function renderAdd() {
   }
 
   function wirePersonPills() {
-    view.querySelectorAll(".add-person-btn[data-person]").forEach((btn) => {
+    root.querySelectorAll(".add-person-btn[data-person]").forEach((btn) => {
       btn.onclick = () => {
-        view
+        root
           .querySelectorAll(".add-person-btn[data-person]")
           .forEach((b) => b.classList.remove("on"));
         btn.classList.add("on");
-        $("#person-hidden").value = btn.dataset.person;
+        q("#person-hidden").value = btn.dataset.person;
       };
     });
-    const newBtn = $("#person-new-btn");
+    const newBtn = q("#person-new-btn");
     if (!newBtn) return;
     newBtn.onclick = () => {
       const wrap = document.createElement("span");
@@ -340,7 +347,7 @@ export function renderAdd() {
         newBtn.style.display = "";
         if (value) {
           addCustom("person", value);
-          $("#person-hidden").value = value;
+          q("#person-hidden").value = value;
           renderPersonPills(value);
         }
       };
@@ -360,8 +367,8 @@ export function renderAdd() {
     };
   }
 
-  $("#f-date").oninput = (ev) => {
-    $("#day-name").textContent = dayName(ev.target.value);
+  q("#f-date").oninput = (ev) => {
+    q("#day-name").textContent = dayName(ev.target.value);
   };
 
   /** Looks up the CAD rate for `currency` on `date` via the store (Supabase
@@ -372,8 +379,8 @@ export function renderAdd() {
       dataset.auto), so switching the date after typing a real rate from a
       statement never clobbers it. */
   async function lookupRate(currency, date) {
-    const hint = $("#fx-hint");
-    const rateInput = $("#f-fxrate");
+    const hint = q("#fx-hint");
+    const rateInput = q("#f-fxrate");
     if (!rateInput) return;
     try {
       const found = await state.store.getExchangeRate?.(date, currency);
@@ -400,11 +407,11 @@ export function renderAdd() {
   }
 
   function updateFxPreview() {
-    const preview = $("#fx-preview");
+    const preview = q("#fx-preview");
     if (!preview) return;
-    const currency = $("#f-currency")?.value;
-    const amount = Number($("#amount-input")?.value) || 0;
-    const rate = Number($("#f-fxrate")?.value) || 0;
+    const currency = q("#f-currency")?.value;
+    const amount = Number(q("#amount-input")?.value) || 0;
+    const rate = Number(q("#f-fxrate")?.value) || 0;
     if (currency === "CAD" || !amount || !rate) {
       preview.textContent = "";
       return;
@@ -413,16 +420,16 @@ export function renderAdd() {
   }
 
   function wireCurrency() {
-    const sel = $("#f-currency");
-    const row = $("#fx-row");
-    const rateInput = $("#f-fxrate");
+    const sel = q("#f-currency");
+    const row = q("#fx-row");
+    const rateInput = q("#f-fxrate");
     if (!sel) return;
     sel.addEventListener("change", () => {
       const currency = sel.value;
       if (row) row.style.display = currency === "CAD" ? "none" : "";
       const label = row?.querySelector("label");
       if (label) label.textContent = `1 ${currency} = ? CAD`;
-      const symbol = $("#add-currency-symbol");
+      const symbol = q("#add-currency-symbol");
       if (symbol) symbol.textContent = CURRENCY_SYMBOL[currency] || "$";
       if (currency === "CAD") {
         // Nothing to enter for CAD - amount already IS the CAD amount.
@@ -430,23 +437,23 @@ export function renderAdd() {
           rateInput.value = "";
           delete rateInput.dataset.auto;
         }
-        const hint = $("#fx-hint");
+        const hint = q("#fx-hint");
         if (hint) hint.textContent = "";
         updateFxPreview();
       } else {
-        lookupRate(currency, $("#f-date")?.value || today);
+        lookupRate(currency, q("#f-date")?.value || today);
       }
     });
     rateInput?.addEventListener("input", () => {
       delete rateInput.dataset.auto; // the person is typing their own value now
       updateFxPreview();
     });
-    $("#amount-input")?.addEventListener("input", updateFxPreview);
-    $("#f-date")?.addEventListener("change", () => {
+    q("#amount-input")?.addEventListener("input", updateFxPreview);
+    q("#f-date")?.addEventListener("change", () => {
       // Re-lookup only if the field is still on an auto-filled value - a
       // hand-entered rate should survive a date correction untouched.
       if (sel.value !== "CAD" && rateInput?.dataset.auto === "1") {
-        lookupRate(sel.value, $("#f-date").value);
+        lookupRate(sel.value, q("#f-date").value);
       }
     });
     updateFxPreview();
@@ -457,8 +464,8 @@ export function renderAdd() {
   /* Subcategories are scoped to the chosen category, so switching category has
      to rebuild that list. Keeps the current value if it still applies. */
   function refreshSubOptions() {
-    const cat = $("#f-cat").value;
-    const sub = $("#f-sub");
+    const cat = q("#f-cat").value;
+    const sub = q("#f-sub");
     if (!sub || cat === "__new__") return;
     const keep = sub.value;
     const opts = listFor("subcategory", cat);
@@ -476,15 +483,15 @@ export function renderAdd() {
     sub.name = "subcategory";
     sub.dataset.prev = sub.value;
     wireNewOption("f-sub", "subcategory");
-    const hint = $("#sub-hint");
+    const hint = q("#sub-hint");
     if (hint)
       hint.textContent = opts.length
         ? `${opts.length} option${opts.length > 1 ? "s" : ""} for ${cat}`
         : `no subcategories yet for ${cat}`;
   }
 
-  $("#f-cat").addEventListener("change", () => {
-    const cat = $("#f-cat").value;
+  q("#f-cat").addEventListener("change", () => {
+    const cat = q("#f-cat").value;
     if (cat === "__new__") return;
     const act = scoped()
       .filter(
@@ -496,7 +503,7 @@ export function renderAdd() {
       .reduce((a, r) => a + spendOf(r), 0);
     const bud = Number(state.budget[cat]?.[curMonth]) || 0;
     const over = bud > 0 && act > bud;
-    const hint = $("#cat-hint");
+    const hint = q("#cat-hint");
     if (hint) {
       hint.textContent =
         bud > 0
@@ -507,9 +514,9 @@ export function renderAdd() {
       hint.className = `add-field-hint ${over ? "over" : "muted"}`;
     }
     refreshSubOptions();
-    const head = $("#ctx-cat-name");
+    const head = q("#ctx-cat-name");
     if (head) head.textContent = cat;
-    const stats = $("#ctx-stats");
+    const stats = q("#ctx-stats");
     if (stats) {
       if (bud > 0) {
         stats.innerHTML = `<div class="add-ctx-bar-wrap"><div class="add-ctx-bar-track"><div class="add-ctx-bar-fill ${over ? "over" : ""}" style="width:${Math.min((act / bud) * 100, 100).toFixed(1)}%"></div></div></div>
@@ -518,7 +525,7 @@ export function renderAdd() {
           <div class="add-ctx-row"><span class="muted">Remaining</span><span class="num ${over ? "over" : "tx-income"}">${money(bud - act)}</span></div>`;
       } else {
         stats.innerHTML = `<p class="muted" style="font-size:12px;margin:0">No budget set. <a href="#budget" id="go-budget" style="color:var(--ink)">Set one \u2192</a></p>`;
-        $("#go-budget")?.addEventListener("click", (ev) => {
+        q("#go-budget")?.addEventListener("click", (ev) => {
           ev.preventDefault();
           go("budget");
         });
@@ -528,28 +535,21 @@ export function renderAdd() {
 
   refreshSubOptions();
 
-  $("#cancel")?.addEventListener("click", () => {
-    state.editing = null;
-    go("transactions");
-  });
-  $("#cancel2")?.addEventListener("click", () => {
-    state.editing = null;
-    go("transactions");
-  });
-  $("#go-budget")?.addEventListener("click", (ev) => {
+  q("#cancel2")?.addEventListener("click", () => onCancel?.());
+  q("#go-budget")?.addEventListener("click", (ev) => {
     ev.preventDefault();
     go("budget");
   });
 
   setTimeout(() => {
-    $("#amount-input")?.focus();
+    if (root.isConnected) q("#amount-input")?.focus();
   }, 50);
 
-  $("#f").onsubmit = async (ev) => {
+  q("#f").onsubmit = async (ev) => {
     ev.preventDefault();
     const d = Object.fromEntries(new FormData(ev.target));
     const amount = Number(d.amount);
-    const errEl = $("#err");
+    const errEl = q("#err");
     errEl.textContent = "";
 
     if (!d.date) {
@@ -558,7 +558,7 @@ export function renderAdd() {
     }
     if (!(amount > 0)) {
       errEl.textContent = "Amount must be greater than zero.";
-      $("#amount-input").focus();
+      q("#amount-input").focus();
       return;
     }
     // Not just a nicety: normalise() silently defaults a missing/invalid
@@ -567,7 +567,7 @@ export function renderAdd() {
     // real money, refuse to save until a real rate is entered.
     if (d.currency && d.currency !== "CAD" && !(Number(d.fx_rate) > 0)) {
       errEl.textContent = `Enter the rate to CAD for this ${d.currency} amount.`;
-      $("#f-fxrate").focus();
+      q("#f-fxrate").focus();
       return;
     }
 
@@ -583,19 +583,18 @@ export function renderAdd() {
         ? ` Switch the year selector to ${entryYear} to see it on the Dashboard.`
         : "";
 
-    const btn = $("#sub-btn");
+    const btn = q("#sub-btn");
     btn.disabled = true;
 
-    if (state.editing) {
+    if (e) {
       const done = await withBusy("Updating", async () => {
-        await state.store.update(state.editing.id, { ...d, amount });
-        state.editing = null;
+        await state.store.update(e.id, { ...d, amount });
         await refresh();
       });
       btn.disabled = false;
       if (done) {
         notice("Entry updated." + yearNote, "ok");
-        go("transactions");
+        onSaved?.();
       }
     } else {
       const done = await withBusy("Saving", async () => {
@@ -605,26 +604,109 @@ export function renderAdd() {
       btn.disabled = false;
       if (done) {
         notice(`${money(amount)} saved.` + yearNote, "ok");
-        $("#hint").textContent = `${state.rows.length} total`;
+        q("#hint").textContent = `${state.rows.length} total`;
         ev.target.reset();
-        $("#type-hidden").value = d.type;
-        $("#person-hidden").value = d.person;
-        view
+        q("#type-hidden").value = d.type;
+        q("#person-hidden").value = d.person;
+        root
           .querySelectorAll(".add-type-btn")
           .forEach((b) => b.classList.toggle("on", b.dataset.type === d.type));
-        view
+        root
           .querySelectorAll(".add-person-btn[data-person]")
           .forEach((b) =>
             b.classList.toggle("on", b.dataset.person === d.person),
           );
-        $("#f-date").value = d.date;
-        $("#f-cat").value = d.category;
+        q("#f-date").value = d.date;
+        q("#f-cat").value = d.category;
         setTimeout(() => {
-          $("#amount-input").focus();
+          q("#amount-input")?.focus();
         }, 50);
       }
     }
   };
+}
+
+export function renderAdd() {
+  view.innerHTML = `
+  <div class="head">
+    <div>
+      <h1>Add entry</h1>
+      <p class="sub">Amount is always positive \u2014 Type carries the sign.</p>
+    </div>
+  </div>
+  <div id="add-host"></div>`;
+  mountTransactionForm(view.querySelector("#add-host"));
+}
+
+/** Edit-entry overlay opened from the Transactions list: the same form as the
+    Add page, mounted in a modal dialog so the list (filters, scroll, expanded
+    months) stays exactly where it was. Closes on Cancel, \u2715, Esc or a click
+    on the scrim; Tab is trapped inside and focus returns to `opener` on close.
+    Like the Budget dialog it does not animate. onSaved() runs after a
+    successful save, once the dialog is gone. */
+export function openEditDialog(row, { opener, onSaved } = {}) {
+  const scrim = document.createElement("div");
+  scrim.className = "dlg-scrim";
+  scrim.innerHTML = `
+  <div class="dlg dlg-form" role="dialog" aria-modal="true" aria-labelledby="edit-dlg-title">
+    <div class="dlg-head">
+      <div>
+        <h2 id="edit-dlg-title">Edit entry</h2>
+        <p class="sub">Editing #${row.id} \u2014 ${esc(row.category)} ${money(row.amount)}</p>
+      </div>
+      <button type="button" class="rowbtn" id="edit-dlg-x" aria-label="Close">\u2715</button>
+    </div>
+    <div id="edit-dlg-body"></div>
+  </div>`;
+  document.body.appendChild(scrim);
+  const prevOverflow = document.body.style.overflow;
+  document.body.style.overflow = "hidden";
+  const close = () => {
+    document.removeEventListener("keydown", onKey);
+    window.removeEventListener("hashchange", close);
+    document.body.style.overflow = prevOverflow;
+    scrim.remove();
+    if (opener?.isConnected) opener.focus({ preventScroll: true });
+  };
+  const onKey = (ev) => {
+    // The inline "+ New\u2026" fields handle (and cancel) their own Esc first.
+    if (ev.key === "Escape" && !ev.defaultPrevented) close();
+    else if (ev.key === "Tab") {
+      const focusable = [
+        ...scrim.querySelectorAll(
+          "button, input, select, summary, a[href], [tabindex]:not([tabindex='-1'])",
+        ),
+      ].filter((el) => !el.disabled && el.offsetParent !== null);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!scrim.contains(document.activeElement)) {
+        ev.preventDefault();
+        first.focus();
+      } else if (ev.shiftKey && document.activeElement === first) {
+        ev.preventDefault();
+        last.focus();
+      } else if (!ev.shiftKey && document.activeElement === last) {
+        ev.preventDefault();
+        first.focus();
+      }
+    }
+  };
+  document.addEventListener("keydown", onKey);
+  // Browser back/forward while open: don't leave the dialog over another page.
+  window.addEventListener("hashchange", close);
+  scrim.addEventListener("mousedown", (ev) => {
+    if (ev.target === scrim) close();
+  });
+  scrim.querySelector("#edit-dlg-x").onclick = close;
+  mountTransactionForm(scrim.querySelector("#edit-dlg-body"), {
+    editing: row,
+    onCancel: close,
+    onSaved: () => {
+      close();
+      onSaved?.();
+    },
+  });
 }
 
 /* ============================================================== TRANSACTIONS */

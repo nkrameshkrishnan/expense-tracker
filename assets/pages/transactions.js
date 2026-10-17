@@ -21,6 +21,7 @@ import {
   refresh,
 } from "../core.js";
 import { go } from "../router.js";
+import { openEditDialog } from "./add.js";
 import { cancelEntrance } from "../motion.js";
 import { iconBadge, personAvatar, emptyIcon } from "../icons.js";
 
@@ -343,19 +344,10 @@ export function renderTransactions() {
   );
 
   // — add button shortcut
-  $("#tx-add").onclick = () => {
-    state.editing = null;
-    go("add");
-  };
+  $("#tx-add").onclick = () => go("add");
 
-  // — edit
-  view.querySelectorAll("[data-edit]").forEach(
-    (b) =>
-      (b.onclick = () => {
-        state.editing = state.rows.find((r) => r.id === Number(b.dataset.edit));
-        go("add");
-      }),
-  );
+  // — edit (overlay dialog; the list below is never navigated away from)
+  wireActions();
 
   // — delete with inline confirm replacing browser dialog
   view.querySelectorAll("[data-del]").forEach(
@@ -396,10 +388,19 @@ export function renderTransactions() {
     view.querySelectorAll("[data-edit]").forEach(
       (b) =>
         (b.onclick = () => {
-          state.editing = state.rows.find(
-            (r) => r.id === Number(b.dataset.edit),
-          );
-          go("add");
+          const r = state.rows.find((x) => x.id === Number(b.dataset.edit));
+          if (!r) return;
+          openEditDialog(r, {
+            opener: b,
+            onSaved: () => {
+              // Redraw the list in place (no page entrance), then put focus
+              // back on the edited row's button - the old one is gone.
+              refilter();
+              view
+                .querySelector(`[data-edit="${r.id}"]`)
+                ?.focus({ preventScroll: true });
+            },
+          });
         }),
     );
   }

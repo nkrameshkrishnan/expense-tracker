@@ -48,7 +48,6 @@ export const state = {
   budget: emptyBudget(),
   month: 0,
   tab: "dashboard",
-  editing: null,
   person: localStorage.getItem(PERSON_KEY) || "", // '' = whole family
   // Which year's Dashboard/Budget you're viewing - independent of what
   // calendar year it actually is right now, so past years stay browsable.

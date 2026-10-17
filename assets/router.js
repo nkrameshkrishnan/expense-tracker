@@ -66,10 +66,6 @@ export function go(tab, { animate = true } = {}) {
   window.scrollTo(0, 0);
 }
 
-document.querySelectorAll("#tabs button").forEach(
-  (b) =>
-    (b.onclick = () => {
-      if (b.dataset.tab !== "add") state.editing = null;
-      go(b.dataset.tab);
-    }),
-);
+document
+  .querySelectorAll("#tabs button")
+  .forEach((b) => (b.onclick = () => go(b.dataset.tab)));
