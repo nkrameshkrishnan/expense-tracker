@@ -252,12 +252,12 @@ export function renderFixedDepositsSection(scopeOwner) {
       <label class="f"><span>Owner</span>
         <select name="owner">${PEOPLE.map((p) => `<option${sel(editing && editing.owner === p)}>${esc(p)}</option>`).join("")}</select></label>
       <label class="f"><span>Exchange rate (${FD_CURRENCY} → ${getHomeCurrency()})</span>
-        <input type="number" name="fxRate" id="fd-fxrate" step="any" min="0.000001" required placeholder="1 ${FD_CURRENCY} = ? ${getHomeCurrency()}" inputmode="decimal"${val(editing?.fxRate)}>
-        <span class="add-field-hint muted" id="fd-fx-hint"></span></label>
+        <input type="number" name="fxRate" id="fd-fxrate" step="any" min="0.000001" required placeholder="1 ${FD_CURRENCY} = ? ${getHomeCurrency()}" inputmode="decimal"${val(editing?.fxRate)}></label>
       <button class="btn" type="submit">${editing ? "Save changes" : "Add deposit"}</button>
       ${editing ? '<button class="btn ghost" type="button" id="fd-cancel-edit">Cancel</button>' : ""}
     </form>
     ${editing ? `<p class="note" style="margin:8px 0 0"><b>Editing the ${esc(editing.institution)} deposit.</b></p>` : ""}
+    <p class="note" id="fd-fx-hint" style="margin:8px 0 0"></p>
     <p class="note" id="fd-calc-hint" style="margin:8px 0 0"></p>
     <div class="err" id="fd-err"></div>
   </div>
