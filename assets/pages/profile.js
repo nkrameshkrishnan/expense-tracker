@@ -123,7 +123,9 @@ async function loadDisplayRateIfNeeded(code) {
   }
 }
 
-async function savePreferences(homeCurrency, theme) {
+// `focusSel` (keyboard activations only) is the selector of the option to
+// refocus once the panel is re-rendered; null for mouse/touch.
+async function savePreferences(homeCurrency, theme, focusSel = null) {
   const email = getIdTokenEmail();
   setHomeCurrency(homeCurrency);
   setTheme(theme);
@@ -136,20 +138,39 @@ async function savePreferences(homeCurrency, theme) {
     if (!done) return;
   }
   notice("Preferences saved.", "ok");
-  renderProfile(); // re-render so the selected option/theme reflect immediately
+  // Re-render only the Preferences block so the selected option reflects
+  // immediately - a full renderProfile() would also reset the Household
+  // access panel to "Loading…" and re-fetch it over the network.
+  const host = $("#prefs-host");
+  if (!host) return;
+  host.innerHTML = renderPreferencesPanel();
+  wirePreferences();
+  // Re-render replaced the button: put keyboard focus back on its equivalent.
+  if (focusSel) host.querySelector(focusSel)?.focus({ preventScroll: true });
 }
 
 function wirePreferences() {
   $("#view")
     .querySelectorAll("[data-currency]")
     .forEach((btn) => {
-      btn.onclick = () => savePreferences(btn.dataset.currency, getTheme());
+      btn.onclick = (e) =>
+        savePreferences(
+          btn.dataset.currency,
+          getTheme(),
+          e.detail === 0 ? `[data-currency="${btn.dataset.currency}"]` : null,
+        );
     });
   $("#view")
     .querySelectorAll("[data-theme-choice]")
     .forEach((btn) => {
-      btn.onclick = () =>
-        savePreferences(getHomeCurrency(), btn.dataset.themeChoice);
+      btn.onclick = (e) =>
+        savePreferences(
+          getHomeCurrency(),
+          btn.dataset.themeChoice,
+          e.detail === 0
+            ? `[data-theme-choice="${btn.dataset.themeChoice}"]`
+            : null,
+        );
     });
 }
 
@@ -209,7 +230,7 @@ export function renderProfile() {
   <p class="note">See <a href="terms.html" target="_blank" rel="noopener">Terms &amp; Privacy</a>
     for what Google profile information this app collects and why.</p>
 
-  ${renderPreferencesPanel()}
+  <div id="prefs-host">${renderPreferencesPanel()}</div>
 
   <div class="eyebrow">Household access</div>
   ${
