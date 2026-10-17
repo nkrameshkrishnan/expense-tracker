@@ -322,16 +322,27 @@ export function renderMetalsSection(scopeOwner) {
           : `${esc(h.purityKarat || 24)}K`;
       const estimated =
         dia && (h.currentValue === null || h.currentValue === undefined);
+      // Unrealised gain/loss vs what was paid: coloured with an up/down
+      // triangle and a tooltip; "at cost" diamonds and flat lots stay plain.
+      const diff = v === null || estimated ? 0 : v - lotCost(h);
+      const gl =
+        Math.abs(diff) < 0.005
+          ? ""
+          : `<span class="gl" role="img" aria-label="${diff > 0 ? "up" : "down"}">${diff > 0 ? "\u25b2" : "\u25bc"}</span>`;
+      const glTitle =
+        gl && lotCost(h) > 0
+          ? ` title="${diff > 0 ? "Up" : "Down"} ${money(Math.abs(diff))} (${pct(Math.abs(diff) / lotCost(h))}) since purchase"`
+          : "";
       return `<tr>
         <td class="num">${esc(h.purchaseDate)}</td>
-        <td>${esc(h.metal)}</td>
+        <td><span class="cdot round" style="background:var(--c-${esc(String(h.metal || "Gold").toLowerCase())})"></span>${esc(h.metal)}</td>
         <td class="num">${purity}</td>
         <td>${h.placeOfPurchase ? esc(h.placeOfPurchase) : '<span class="muted">—</span>'}</td>
         <td><span class="person-chip" data-p="${esc(h.owner)}">${esc(h.owner)}</span></td>
         <td class="n num">${dia ? `${gramsToCarats(h.weightGrams)} ct` : `${h.weightGrams}g <span class="muted">(${gramsToOz(h.weightGrams)} oz)</span>`}</td>
         <td class="n num">${dia ? "—" : money(h.pricePerGram)}</td>
         <td class="n num muted">${money(lotCost(h))}</td>
-        <td class="n num">${v === null ? "—" : money(v)}${estimated ? ' <span class="muted" title="No current value entered - showing what you paid">(at cost)</span>' : ""}</td>
+        <td class="n num ${gl ? (diff > 0 ? "gain" : "loss") : ""}"${glTitle}>${gl}${v === null ? "—" : money(v)}${estimated ? ' <span class="muted" title="No current value entered - showing what you paid">(at cost)</span>' : ""}</td>
         <td class="nowrap"><button class="rowbtn edit" data-editmetal="${h.id}" title="Edit this lot">Edit</button>
           <button class="rowbtn del" data-delmetal="${h.id}" title="Delete this lot">✕</button></td>
       </tr>`;

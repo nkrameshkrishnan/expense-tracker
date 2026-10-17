@@ -1072,11 +1072,11 @@ export function renderDebtSection(scopeOwner) {
         ? `<tfoot><tr><td colspan="2" class="c-lbl">${label}</td><td class="n num c-amt">${fm(n)}</td><td class="c-act"></td></tr></tfoot>`
         : "";
     return `
-    <div class="debt-card ${d.settled ? "settled" : ""}" data-debt="${d.id}">
+    <div class="debt-card ${d.settled ? "settled" : ""}" data-debt="${d.id}" data-dir="${d.direction}">
       <div class="debt-head">
         <div>
           <span class="debt-name">${esc(d.counterparty)}</span>
-          <span class="tag ${d.direction === "Owed" ? "tag-liab" : ""}">${d.direction === "Owed" ? "You owe" : "Owed to you"}</span>
+          <span class="tag ${d.direction === "Owed" ? "tag-liab" : "tag-asset"}">${d.direction === "Owed" ? "You owe" : "Owed to you"}</span>
           ${d.settled ? '<span class="tag debt-settled-tag">Settled</span>' : ""}
           ${d.debtType ? `<span class="tag">${esc(d.debtType)}</span>` : ""}
           ${d.interestRate != null ? `<span class="tag">${d.interestRate}% p.a.</span>` : ""}
@@ -1153,7 +1153,7 @@ export function renderDebtSection(scopeOwner) {
               (p) => `<tr>
             <td class="num c-date">${esc(p.date)}</td>
             <td>${esc(p.description) || '<span class="muted">\u2014</span>'}</td>
-            <td class="n num c-amt">${fm(p.amount)}${p.paidCurrency && p.paidAmount != null ? `<span class="debt-paid">paid ${moneyIn(p.paidAmount, p.paidCurrency)}</span>` : ""}</td>
+            <td class="n num c-amt debt-pay-amt">${fm(p.amount)}${p.paidCurrency && p.paidAmount != null ? `<span class="debt-paid">paid ${moneyIn(p.paidAmount, p.paidCurrency)}</span>` : ""}</td>
             <td class="c-act"><button class="rowbtn edit" data-editchild="${p.id}" title="Edit this payment">\u270E</button>
               <button class="rowbtn del" data-delpay="${p.id}" title="Delete this payment">\u2715</button></td>
           </tr>`,
@@ -1177,7 +1177,7 @@ export function renderDebtSection(scopeOwner) {
               (r) => `<tr>
             <td class="num c-date">${esc(r.date)}</td>
             <td>${esc(r.description).slice(0, 44)}</td>
-            <td class="c-type"><span class="tag">${esc(r.type)}</span></td>
+            <td class="c-type"><span class="tx-type-badge tx-type-badge-${esc(String(r.type).toLowerCase())}">${esc(r.type)}</span></td>
             <td class="n num c-amt">${moneyIn(r.amount, r.currency)}</td>
           </tr>`,
             )
@@ -1211,8 +1211,8 @@ export function renderDebtSection(scopeOwner) {
   ${
     rows.length
       ? `<div class="kpis">
-    ${kpi("You owe", money(owedTotal), owedTotal > 0 ? "outstanding" : "nothing owed", owedTotal > 0 ? "neg" : "", "debt-owed")}
-    ${kpi("Owed to you", money(lentTotal), lentTotal > 0 ? "outstanding" : "nothing lent", lentTotal > 0 ? "pos" : "", "debt-lent")}
+    ${kpi("You owe", money(owedTotal), owedTotal > 0 ? "outstanding" : "nothing owed", owedTotal > 0 ? "neg k-expense" : "k-expense", "debt-owed")}
+    ${kpi("Owed to you", money(lentTotal), lentTotal > 0 ? "outstanding" : "nothing lent", lentTotal > 0 ? "pos k-income" : "k-income", "debt-lent")}
     ${kpi(
       "Net position",
       money(lentTotal - owedTotal),

@@ -338,11 +338,26 @@ tr:hover .nw-del-acct {
 }
 .debt-bar-fill {
   height: 100%;
-  background: var(--ink-2);
+  background: var(--c-income);
   transition: width 0.3s;
 }
 .debt-bar-fill.done {
-  background: var(--teal);
+  background: var(--ink-3);
+}
+/* Direction accent on the card's left edge (background layer, no layout
+   change): "Owed" = you owe = expense colour, "Lent" = owed to you = income. */
+.debt-card[data-dir="Owed"] {
+  background-image: linear-gradient(var(--c-expense), var(--c-expense));
+  background-size: 3px 100%;
+  background-repeat: no-repeat;
+}
+.debt-card[data-dir="Lent"] {
+  background-image: linear-gradient(var(--c-income), var(--c-income));
+  background-size: 3px 100%;
+  background-repeat: no-repeat;
+}
+.debt-pay-amt {
+  color: var(--green);
 }
 .debt-meta {
   display: flex;

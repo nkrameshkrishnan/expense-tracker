@@ -221,6 +221,10 @@ export function renderFixedDepositsSection(scopeOwner) {
       const valueToday = fdValueToday(fd, today);
       const maturity = fd.maturityAmount ?? calculatedMaturity(fd);
       const matured = today >= fd.maturityDate;
+      // Interest earned so far: value today vs principal (same currency), as
+      // a coloured triangle plus a tooltip. Flat deposits stay plain.
+      const earned = valueToday - fd.principal;
+      const up = earned > 0.005;
       return `<tr>
         <td>${esc(fd.institution)}${fd.maturityAmount != null ? ' <span class="tag" title="Maturity amount entered by hand, not calculated">override</span>' : ""}</td>
         <td><span class="person-chip" data-p="${esc(fd.owner)}">${esc(fd.owner)}</span></td>
@@ -229,7 +233,7 @@ export function renderFixedDepositsSection(scopeOwner) {
         <td>${esc(fd.compounding)}</td>
         <td class="num">${esc(fd.startDate)} → ${esc(fd.maturityDate)}<br><span class="muted" style="font-size:10.5px">${fmtTenure(fd.startDate, fd.maturityDate)}</span></td>
         <td class="n num">${moneyIn(maturity, fdCur(fd))}</td>
-        <td class="n num"><span class="tag${matured ? "" : ""}">${matured ? "Matured" : "Active"}</span><br>${moneyIn(valueToday, fdCur(fd))}</td>
+        <td class="n num"><span class="tag${matured ? "" : " tag-asset"}">${matured ? "Matured" : "Active"}</span><br><span class="${up ? "gain" : ""}"${up ? ` title="Interest earned so far: ${moneyIn(earned, fdCur(fd))}"` : ""}>${up ? '<span class="gl" role="img" aria-label="up">\u25b2</span>' : ""}${moneyIn(valueToday, fdCur(fd))}</span></td>
         <td style="white-space:nowrap"><button class="rowbtn edit" data-editfd="${fd.id}" title="Edit this deposit">Edit</button>
           <button class="rowbtn del" data-delfd="${fd.id}" title="Delete this deposit">✕</button></td>
       </tr>`;

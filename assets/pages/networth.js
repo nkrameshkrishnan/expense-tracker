@@ -218,6 +218,34 @@ export function renderNetWorth() {
     ? accounts.filter((a) => valueAt(latest, a.account) === null)
     : accounts;
 
+  // Asset-account colours: the same set and rule as the "Assets by account"
+  // doughnut below (assets with a native balance > 0 in the latest snapshot),
+  // so an account's dot here is its slice there. Accounts outside that set
+  // (nothing recorded, zero) fall back to their own hashed colour.
+  const dotColors = charts.distinctColors(
+    (latest ? at(latest) : [])
+      .filter(
+        (b) =>
+          b.kind === "Asset" &&
+          (!scopeOwner || b.owner === scopeOwner) &&
+          Number(b.balance) > 0,
+      )
+      .map((b) => b.account),
+    { stable: true },
+  );
+  // Change colour: up is good for an asset, bad for a liability (the sign and
+  // the up/down triangle always show the direction).
+  const chClass = (a, ch) =>
+    ch === null || ch === 0
+      ? "muted"
+      : (ch > 0 ? a.kind !== "Liability" : a.kind === "Liability")
+        ? "tx-income"
+        : "tx-over";
+  const acctDot = (a) =>
+    a.kind === "Liability"
+      ? `<span class="cdot diamond" style="background:var(--c-expense)"></span>`
+      : `<span class="cdot" style="background:${(dotColors.get(a.account) ?? charts.distinctColors([a.account]).get(a.account)).css}"></span>`;
+
   // "Refresh FX" only ever touches the LATEST snapshot's stored fx_rate, and
   // only for accounts already in a non-CAD currency - it never changes a
   // native balance, never creates a new dated snapshot, and never rewrites
@@ -312,8 +340,8 @@ export function renderNetWorth() {
   </div>
 
   <div class="kpis">
-    ${kpi("Assets", money(assets), `${at(latest).filter((b) => b.kind === "Asset" && (!scopeOwner || b.owner === scopeOwner)).length} accounts`, "", "nw-assets")}
-    ${kpi("Liabilities", money(liabs), liabs > 0 ? "owed" : "nothing owed", "", "nw-liabs")}
+    ${kpi("Assets", money(assets), `${at(latest).filter((b) => b.kind === "Asset" && (!scopeOwner || b.owner === scopeOwner)).length} accounts`, "k-income", "nw-assets")}
+    ${kpi("Liabilities", money(liabs), liabs > 0 ? "owed" : "nothing owed", "k-expense", "nw-liabs")}
     ${kpi("Net worth", money(net), "", net < 0 ? "neg" : "pos", "nw-net")}
     ${kpi(
       "Change",
@@ -372,18 +400,24 @@ export function renderNetWorth() {
         const ch = v !== null && p !== null ? v - p : null;
         const foreign = row && row.currency && row.currency !== "CAD";
         return `<tr class="${v === null ? "nw-blank" : ""}">
-        <td>${esc(a.account)}</td>
+        <td><span class="cname">${acctDot(a)}<span>${esc(a.account)}</span></span></td>
         <td><span class="person-chip" data-p="${esc(a.owner)}">${esc(a.owner)}</span></td>
-        <td><span class="tag">${a.kind}</span></td>
-        <td class="n num">${
+        <td><span class="tag ${a.kind === "Liability" ? "tag-liab" : "tag-asset"}">${a.kind}</span></td>
+        <td class="n num${a.kind === "Liability" && v !== null ? " loss" : ""}">${
           v === null
             ? '<span class="muted">not recorded</span>'
             : foreign
               ? `${moneyIn(row.balance, row.currency)}<br><span class="muted" style="font-size:10.5px">\u2248 ${money(v)} ${getHomeCurrency()}</span>`
               : money(v)
         }</td>
-        <td class="n num ${ch === null ? "muted" : ch < 0 ? "tx-over" : "tx-income"}">${
-          ch === null ? "\u2014" : (ch >= 0 ? "+" : "") + money(ch)
+        <td class="n num ${chClass(a, ch)}">${
+          ch === null
+            ? "\u2014"
+            : (ch === 0
+                ? ""
+                : `<span class="gl" aria-hidden="true">${ch > 0 ? "\u25b2" : "\u25bc"}</span>`) +
+              (ch >= 0 ? "+" : "") +
+              money(ch)
         }</td></tr>`;
       })
       .join("")}
@@ -397,9 +431,9 @@ export function renderNetWorth() {
         (x) => `<tr>
       <td class="num">${esc(x.date)}</td>
       <td class="n num ${x.covered < maxCover ? "muted" : ""}">${x.covered}${x.covered < maxCover ? " of " + maxCover : ""}</td>
-      <td class="n num">${money(x.assets)}</td>
-      <td class="n num">${money(x.liabs)}</td>
-      <td class="n num"><b>${money(x.net)}</b></td>
+      <td class="n num gain">${money(x.assets)}</td>
+      <td class="n num${x.liabs > 0 ? " loss" : ""}">${money(x.liabs)}</td>
+      <td class="n num${x.net < 0 ? " loss" : ""}"><b>${money(x.net)}</b></td>
       <td><button class="rowbtn del" data-delsnap="${esc(x.date)}" title="Delete this snapshot">\u2715</button></td>
     </tr>`,
       )
