@@ -20,6 +20,24 @@
   --red: #a8312f;
   --blue: #2459b0;
   --purple: #7436ad;
+  /* Semantic palette for marks and tints; assets/charts.js (PAL) re-reads these
+     tokens, so chart and table colours are the same values. income = --teal;
+     expense = --red mixed 28% toward white (toward black in dark), a
+     LIGHTNESS shift from the teal for colour-blind readers - a mark colour
+     only (~3.6:1), never text: expense TEXT stays --red. over = --red,
+     budget = --amber, warn = ochre (--amber is brick-red here, too close to
+     --red to be a "nearly" signal), dividend = --purple. Metal dots are fixed
+     in both themes (>= 3:1 on either card). */
+  --c-income: var(--teal);
+  --c-expense: color-mix(in srgb, var(--red) 72%, #fff);
+  --c-over: var(--red);
+  --c-warn: #7d5200;
+  --c-budget: var(--amber);
+  --c-dividend: var(--purple);
+  --c-neutral: var(--ink-3);
+  --c-gold: #a16807;
+  --c-silver: #74869f;
+  --c-diamond: #047f94;
   --mono: "Inter", ui-monospace, SFMono-Regular, Menlo, monospace;
   --disp: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --serif: "Fraunces", Georgia, "Times New Roman", serif;
@@ -101,6 +119,8 @@
   --red: #f27a7e;
   --blue: #7ba5f0;
   --purple: #b786e6;
+  --c-expense: color-mix(in srgb, var(--red) 72%, #000);
+  --c-warn: #e3b04b;
   --border-card: 1px solid rgba(255, 248, 230, 0.09);
   --shadow-card: none;
   --shadow-card-hover: none;
@@ -612,6 +632,10 @@ tbody tr:hover {
   color: var(--ink-2);
   white-space: nowrap;
 }
+.tag-asset {
+  border-color: var(--teal);
+  color: var(--teal);
+}
 .tbl-total td {
   font-weight: 700;
   border-top: 2px solid var(--rule-2);
@@ -660,6 +684,30 @@ tbody tr:hover {
   color: var(--blue);
   background: color-mix(in srgb, var(--blue) 10%, transparent);
 }
+/* Whole-row tint for flagged rows (<= 12%, so cell text keeps its contrast):
+   already-in-Ledger = red, possible duplicate = warn. The flag chip stays. */
+#stg-tbody tr:has(.stg-flag-exact) {
+  background: color-mix(in srgb, var(--red) 9%, var(--card-bg));
+}
+#stg-tbody tr:has(.stg-flag-likely) {
+  background: color-mix(in srgb, var(--c-warn) 11%, var(--card-bg));
+}
+/* Type column: leading edge in the same colour as the Transactions type badge. */
+#stg-tbody td[data-type] select {
+  border-left: 3px solid var(--ink-3);
+}
+#stg-tbody td[data-type="Expense"] select {
+  border-left-color: var(--red);
+}
+#stg-tbody td[data-type="Income"] select {
+  border-left-color: var(--green);
+}
+#stg-tbody td[data-type="Refund"] select {
+  border-left-color: var(--blue);
+}
+#stg-tbody td[data-type="Dividends"] select {
+  border-left-color: var(--purple);
+}
 .stg-match {
   display: block;
   font-size: 11px;
@@ -676,6 +724,72 @@ tbody tr:hover {
 }
 .under {
   color: var(--teal);
+}
+/* Budget-usage level, shared by every "used" figure and bar: ok < 80%, warn
+   80-100%, over > 100% (see usageLevel() in xlsxio.js). Text carries a glyph or
+   a %, so the level is never colour alone. --use feeds the bar fills. */
+.lv-warn {
+  color: var(--c-warn);
+  font-weight: 600;
+}
+.use-ok {
+  --use: var(--c-income);
+}
+.use-warn {
+  --use: var(--c-warn);
+}
+.use-over {
+  --use: var(--c-over);
+}
+.kpi.lv-warn .v {
+  color: var(--c-warn);
+}
+/* Gain / loss text (the "gl" glyph, "up" or "down", always accompanies it). */
+.gain {
+  color: var(--teal);
+}
+.loss {
+  color: var(--red);
+}
+.gl {
+  font-size: 0.8em;
+  margin-right: 3px;
+}
+/* Small colour key next to a name: square for a category/asset account,
+   diamond for a liability (same marker as the net worth chart's liabilities
+   line), circle for a metal. Colour is a second cue; the name is always there. */
+.cdot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  margin-right: 7px;
+  flex: none;
+  vertical-align: baseline;
+}
+/* Dot + name in one flex row, so a long name that wraps stays beside its dot. */
+.cname {
+  display: flex;
+  align-items: baseline;
+}
+.cdot.diamond {
+  transform: rotate(45deg) scale(0.85);
+  border-radius: 1px;
+}
+.cdot.round {
+  border-radius: 50%;
+}
+/* Accent on the leading edge of a tile/card that is income-side or
+   expense-side: a background layer, so no border or layout change. */
+.kpi.k-income {
+  background-image: linear-gradient(var(--c-income), var(--c-income));
+  background-size: 100% 3px;
+  background-repeat: no-repeat;
+}
+.kpi.k-expense {
+  background-image: linear-gradient(var(--c-expense), var(--c-expense));
+  background-size: 100% 3px;
+  background-repeat: no-repeat;
 }
 .muted {
   color: var(--ink-3);

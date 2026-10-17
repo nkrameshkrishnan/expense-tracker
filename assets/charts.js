@@ -218,6 +218,17 @@ export function distinctCategoryColors(names) {
   return distinctColors(names);
 }
 
+/** The Actual-vs-budget assignment as a Map(category -> {css, hex}): ranked by
+    actual over the rows the chart shows (actual or budget > 0). The Dashboard
+    category tables call this too, so a category's dot matches its bars. */
+export function budgetCategoryColors(catRows) {
+  const ranked = catRows
+    .filter((r) => r.actual > 0 || r.budget > 0)
+    .sort((a, b) => b.actual - a.actual)
+    .map((r) => r.category);
+  return distinctCategoryColors(ranked);
+}
+
 /** Known payment methods get a fixed family so they look the same in every
     chart and table; unknown (custom) names fall back to their hashed colour.
     Tokens: 1 violet, 0 blue, 4 green, 5 cyan, 6 orange. "Other" is grey. */
@@ -465,10 +476,7 @@ export function actualVsBudget(catRows) {
   readTheme();
   const rows = catRows.filter((r) => r.actual > 0 || r.budget > 0);
   const over = rows.map((r) => r.budget > 0 && r.actual > r.budget);
-  const ranked = [...rows]
-    .sort((a, b) => b.actual - a.actual)
-    .map((r) => r.category);
-  const colors = distinctCategoryColors(ranked);
+  const colors = budgetCategoryColors(catRows);
   const hex = rows.map((r) => colors.get(r.category).hex);
   const pct = (i) => Math.round((rows[i].actual / rows[i].budget - 1) * 100);
   mount("c-cat", {

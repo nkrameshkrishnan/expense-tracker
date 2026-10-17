@@ -107,6 +107,12 @@ export const moneyIn = (n, currency) => {
   }
 };
 export const pct = (n) => (n * 100).toFixed(1) + "%";
+/** Budget-usage band for a spent/budget ratio: "ok" below 80%, "warn" from
+    80% to 100% inclusive, "over" above 100%. Every "used" figure and bar
+    (Dashboard, Budget, Add) uses this, matching the .use-* / .lv-warn CSS. */
+export const USAGE_WARN = 0.8;
+export const usageLevel = (ratio) =>
+  ratio > 1 ? "over" : ratio >= USAGE_WARN ? "warn" : "ok";
 export const monthOf = (r) => Number(String(r.date).slice(5, 7)) || 0;
 
 /** Filter by person. '' means everyone — the family view. */
